@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/Katzelabs/Konku/internal/store/gen"
 )
 
 // maxConns caps the pool.
@@ -31,6 +33,42 @@ const maxConnLifetime = 5 * time.Minute
 
 type Store struct {
 	pool *pgxpool.Pool
+	q    *gen.Queries
+}
+
+// Q returns the generated queries bound to the pool.
+//
+// Handlers use these directly rather than through hand-written passthrough
+// wrappers. Every query in internal/store/queries carries user_id in its WHERE
+// clause, so the generated params structs cannot be constructed without an
+// owner — the tenancy rule is enforced by the SQL, not by a layer of
+// boilerplate that could forget it (D-039).
+func (s *Store) Q() *gen.Queries { return s.q }
+
+// WithTx runs fn inside a transaction, rolling back on error or panic.
+//
+// The card-sync path (C3) depends on this: a note saved with its cards only
+// half-synced is a corrupt state with no obvious repair path.
+func (s *Store) WithTx(ctx context.Context, fn func(*gen.Queries) error) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("store: begin: %w", err)
+	}
+
+	defer func() {
+		// Rollback after a successful Commit is a no-op, so this is safe as an
+		// unconditional cleanup and survives a panic in fn.
+		_ = tx.Rollback(ctx)
+	}()
+
+	if err := fn(s.q.WithTx(tx)); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("store: commit: %w", err)
+	}
+	return nil
 }
 
 // Open parses the connection string, applies the pool caps, and verifies the
@@ -58,7 +96,7 @@ func Open(ctx context.Context, databaseURL string) (*Store, error) {
 		return nil, fmt.Errorf("store: connecting to database: %w", err)
 	}
 
-	return &Store{pool: pool}, nil
+	return &Store{pool: pool, q: gen.New(pool)}, nil
 }
 
 func (s *Store) Close() { s.pool.Close() }

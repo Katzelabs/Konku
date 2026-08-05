@@ -46,7 +46,7 @@ CI (S1) must use 1.25.
 
 ## F2 — sqlc setup
 
-`todo` · ~1 h · needs F1
+`done` · ~1 h · needs F1
 
 `sqlc.yaml` does not exist yet.
 
@@ -59,13 +59,27 @@ CI (S1) must use 1.25.
   fails CI rather than at runtime
 - Commit `internal/store/gen/` — generated code is reviewed code
 
-**Done when:** `make sqlc` regenerates cleanly and `go build ./...` passes.
+**Delivered:** `sqlc.yaml` with overrides applied **by `db_type`, not by
+column** — otherwise `sqlc.arg(today)` comes back as `pgtype.Date` and every
+caller has to convert. `uuid` → `uuid.UUID`, `timestamptz` → `time.Time`,
+`date` → `time.Time`.
+
+`make sqlc-diff` is wired into `make check`, so stale generated code fails the
+build instead of surfacing at runtime.
+
+**Correction to the plan:** dates could not be mapped to `string`. pgx cannot
+decode a Postgres `date` (OID 1082) into a string in binary format. They map to
+`time.Time` and `internal/store/date.go` converts to and from `srs.Date` at the
+boundary, UTC only — the *only* place in the codebase that conversion happens.
+Everything above the store still deals in local `YYYY-MM-DD`. Guarded by
+`TestNoTimezoneShift`, which checks both an east-of-UTC early morning (Jakarta,
+the user's own timezone) and a west-of-UTC late night.
 
 ---
 
 ## F3 — Store package, every method scoped by user_id
 
-`todo` · ~3 h · needs F2
+`done` · ~3 h · needs F2
 
 `internal/store/` is empty. This is where D-039 is enforced or lost.
 
@@ -82,9 +96,27 @@ Methods needed by the MVP: create/get/update/list notes; upsert/soft-delete
 cards; get/update card schedules; list due schedules; insert review log;
 insert focus session; user + session CRUD for auth.
 
-**Done when:** an integration test against the dev Postgres proves user A
-cannot read, update, or delete user B's note — and gets *not found*, not
-*forbidden*.
+**Delivered:** queries in `internal/store/queries/{users,notes,cards,sessions}.sql`,
+generated into `internal/store/gen/`, plus `WithTx` for the C3 sync
+transaction.
+
+**No hand-written passthrough wrappers.** Every query carries `user_id` in its
+`WHERE` clause, so the generated params structs cannot be built without an
+owner — the tenancy rule is enforced by the SQL itself rather than by a layer
+of boilerplate that could forget it.
+
+**Verified** (`make test-integration`, against the dev Postgres):
+
+| Test | Guards |
+|---|---|
+| `TestTenantIsolation` | read / update / delete / list of another user's note all return `ErrNoRows` — *not found*, never *forbidden* (D-039) |
+| `TestScheduleSurvivesCardEdit` | editing card text leaves `stage` and `next_review_date` untouched (D-019) |
+| `TestSoftDeleteRestoresHistory` | deleting a card line and restoring it brings its schedule back |
+| `TestWithTxRollsBack` | a mid-transaction failure leaves nothing behind |
+| `TestDueCardsExcludeMastered` | NULL `next_review_date` stays out of the due list |
+
+Integration tests skip unless `TEST_DATABASE_URL` is set, so `go test ./...`
+stays green without Docker. `make test-integration` runs them.
 
 ---
 

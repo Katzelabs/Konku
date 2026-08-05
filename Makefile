@@ -1,4 +1,6 @@
-.PHONY: help setup dev dev-api dev-web build test lint check migrate-up migrate-down db-up db-down clean
+export PATH := $(PATH):$(shell go env GOPATH)/bin
+
+.PHONY: help setup dev dev-api dev-web build test test-integration sqlc lint check check-pure migrate-up migrate-down db-up db-down clean
 
 help:
 	@grep -E '^[a-zA-Z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -47,7 +49,16 @@ check-pure: ## Assert card/ and srs/ import nothing from internal/
 		|| (echo "IMPURE: card/ or srs/ imports internal/" && exit 1)
 	@echo "card/ and srs/ are pure"
 
-check: lint test check-pure ## All checks
+# sqlc-generated code must match the SQL it came from, or the two drift and
+# the mismatch only shows up at runtime.
+sqlc-diff: ## Fail if generated code is stale
+	@if command -v sqlc >/dev/null 2>&1; then \
+		sqlc diff && echo "sqlc generated code is current"; \
+	else \
+		echo "sqlc not installed (go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest); skipping drift check"; \
+	fi
+
+check: lint test check-pure sqlc-diff ## All checks
 
 migrate-up: ## Apply migrations
 	goose -dir migrations postgres "$$DATABASE_URL" up
@@ -58,3 +69,9 @@ migrate-down: ## Roll back the last migration
 clean: ## Remove build output
 	rm -rf bin internal/web/dist/* web/node_modules
 	touch internal/web/dist/.gitkeep
+
+test-integration: ## Run integration tests against the dev Postgres
+	TEST_DATABASE_URL="postgres://konku:konku@localhost:5433/konku?sslmode=disable" go test ./internal/store/ -v
+
+sqlc: ## Regenerate type-safe Go from SQL
+	sqlc generate

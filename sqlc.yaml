@@ -1,0 +1,61 @@
+version: "2"
+sql:
+  - engine: postgresql
+    queries: internal/store/queries
+    # Schema is read from the migrations themselves, so the generated types
+    # cannot drift from what actually ships to the database.
+    schema: migrations
+    gen:
+      go:
+        package: gen
+        out: internal/store/gen
+        sql_package: pgx/v5
+
+        # Nullable columns become pointers instead of zero values. This is not
+        # cosmetic: card_schedules.next_review_date is NULL for mastered cards,
+        # and reading that as the zero date would silently put every mastered
+        # card back at the front of the due list (D-008).
+        emit_pointers_for_null_types: true
+
+        emit_json_tags: true
+        emit_interface: true
+        emit_empty_slices: true
+
+        # Overrides are by db_type, not by column, so they apply to query
+        # arguments as well as result columns. Without that, `sqlc.arg(today)`
+        # comes back as pgtype.Date and every caller has to convert.
+        overrides:
+          # Dates map to time.Time because pgx cannot decode a date (OID 1082)
+          # into a string in binary format.
+          #
+          # This is a wire-format concession, NOT a change to the date model:
+          # a Postgres `date` carries no timezone, and internal/store/date.go
+          # converts to and from srs.Date at the boundary using UTC only. Every
+          # layer above the store still deals in local YYYY-MM-DD strings, so
+          # the "an 11pm session belongs to that day" rule is intact. Do not
+          # call In(), Local() or UTC() on these values anywhere else.
+          - db_type: "date"
+            go_type: "time.Time"
+          - db_type: "date"
+            nullable: true
+            go_type:
+              type: "time.Time"
+              pointer: true
+
+          # pgtype.UUID is awkward to construct and compare. Handlers and tests
+          # deal in uuid.UUID.
+          - db_type: "uuid"
+            go_type: "github.com/google/uuid.UUID"
+          - db_type: "uuid"
+            nullable: true
+            go_type:
+              type: "github.com/google/uuid.UUID"
+              pointer: true
+
+          - db_type: "timestamptz"
+            go_type: "time.Time"
+          - db_type: "timestamptz"
+            nullable: true
+            go_type:
+              type: "time.Time"
+              pointer: true
