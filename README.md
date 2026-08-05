@@ -1,5 +1,8 @@
 # Konku
 
+**Konku** — *Konsisten-ku*, "my consistency". The name is the thesis: small
+consistency beats occasional intensity.
+
 Personal learning system. One job: **nothing you learn disappears silently.**
 
 Markdown notes with flashcards embedded inline, a spaced-repetition scheduler
@@ -64,3 +67,6 @@ docs/               GOALS · PRD · TECH · DECISIONS · backlog.csv
 Read `docs/GOALS.md` first — it explains why this exists. `docs/DECISIONS.md`
 records what was decided *and what was rejected*; check it before proposing
 anything, because a lot of obvious-seeming ideas were cut deliberately.
+
+`docs/tasks/` is the MVP execution plan — start at
+[`docs/tasks/README.md`](docs/tasks/README.md).

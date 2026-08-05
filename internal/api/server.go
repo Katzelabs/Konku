@@ -12,7 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/zidanhafiz/konku/internal/config"
+	"github.com/Katzelabs/Konku/internal/config"
 )
 
 // Server holds the dependencies handlers need. Dependency injection is a

@@ -1,5 +1,7 @@
 # Konku
 
+*Konsisten-ku* — "my consistency". The name is the thesis: small consistency beats occasional intensity.
+
 Personal learning system. Self-hosted, multi-tenant but never social. One job: **nothing you learn disappears silently.**
 
 Notes (markdown) with flashcards embedded inline, a spaced-repetition scheduler over those cards, a focus timer, and MCP access so Claude can read and write the knowledge base directly.
@@ -22,6 +24,7 @@ Scope is the **MVP** in `PRD.md` §8, ~62 h across 22 tasks in `docs/backlog.csv
 | `docs/PRD.md` | Product: features, priorities, milestones |
 | `docs/TECH.md` | Architecture, data model, card syntax, infra |
 | `docs/DECISIONS.md` | Why things were decided, and **what was rejected**. Check before proposing anything — a lot of obvious-seeming ideas were cut deliberately. |
+| `docs/tasks/` | **MVP execution plan** — 4 files, build order, acceptance criteria. Source of truth for what to build next. |
 
 ## Rules
 

@@ -15,9 +15,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/zidanhafiz/konku/internal/api"
-	"github.com/zidanhafiz/konku/internal/config"
-	"github.com/zidanhafiz/konku/internal/web"
+	"github.com/Katzelabs/Konku/internal/api"
+	"github.com/Katzelabs/Konku/internal/config"
+	"github.com/Katzelabs/Konku/internal/web"
 )
 
 func main() {

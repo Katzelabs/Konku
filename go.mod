@@ -1,4 +1,4 @@
-module github.com/zidanhafiz/konku
+module github.com/Katzelabs/Konku
 
 go 1.24.0
 
