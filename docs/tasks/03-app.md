@@ -9,7 +9,7 @@ usable.
 
 ## A1 — Notes API
 
-`todo` · ~3 h · needs C3, F5
+`done` · ~3 h · needs C3, F5
 
 `internal/api/notes.go`, inside the `requireUser` group.
 
@@ -33,15 +33,19 @@ schedule due tomorrow.
 
 ## A2 — Review API
 
-`todo` · ~3.5 h · needs A1
+`done` · ~3.5 h · needs A1
 
 `internal/api/review.go`.
 
 ```
 GET  /api/review/due          capped ~10, oldest-due first
-GET  /api/review/{cardID}/answer
-POST /api/review/{cardID}     {rating: "ingat" | "lupa"}
+GET  /api/review/{noteID}/{cardID}/answer
+POST /api/review/{noteID}/{cardID}    {rating: "ingat" | "lupa"}
 ```
+
+> Built with the note in the path. Card IDs are unique within a note, not
+> within the account — the primary key is `(note_id, id)` — so `{cardID}`
+> alone cannot address a card.
 
 - The due list returns **`front` only**. The answer is a separate request made
   when the user chooses to reveal. Shipping `back` alongside the prompt would
@@ -60,7 +64,7 @@ POST /api/review/{cardID}     {rating: "ingat" | "lupa"}
 
 ## A3 — Focus session API
 
-`todo` · ~1.5 h · needs F5
+`done` · ~1.5 h · needs F5
 
 `POST /api/sessions` — `{domainId?, durationMinutes, sessionDate}`.
 
@@ -75,7 +79,7 @@ tomorrow's.
 
 ## A4 — Note list and editor
 
-`todo` · ~5 h · needs A1, F7
+`done` · ~5 h · needs A1, F7
 
 `web/src/features/notes/`.
 
@@ -99,7 +103,7 @@ eat the project.
 
 ## A5 — Review screen
 
-`todo` · ~4 h · needs A2
+`done` · ~4 h · needs A2
 
 `web/src/features/review/`.
 
@@ -123,7 +127,7 @@ prompt only  →  [Tampilkan jawaban]  →  answer  →  [Ingat] [Belum ingat]
 
 ## A6 — Focus timer
 
-`todo` · ~5 h · needs A3
+`done` · ~5 h · needs A3
 
 `web/src/features/timer/`.
 
@@ -145,7 +149,7 @@ completes at the right moment.
 
 ## A7 — Capture at session end
 
-`todo` · ~4 h · needs A6, A1
+`done` · ~4 h · needs A6, A1
 
 `web/src/features/timer/CaptureDialog.tsx`.
 

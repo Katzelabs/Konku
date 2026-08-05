@@ -20,6 +20,19 @@ export interface Note {
   updatedAt: string
 }
 
+/**
+ * The list shape. It carries no markdown on purpose — the list screen shows a
+ * title, a date and a card count, and shipping every note's full text to
+ * render that is pure waste.
+ */
+export interface NoteSummary {
+  id: string
+  title: string
+  domainId: DomainId | null
+  cardCount: number
+  updatedAt: string
+}
+
 export type CardType = 'basic' | 'cloze' | 'feynman'
 export type Rating = 'ingat' | 'lupa'
 
@@ -36,9 +49,22 @@ export interface DueCard {
   front: string
 }
 
+export interface DueList {
+  cards: DueCard[]
+  /** How many are due in all, before the daily cap (D-009). */
+  total: number
+}
+
 /** Returned only after the user has chosen to reveal. */
 export interface CardAnswer {
   back: string
+}
+
+export interface RatingResult {
+  stage: number
+  state: 'learning' | 'mastered'
+  /** Null once mastered: the card is no longer scheduled. */
+  nextReviewDate: string | null
 }
 
 export interface FocusSession {

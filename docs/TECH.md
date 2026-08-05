@@ -188,15 +188,22 @@ Rules:
 **Design the HTTP API tool-shaped from the start.** Same operations serve three surfaces: React app, MCP server, and (later) an in-app assistant.
 
 ```
-POST   /api/notes                 create
-GET    /api/notes/:id             read
-PATCH  /api/notes/:id             update markdown → triggers card sync
-GET    /api/notes?q=&domain=      search
-GET    /api/review/due            capped due list
-POST   /api/review/:cardId        {rating} → reschedule + log
-POST   /api/sessions              log a completed focus session
-GET    /api/stats/retention       headline metric
+POST   /api/notes                            create
+GET    /api/notes/:id                        read
+PATCH  /api/notes/:id                        update markdown → triggers card sync
+GET    /api/notes?q=&domain=                 search
+GET    /api/review/due                       capped due list
+GET    /api/review/:noteId/:cardId/answer    reveal, as its own request (D-003)
+POST   /api/review/:noteId/:cardId           {rating} → reschedule + log
+POST   /api/sessions                         log a completed focus session
+GET    /api/domains                          reference data for the timer's tag
+GET    /api/stats/retention                  headline metric
 ```
+
+**A card is addressed by note *and* ID.** Card IDs are unique within their note,
+not within the account — the primary key is `(note_id, id)` and `card.NewID`
+checks collisions against the note — so `/api/review/:cardId` alone cannot name
+a card.
 
 **MCP server talks to the HTTP API with a token, never directly to Postgres.** Keeps the boundary honest and forces the API to actually be complete. It can be a separate small Go binary. Tokens are scoped to a user like any other credential.
 

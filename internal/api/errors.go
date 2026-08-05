@@ -28,6 +28,21 @@ const (
 	CodeInternal     = "internal"
 )
 
+// maxRequestBody bounds every JSON body. A note is markdown typed by a human;
+// a megabyte is already far past anything real, and the parser should never be
+// handed an unbounded document.
+const maxRequestBody = 1 << 20
+
+// decodeJSON reads a request body and writes the 400 itself, so handlers read
+// as a straight line. It reports whether decoding succeeded.
+func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBody)).Decode(dst); err != nil {
+		writeError(w, http.StatusBadRequest, CodeBadRequest, "Permintaan tidak valid.")
+		return false
+	}
+	return true
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)

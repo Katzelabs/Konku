@@ -58,10 +58,23 @@ func (s *Server) Routes() http.Handler {
 
 			r.Get("/auth/me", s.handleMe)
 
-			// r.Route("/notes", ...)          — A1
-			// r.Get("/review/due", ...)       — A2
-			// r.Post("/review/{cardID}", ...) — A2
-			// r.Post("/sessions", ...)        — A3
+			r.Route("/notes", func(r chi.Router) {
+				r.Get("/", s.handleListNotes)
+				r.Post("/", s.handleCreateNote)
+				r.Get("/{id}", s.handleGetNote)
+				r.Patch("/{id}", s.handleUpdateNote)
+			})
+
+			// A card is addressed by note and ID together: card IDs are only
+			// unique within their note, so {cardID} alone cannot name one.
+			r.Route("/review", func(r chi.Router) {
+				r.Get("/due", s.handleDueCards)
+				r.Get("/{noteID}/{cardID}/answer", s.handleCardAnswer)
+				r.Post("/{noteID}/{cardID}", s.handleRate)
+			})
+
+			r.Post("/sessions", s.handleCreateSession)
+			r.Get("/domains", s.handleListDomains)
 		})
 
 		// Unknown /api paths must return JSON, never the HTML shell.

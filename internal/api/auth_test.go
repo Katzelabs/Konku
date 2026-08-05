@@ -5,55 +5,33 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/Katzelabs/Konku/internal/api"
-	"github.com/Katzelabs/Konku/internal/auth"
-	"github.com/Katzelabs/Konku/internal/config"
-	"github.com/Katzelabs/Konku/internal/store"
-	"github.com/Katzelabs/Konku/internal/web"
 )
 
 const testPassword = "kata sandi yang panjang"
 
+// newTestServer is the auth tests' view of the app: a server and one user who
+// has not signed in yet, because signing in is what these tests exercise.
 func newTestServer(t *testing.T) (*httptest.Server, string) {
 	t.Helper()
 
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_DATABASE_URL not set; run `make test-integration`")
-	}
-
-	ctx := context.Background()
-	st, err := store.Open(ctx, url)
-	if err != nil {
-		t.Fatalf("opening store: %v", err)
-	}
-	t.Cleanup(st.Close)
-	if err := st.Migrate(ctx); err != nil {
-		t.Fatalf("migrating: %v", err)
-	}
-
-	cfg := config.Config{Dev: true, SessionTTL: time.Hour}
-	svc := auth.NewService(st, cfg.SessionTTL)
+	app := newApp(t)
 
 	email := "api-" + uuid.NewString() + "@example.com"
-	user, err := svc.CreateUser(ctx, email, testPassword)
+	user, err := app.auth.CreateUser(app.ctx, email, testPassword)
 	if err != nil {
 		t.Fatalf("creating user: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = st.Pool().Exec(context.Background(), "DELETE FROM users WHERE id = $1", user.ID)
+		_, _ = app.store.Pool().Exec(context.Background(), "DELETE FROM users WHERE id = $1", user.ID)
 	})
 
-	srv := httptest.NewServer(api.NewServer(cfg, st, svc, web.FS()).Routes())
-	t.Cleanup(srv.Close)
-	return srv, email
+	return app.srv, email
 }
 
 func login(t *testing.T, srv *httptest.Server, email, password string) *http.Response {
