@@ -71,7 +71,7 @@ clean: ## Remove build output
 	touch internal/web/dist/.gitkeep
 
 test-integration: ## Run integration tests against the dev Postgres
-	TEST_DATABASE_URL="postgres://konku:konku@localhost:5433/konku?sslmode=disable" go test ./internal/store/ -v
+	TEST_DATABASE_URL="postgres://konku:konku@localhost:5433/konku?sslmode=disable" go test ./internal/store/ ./internal/api/ -v
 
 sqlc: ## Regenerate type-safe Go from SQL
 	sqlc generate

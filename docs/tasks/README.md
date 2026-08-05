@@ -1,13 +1,13 @@
 # Tasks
 
-MVP execution plan. **~48.5 h remaining** of the ~62 h scoped in `PRD.md` §8.
+MVP execution plan. **~41 h remaining** of the ~62 h scoped in `PRD.md` §8.
 
 These four files are the source of truth for MVP work. `docs/backlog.csv` stays
 as the ClickUp-import artifact and covers v0.2 / v0.3 / Later.
 
 | File | Scope | Remaining |
 |---|---|---|
-| [01-foundation.md](01-foundation.md) | DB wiring, store with user scoping, auth | ~7.5 h |
+| [01-foundation.md](01-foundation.md) | DB wiring, store with user scoping, auth | **done** |
 | [02-card-engine.md](02-card-engine.md) | Markdown parser, card sync transaction | ~9 h |
 | [03-app.md](03-app.md) | API endpoints, React screens, timer | ~26 h |
 | [04-ship.md](04-ship.md) | CI, deploy, backups, validation | ~6 h |
@@ -16,13 +16,14 @@ as the ClickUp-import artifact and covers v0.2 / v0.3 / Later.
 
 ```
 01 Foundation ──► 02 Card engine ──► 03 App ──► 04 Ship
+   ✅ done          ← next
 ```
 
 Strictly sequential at the file level. Inside a file, dependencies are noted
 per task. **02 is the highest-risk work** — a bug there silently corrupts
 review history rather than throwing, so it gets tests before it gets callers.
 
-## Already done (~13.5 h)
+## Already done (~21 h)
 
 - Repo skeleton, `go.mod` at root, Makefile, Dockerfile, dev compose
 - `internal/srs` — the scheduler, complete with table-driven tests
@@ -32,7 +33,10 @@ review history rather than throwing, so it gets tests before it gets callers.
 - React shell with TanStack Query wired, typed API client
 - **F1** — pgx pool capped at 10, goose migrations embedded and run at startup
 - **F2** — sqlc wired up, drift checked in `make check`
-- **F3** — store queries with `user_id` scoping, `WithTx`, 7 integration tests
+- **F3** — store queries with `user_id` scoping, `WithTx`, integration tests
+- **F4–F7** — argon2id, server-side sessions, rate-limited login, seed-user CLI, login screen
+
+**01-foundation is complete.** 22 tests pass across unit and integration.
 
 ## Rules that outrank any task here
 

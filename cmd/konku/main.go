@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Katzelabs/Konku/internal/api"
+	"github.com/Katzelabs/Konku/internal/auth"
 	"github.com/Katzelabs/Konku/internal/config"
 	"github.com/Katzelabs/Konku/internal/store"
 	"github.com/Katzelabs/Konku/internal/web"
@@ -60,7 +61,7 @@ func run() error {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.NewServer(cfg, st, web.FS()).Routes(),
+		Handler:           api.NewServer(cfg, st, auth.NewService(st, cfg.SessionTTL), web.FS()).Routes(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

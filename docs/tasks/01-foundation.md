@@ -3,7 +3,7 @@
 Database wiring, the store layer with tenancy, and auth. Nothing feature-shaped
 works until this is done.
 
-**~13 h** · blocks everything
+**Complete.** ~13 h · unblocked 02 and 03
 
 ---
 
@@ -122,7 +122,7 @@ stays green without Docker. `make test-integration` runs them.
 
 ## F4 — argon2id password hashing
 
-`todo` · ~1.5 h · needs F1
+`done` · ~1.5 h · needs F1
 
 `internal/auth/password.go`. Add `golang.org/x/crypto`.
 
@@ -133,14 +133,19 @@ stays green without Docker. `make test-integration` runs them.
 - Constant-time comparison
 - Table-driven tests, including a wrong password and a malformed hash
 
-**Done when:** hashing the same password twice gives different output and both
-verify.
+**Delivered:** `internal/auth/password.go`. PHC-encoded
+`$argon2id$v=19$m=65536,t=3,p=N$salt$hash`, per-password random salt,
+constant-time compare. Verify uses the **stored** parameters rather than the
+current constants, so raising the tuning later does not lock anyone out of
+their own account — covered by `TestVerifyUsesStoredParams`.
+
+6 tests including malformed hashes, a bcrypt hash, and a wrong argon2 version.
 
 ---
 
 ## F5 — Server-side sessions and auth middleware
 
-`todo` · ~3 h · needs F3, F4
+`done` · ~3 h · needs F3, F4
 
 `internal/auth/session.go` and `middleware.go`.
 
@@ -156,14 +161,29 @@ verify.
 - Expired sessions are deleted lazily on lookup; no cron needed at this scale
 - Uncomment the `requireUser` group in `internal/api/server.go`
 
-**Done when:** login sets a cookie, `/api/auth/me` returns the user, logout
-makes the same cookie 401, and an authenticated route without a cookie is 401.
+**Delivered:** `internal/auth/session.go` (domain) + `internal/api/auth.go`
+(HTTP) + `internal/api/ratelimit.go`. The split keeps cookies and middleware
+out of the auth package.
+
+Login always runs a password verification even when the email is unknown, so
+response timing does not reveal whether an account exists. Both failures return
+an identical body — verified by `TestLoginFailuresAreIndistinguishable`.
+
+**Bug found and fixed by the tests:** the rate limiter keyed on
+`r.RemoteAddr`, which is `IP:port`. The source port changes with every TCP
+connection, so each login attempt got its own bucket and rate limiting was
+silently a no-op. It only worked behind Caddy, where chi's RealIP rewrites
+RemoteAddr to a bare IP — i.e. it failed exactly when the proxy was bypassed,
+which is when it matters most. Now strips the port via `net.SplitHostPort`.
+
+Also corrected: an unauthenticated request used to be told its session had
+expired, which is wrong for someone who never signed in.
 
 ---
 
 ## F6 — seed-user CLI
 
-`todo` · ~1 h · needs F4, F3
+`done` · ~1 h · needs F4, F3
 
 Finish `cmd/konku/seed_user.go`.
 
@@ -172,14 +192,16 @@ Finish `cmd/konku/seed_user.go`.
 - Confirm by re-entry, enforce a minimum length, hash with F4, insert
 - Refuse politely if the email already exists
 
-**Done when:** `go run ./cmd/konku seed-user -email you@example.com` creates an
-account that can log in.
+**Delivered:** prompts twice with `term.ReadPassword`, enforces 12 characters,
+and **refuses to read from a pipe** — a piped password defeats the point of
+keeping it out of shell history. Reports a duplicate email as a plain message
+rather than a Postgres constraint error.
 
 ---
 
 ## F7 — Login screen
 
-`todo` · ~1.5 h · needs F5
+`done` · ~1.5 h · needs F5
 
 `web/src/features/auth/`.
 
@@ -190,6 +212,11 @@ account that can log in.
 - Errors show the server's `message` field verbatim; it is already Indonesian
 - **No signup link.** There is no public signup in the MVP (D-039)
 
-**Done when:** a wrong password shows a calm inline message — no red alarm
-styling, per the never-punitive constraint — and a correct one lands on the
-note list.
+**Delivered:** `web/src/features/auth/{LoginPage.tsx,useAuth.ts}`, with `App.tsx`
+switching on session state.
+
+A 401 from `/auth/me` is treated as a **normal answer** meaning "signed out",
+not an error — otherwise the app flashes a failure state on every cold load for
+a logged-out visitor. Logout calls `queryClient.clear()` so one account's
+cached notes cannot leak into the next session. Errors render in slate, not
+red, per the never-punitive constraint.

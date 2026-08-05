@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/Katzelabs/Konku/internal/auth"
 	"github.com/Katzelabs/Konku/internal/config"
 	"github.com/Katzelabs/Konku/internal/store"
 )
@@ -23,12 +24,12 @@ import (
 type Server struct {
 	cfg   config.Config
 	store *store.Store
+	auth  *auth.Service
 	dist  fs.FS
-	// auth *auth.Service — added with F5
 }
 
-func NewServer(cfg config.Config, st *store.Store, dist fs.FS) *Server {
-	return &Server{cfg: cfg, store: st, dist: dist}
+func NewServer(cfg config.Config, st *store.Store, au *auth.Service, dist fs.FS) *Server {
+	return &Server{cfg: cfg, store: st, auth: au, dist: dist}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -39,27 +40,28 @@ func (s *Server) Routes() http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
 
+	loginLimit := newRateLimiter(10, 5*time.Minute)
+
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/health", s.handleHealth)
 
 		// Unauthenticated. Rate-limited because it is the only unauthenticated
 		// write path in the application (D-039).
-		// r.With(rateLimit).Post("/auth/login", s.handleLogin)
+		r.With(loginLimit.middleware).Post("/auth/login", s.handleLogin)
+		r.Post("/auth/logout", s.handleLogout)
 
 		// Everything else requires a user. Keeping authenticated routes inside
 		// an explicit group is why chi was chosen over stdlib: "all of /api
 		// except login" is a security boundary, not a style preference.
 		r.Group(func(r chi.Router) {
-			// r.Use(s.requireUser)
-			//
-			// r.Route("/notes", func(r chi.Router) {
-			// 	r.Post("/", s.handleCreateNote)
-			// 	r.Get("/{id}", s.handleGetNote)
-			// 	r.Patch("/{id}", s.handleUpdateNote) // triggers card sync
-			// })
-			// r.Get("/review/due", s.handleDueCards)
-			// r.Post("/review/{cardID}", s.handleRateCard)
-			// r.Post("/sessions", s.handleLogSession)
+			r.Use(s.requireUser)
+
+			r.Get("/auth/me", s.handleMe)
+
+			// r.Route("/notes", ...)          — A1
+			// r.Get("/review/due", ...)       — A2
+			// r.Post("/review/{cardID}", ...) — A2
+			// r.Post("/sessions", ...)        — A3
 		})
 
 		// Unknown /api paths must return JSON, never the HTML shell.
