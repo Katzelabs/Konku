@@ -6,38 +6,72 @@ Personal learning system. Self-hosted, multi-tenant but never social. One job: *
 
 Notes (markdown) with flashcards embedded inline, a spaced-repetition scheduler over those cards, a focus timer, and MCP access so Claude can read and write the knowledge base directly.
 
+Module: `github.com/Katzelabs/Konku` · Go 1.25 · remote `Katzelabs/Konku`
+
 ## Current state
 
-**Design phase — no code yet.** The four docs below are the entire project.
+**Building the MVP.** `01-foundation` is complete: pgx pool, embedded goose migrations, sqlc, the store layer with per-user scoping, argon2id auth with server-side sessions, and a login screen. `internal/srs` (the scheduler) is done and tested.
 
-Scope is the **MVP** in `PRD.md` §8, ~62 h across 22 tasks in `docs/backlog.csv`: the retention loop (notes → cards → review), the focus timer with capture-at-session-end, and real auth. Cloze/feynman cards, domains, search, public signup and password reset are deliberately deferred to v0.2 (D-031, D-038, D-039). Do not reintroduce them.
+**Next: `docs/tasks/02-card-engine.md`** — the markdown parser (`card.Parse` / `card.Insert` are stubs with `TODO(MVP)`) and the card-sync transaction. Highest-risk work in the project.
 
-**Multi-tenant, not social** (D-039): accounts are isolated knowledge bases. `user_id` is on every owned table and every store method; ownership goes in the `WHERE` clause, never fetch-then-check.
-
-**All blocking decisions are settled** (D-032 … D-037). Next step is the repo skeleton per the layout in D-032.
+Scope is the **MVP** in `PRD.md` §8. Cloze/feynman card types, domains UI, full-text search, public signup and password reset are deliberately deferred to v0.2 (D-031, D-038, D-039). **Do not reintroduce them.**
 
 ## Read these first
 
 | Doc | What it is |
 |---|---|
 | `docs/GOALS.md` | Personal context — who the user is, the five problems this exists to solve. **Read first.** Written in Indonesian. |
+| `docs/tasks/` | **MVP execution plan** — 4 files, build order, acceptance criteria. What to build next. |
+| `docs/DECISIONS.md` | Why things were decided, and **what was rejected**. Check before proposing anything — a lot of obvious-seeming ideas were cut deliberately. |
 | `docs/PRD.md` | Product: features, priorities, milestones |
 | `docs/TECH.md` | Architecture, data model, card syntax, infra |
-| `docs/DECISIONS.md` | Why things were decided, and **what was rejected**. Check before proposing anything — a lot of obvious-seeming ideas were cut deliberately. |
-| `docs/tasks/` | **MVP execution plan** — 4 files, build order, acceptance criteria. Source of truth for what to build next. |
 
-## Rules
+## Commands
 
-- **User-facing copy in Bahasa Indonesia. Code, comments, commits, and docs in English.**
-- **Never punitive.** No guilt copy, no shaming empty states, no aggressive red, no losable streaks, no gamification. A missed day is normal and the UI treats it as normal. This is a hard constraint from `GOALS.md`, not a preference.
-- **Capture cost is the thing to protect.** Any change that adds friction to writing a note or a card is working against the product.
-- **The scheduler and the markdown parser stay pure** — no DB, no HTTP, no React imports. Table-driven tests. These two carry the product's value.
-- Dates are local `YYYY-MM-DD` strings, never UTC timestamps. An 11pm session belongs to that day.
+```bash
+make db-up             # dev Postgres on :5433
+make dev-api           # Go on :8080
+make dev-web           # Vite on :5173  ← open this one
+make check             # vet, typecheck, tests, purity, sqlc drift
+make test-integration  # needs make db-up first
+make sqlc              # after editing internal/store/queries/*.sql
+go run ./cmd/konku seed-user -email you@example.com
+```
+
+## Hard rules
+
+1. **`internal/card` and `internal/srs` import nothing from `internal/`.** They carry the product's value and stay trivially testable. `make check-pure` enforces it.
+2. **Cards match by stable ID, never by content.** Matching by content means fixing a typo destroys that card's review history. Silent and unrecoverable (D-019).
+3. **Note update + card sync commit in one transaction.**
+4. **Every query is scoped by `user_id` in the `WHERE` clause**, never fetch-then-check. A wrong owner gets *not found*, never *forbidden* — otherwise the API can be used to probe for other users' data (D-039).
+5. **Dates are local `YYYY-MM-DD`.** An 11pm session belongs to that day.
+6. **Never punitive.** No guilt copy, no shaming empty states, no aggressive red, no losable streaks, no gamification. A missed day is normal and the UI treats it as normal. Hard constraint from `GOALS.md`, not a preference.
+7. **Capture cost is the thing to protect.** Anything that adds friction to writing a note or a card works against the product.
+8. **User-facing copy in Bahasa Indonesia. Code, comments, commits, docs in English.**
+
+## Conventions already established — follow them
+
+**Data access.** `store.Q()` returns the sqlc queries; `store.WithTx(ctx, fn)` for transactions. Write SQL in `internal/store/queries/*.sql`, run `make sqlc`. **Never hand-edit `internal/store/gen/`.** No hand-written passthrough wrappers around generated code — the `user_id` in the SQL is what enforces tenancy.
+
+**Dates.** `internal/store/date.go` (`ToTime`, `ToTimePtr`, `FromTime`, `FromTimePtr`) is the *only* place a date crosses between `srs.Date` and `time.Time`. It uses UTC exclusively. Never call `In()`, `Local()` or `UTC()` on a date elsewhere. An empty `srs.Date` means "not scheduled" and maps to SQL NULL.
+
+**HTTP.** Handlers are plain `http.HandlerFunc`. Use `writeJSON` / `writeError` / `writeInternal` / `writeNotFound` — one error shape `{"error":{"code","message"}}`, with `message` user-facing and therefore Indonesian. Authenticated handlers get the user from `api.UserFrom(ctx)`. New authenticated routes go inside the `requireUser` group in `server.go`.
+
+**Errors.** Wrap with `%w` and a package prefix (`fmt.Errorf("store: ...: %w", err)`). Internal errors are logged, never returned to the client verbatim.
+
+**Tests.** Table-driven. Integration tests live beside their package, skip unless `TEST_DATABASE_URL` is set, and clean up via `t.Cleanup`. Assert behaviour, not wiring — the login rate limiter shipped broken precisely because nothing asserted a 429.
+
+**Frontend.** Feature folders under `web/src/features/`. TanStack Query owns all server state; `useState`/Zustand only for genuine client state, which is essentially just the timer (D-044). A 401 from `/auth/me` is a normal "signed out" answer, not an error.
 
 ## Stack
 
-Go + **chi** (single binary, monolith) · Postgres 17 + pgvector via **pgx + sqlc** · **goose** migrations (embedded) · stdlib `log/slog` · React + TS + Vite + Tailwind + **TanStack Query**, embedded via `go:embed` · Caddy · Docker Compose.
+Go + **chi** (single binary, monolith) · Postgres 17 + pgvector via **pgx + sqlc** · **goose** migrations, embedded and run at startup · stdlib `log/slog` · React + TS + Vite + Tailwind + **TanStack Query**, embedded via `go:embed` · Caddy · Docker Compose.
 
-`go.mod` at repo root, React in `web/` (D-032). Non-stdlib backend deps are exactly **chi, pgx, goose, x/crypto** — keep it that way (D-045). No ORM (D-043), no Gin/Echo/Fiber (D-042), no Redis (D-023), no MongoDB (D-027), no Node process in production (D-041).
+`go.mod` at repo root, React in `web/` (D-032). Vite writes straight into `internal/web/dist` — no copy step. Non-stdlib backend deps are exactly **chi, pgx, goose, x/crypto, x/term, google/uuid** — keep the list short (D-045). No ORM (D-043), no Gin/Echo/Fiber (D-042), no Redis (D-023), no MongoDB (D-027), no Node process in production (D-041).
 
-Prod runs on a self-hosted VPS against a **shared** Postgres (own database + own role); dev compose ships its own Postgres on port 5433.
+Prod runs on a self-hosted VPS against a **shared** Postgres (own database + own role), so the pgx pool is capped at 10 connections — an uncapped pool can starve every other project on the box (D-028). Dev compose ships its own Postgres on 5433.
+
+## Gotchas
+
+- `internal/web/dist/.gitkeep` is committed and **must stay** — `//go:embed all:dist` is a compile-time error on a missing directory, so a fresh clone would not build. Vite's `emptyOutDir` deletes it; `make build` puts it back.
+- `make` runs each recipe line in its own shell — a guard clause with `exit 0` does not skip the following line.
