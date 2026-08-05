@@ -10,7 +10,7 @@ Tests come before callers.
 
 ## C1 — `card.Parse` — basic `Q :: A` only
 
-`todo` · ~5 h · no deps (pure package)
+`done` · ~5 h · no deps (pure package)
 
 Implement the stub in `internal/card/parse.go`.
 
@@ -50,7 +50,7 @@ passes.
 
 ## C2 — `card.Insert`
 
-`todo` · ~1 h · needs C1
+`done` · ~1 h · needs C1
 
 The write half of the chokepoint (D-033). Appends a card to the markdown with a
 freshly assigned ID and returns the updated document.
@@ -66,7 +66,7 @@ the same file.
 
 ## C3 — Card sync on note save
 
-`todo` · ~3 h · needs C1, F3
+`done` · ~3 h · needs C1, F3
 
 `internal/store/notes.go`. Where the transaction lives.
 

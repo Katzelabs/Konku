@@ -12,7 +12,9 @@ Module: `github.com/Katzelabs/Konku` · Go 1.25 · remote `Katzelabs/Konku`
 
 **Building the MVP.** `01-foundation` is complete: pgx pool, embedded goose migrations, sqlc, the store layer with per-user scoping, argon2id auth with server-side sessions, and a login screen. `internal/srs` (the scheduler) is done and tested.
 
-**Next: `docs/tasks/02-card-engine.md`** — the markdown parser (`card.Parse` / `card.Insert` are stubs with `TODO(MVP)`) and the card-sync transaction. Highest-risk work in the project.
+`02-card-engine` is complete: `card.Parse` / `card.Insert` (basic `Q :: A`, stable IDs written back into the markdown, a fixed point on re-parse) and `store.CreateNoteWithCards` / `store.UpdateNoteWithCards` — the note update and the card diff-by-ID in one transaction.
+
+**Next: `docs/tasks/03-app.md`** — the API endpoints and the React screens. Start with A1, the notes API: the handlers are thin over `UpdateNoteWithCards`, and `PATCH` must return the **stored** markdown so the editor picks up newly assigned card IDs.
 
 Scope is the **MVP** in `PRD.md` §8. Cloze/feynman card types, domains UI, full-text search, public signup and password reset are deliberately deferred to v0.2 (D-031, D-038, D-039). **Do not reintroduce them.**
 
