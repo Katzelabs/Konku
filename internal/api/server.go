@@ -5,7 +5,9 @@
 package api
 
 import (
+	"context"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -13,19 +15,20 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/Katzelabs/Konku/internal/config"
+	"github.com/Katzelabs/Konku/internal/store"
 )
 
 // Server holds the dependencies handlers need. Dependency injection is a
 // struct with fields and a constructor — no framework (D-045).
 type Server struct {
-	cfg  config.Config
-	dist fs.FS
-	// store *store.Store  — added with the first real endpoint
-	// auth  *auth.Service — added with the auth task
+	cfg   config.Config
+	store *store.Store
+	dist  fs.FS
+	// auth *auth.Service — added with F5
 }
 
-func NewServer(cfg config.Config, dist fs.FS) *Server {
-	return &Server{cfg: cfg, dist: dist}
+func NewServer(cfg config.Config, st *store.Store, dist fs.FS) *Server {
+	return &Server{cfg: cfg, store: st, dist: dist}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -71,6 +74,20 @@ func (s *Server) Routes() http.Handler {
 	return r
 }
 
+// handleHealth pings the database rather than just returning ok. A health
+// check that cannot fail tells you nothing.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	if err := s.store.Ping(ctx); err != nil {
+		slog.Error("health check failed", "error", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"status": "degraded",
+			"db":     "unreachable",
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "db": "ok"})
 }

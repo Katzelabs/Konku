@@ -17,6 +17,7 @@ import (
 
 	"github.com/Katzelabs/Konku/internal/api"
 	"github.com/Katzelabs/Konku/internal/config"
+	"github.com/Katzelabs/Konku/internal/store"
 	"github.com/Katzelabs/Konku/internal/web"
 )
 
@@ -43,13 +44,23 @@ func run() error {
 		return err
 	}
 
-	// TODO(MVP): open the pgx pool with SetMaxOpenConns(10) — Go defaults to
-	// unlimited and one app can starve every project on the shared Postgres
-	// (D-028). Then run goose migrations from the embedded migrations/ dir.
+	ctx := context.Background()
+
+	st, err := store.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+
+	// Fatal on purpose: serving against a half-migrated schema produces errors
+	// that look like application bugs.
+	if err := st.Migrate(ctx); err != nil {
+		return err
+	}
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.NewServer(cfg, web.FS()).Routes(),
+		Handler:           api.NewServer(cfg, st, web.FS()).Routes(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

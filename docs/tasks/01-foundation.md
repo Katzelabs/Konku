@@ -9,24 +9,38 @@ works until this is done.
 
 ## F1 — Open the pgx pool and run migrations at startup
 
-`todo` · ~1.5 h · no deps
+`done` · ~1.5 h · no deps
 
-Replace the `TODO(MVP)` in `cmd/konku/main.go`.
+**Delivered:**
 
-- Add `jackc/pgx/v5` and `pressly/goose/v3`
-- Open a `pgxpool` from `cfg.DatabaseURL`
-- **Cap the pool: `MaxConns = 10`.** Postgres `max_connections` defaults to 100
-  and this runs on a *shared* instance — an uncapped pool starves every other
-  project on the box (D-028)
-- `//go:embed migrations/*.sql` and run goose Up at startup, so deploy is just
-  "run the binary"
-- Close the pool in the existing graceful-shutdown path
-- Fail fast and loud if migrations error — never serve against a half-migrated
-  schema
+- `migrations/embed.go` — the migrations directory is now a Go package, so the
+  `.sql` files stay usable by the goose CLI (`make migrate-up`) *and* get
+  embedded in the binary
+- `internal/store/store.go` — `Open` parses, caps and **pings** before
+  returning, so a bad database fails at startup instead of on first request
+- `internal/store/migrate.go` — goose over a `*sql.DB` borrowed from the same
+  pgx pool via `stdlib.OpenDBFromPool`, with goose's output routed through
+  `slog` so startup logs stay structured
+- `/api/health` now pings the database — a health check that cannot fail tells
+  you nothing
 
-**Done when:** `make db-up && go run ./cmd/konku` creates all 8 tables and the
-5 seeded domains; `/api/health` still returns ok; SIGTERM closes the pool
-cleanly.
+**Verified:**
+
+| Check | Result |
+|---|---|
+| 8 tables + `goose_db_version` created | ✅ |
+| 5 domains seeded, `coding` at quota 0 (D-034) | ✅ |
+| Restart is idempotent | `schema up to date, version 1` |
+| **Pool cap under 25 concurrent requests** | **exactly 10 backends** |
+| SIGTERM releases connections | 1 → 0 backends |
+| Unreachable DB / bad credentials / malformed URL | clear error, **exit 1** |
+
+Exit 1 matters: `restart: unless-stopped` then retries, and a broken deploy
+fails loudly instead of serving 500s.
+
+**Note for F2 —** `go get` bumped the go directive to **1.25.7** (goose
+requires it). The Dockerfile pin moved `golang:1.24-alpine` → `1.25-alpine`.
+CI (S1) must use 1.25.
 
 ---
 
