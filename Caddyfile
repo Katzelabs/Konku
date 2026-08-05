@@ -1,0 +1,6 @@
+# Reference config for the shared infra stack. Caddy terminates TLS and routes
+# by hostname to each project's app container on the `shared` network.
+{$KONKU_HOST} {
+	encode zstd gzip
+	reverse_proxy app:8080
+}

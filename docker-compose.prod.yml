@@ -1,0 +1,22 @@
+# Production: app only. Postgres, Caddy and Mongo live in the shared infra
+# stack on the VPS and are reached over the external `shared` network (D-024).
+#
+#   docker network create shared    # once, when standing up the infra stack
+services:
+  app:
+    image: konku:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}      # postgres://konku:...@postgres:5432/konku
+      SESSION_SECRET: ${SESSION_SECRET}
+      ALLOW_SIGNUP: "false"
+      DEV: "false"
+    networks:
+      - shared
+    labels:
+      caddy: ${KONKU_HOST}
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+
+networks:
+  shared:
+    external: true
