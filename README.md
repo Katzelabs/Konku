@@ -16,7 +16,7 @@ Go + Postgres + React, one binary, self-hosted.
 ```bash
 make setup          # go mod download + npm install
 make db-up          # Postgres on :5433
-cp .env.example .env
+go run ./cmd/konku seed-user -email you@example.com
 
 make dev-api        # terminal 1 — Go on :8080
 make dev-web        # terminal 2 — Vite on :5173  ← open this
@@ -24,6 +24,10 @@ make dev-web        # terminal 2 — Vite on :5173  ← open this
 
 Vite proxies `/api` to the Go server, which keeps development same-origin so
 session cookies behave exactly as they do in production.
+
+No `.env` needed to start: the Makefile defaults to the dev Postgres from
+`make db-up`. Copy `.env.example` to `.env` when you want to override
+something — make loads it automatically.
 
 ```bash
 make build          # frontend → embedded → bin/konku

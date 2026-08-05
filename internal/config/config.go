@@ -42,10 +42,13 @@ func Load() (Config, error) {
 	c.SessionTTL = time.Duration(days) * 24 * time.Hour
 
 	if c.DatabaseURL == "" {
-		return Config{}, fmt.Errorf("DATABASE_URL is required")
+		return Config{}, fmt.Errorf(
+			"DATABASE_URL is required. In development run `make dev-api`, which loads .env " +
+				"and falls back to the dev Postgres from `make db-up`")
 	}
 	if c.SessionSecret == "" && !c.Dev {
-		return Config{}, fmt.Errorf("SESSION_SECRET is required outside dev")
+		return Config{}, fmt.Errorf(
+			"SESSION_SECRET is required outside dev. Generate one with: openssl rand -base64 32")
 	}
 	return c, nil
 }

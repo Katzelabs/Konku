@@ -1,5 +1,20 @@
 export PATH := $(PATH):$(shell go env GOPATH)/bin
 
+# Load .env if it exists. Go does not read .env on its own, and pulling in a
+# dotenv library for one convenience would break the short-dependency rule
+# (D-045) — make can do it in two lines.
+#
+# `-include` so a missing .env is not an error; `export` passes everything
+# through to the recipes.
+-include .env
+export
+
+# Defaults, so `make db-up && make dev-api` works on a fresh clone with no
+# .env at all. A value in .env wins, because include runs first and ?= does
+# not overwrite.
+DATABASE_URL ?= postgres://konku:konku@localhost:5433/konku?sslmode=disable
+DEV ?= true
+
 .PHONY: help setup dev dev-api dev-web build test test-integration sqlc lint check check-pure migrate-up migrate-down db-up db-down clean
 
 help:
