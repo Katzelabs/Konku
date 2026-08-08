@@ -30,6 +30,7 @@ import { Separator } from '../components/ui/separator'
 import { Loading } from '../components/ui/spinner'
 import { Switch } from '../components/ui/switch'
 import { Textarea } from '../components/ui/textarea'
+import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group'
 
 /**
  * Living style guide, dev-only (see main.tsx). Open http://localhost:5173/design.
@@ -40,6 +41,7 @@ import { Textarea } from '../components/ui/textarea'
  */
 export default function StyleGuide() {
   const [dark, setDark] = useState(false)
+  const [duration, setDuration] = useState(20)
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark)
@@ -194,6 +196,21 @@ export default function StyleGuide() {
               <Label htmlFor="sg-disabled">Disabled</Label>
               <Input id="sg-disabled" disabled defaultValue="Tidak bisa diubah" />
             </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label>Durasi</Label>
+              <ToggleGroup>
+                {[15, 20, 25, 30, 45].map((m) => (
+                  <ToggleGroupItem
+                    key={m}
+                    selected={m === duration}
+                    onClick={() => setDuration(m)}
+                  >
+                    {m} menit
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </div>
           </div>
         </Section>
 
@@ -307,7 +324,7 @@ export default function StyleGuide() {
           title="Focus surface"
           hint="The timer pill. Dark on light, light on dark."
         >
-          <div className="inline-flex items-center gap-3 rounded-xl bg-focus px-4 py-3 text-focus-fg shadow-float">
+          <div className="inline-flex w-fit items-center gap-3 rounded-xl bg-focus px-4 py-3 text-focus-fg shadow-float">
             <span className="font-mono text-xl font-semibold tabular-nums">
               20:00
             </span>

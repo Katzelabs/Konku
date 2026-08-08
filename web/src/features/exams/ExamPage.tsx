@@ -1,6 +1,13 @@
 import { useState } from 'react'
+import { ArrowLeft, Play } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { Attempt, CardRef } from '../../api/types'
+import { DomainDot } from '../../components/ui/badge'
+import { Button } from '../../components/ui/button'
+import { Card } from '../../components/ui/card'
+import { Notice } from '../../components/ui/notice'
+import { Separator } from '../../components/ui/separator'
+import { Loading } from '../../components/ui/spinner'
 import { humanDay, today } from '../../lib/date'
 import { useDomains } from '../domains/queries'
 import {
@@ -22,10 +29,8 @@ export default function ExamPage() {
   const archive = useArchiveExam()
   const del = useDeleteExam()
 
-  if (isPending) return <p className="text-sm text-slate-500">Memuat…</p>
-  if (error) {
-    return <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">{error.message}</p>
-  }
+  if (isPending) return <Loading />
+  if (error) return <Notice>{error.message}</Notice>
   if (!exam) return null
 
   const domain = domains?.find((d) => d.id === exam.domainId)
@@ -40,79 +45,105 @@ export default function ExamPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <Link to="/exams" className="text-sm text-slate-500 underline underline-offset-4">
-          Semua ujian
-        </Link>
-        <h1 className="mt-2 text-xl font-semibold text-slate-900">{exam.title}</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          {exam.selection === 'random' ? `${exam.questionCount} soal acak` : 'soal tetap'}
-          {domain && ` · ${domain.label}`}
-        </p>
+    <div className="mx-auto flex max-w-3xl flex-col gap-6">
+      <div className="flex flex-col gap-3">
+        <Button asChild variant="link" size="inline" className="self-start">
+          <Link to="/exams">
+            <ArrowLeft />
+            Semua ujian
+          </Link>
+        </Button>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-surface-fg">
+            {exam.title}
+          </h1>
+          <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-fg">
+            {exam.selection === 'random'
+              ? `${exam.questionCount} soal acak`
+              : 'soal tetap'}
+            {domain && (
+              <>
+                <span aria-hidden>·</span>
+                <DomainDot color={domain.color} />
+                {domain.label}
+              </>
+            )}
+          </p>
+        </div>
       </div>
 
-      {exam.description && <p className="text-sm text-slate-700">{exam.description}</p>}
+      {exam.description && (
+        <p className="text-reading text-reading-fg">{exam.description}</p>
+      )}
 
       <div className="flex flex-col gap-2">
-        <button
+        <Button
+          variant="primary"
+          size="lg"
           onClick={begin}
           disabled={start.isPending}
-          className="self-start rounded-lg bg-slate-900 px-4 py-2.5 font-medium text-white disabled:opacity-40"
+          className="self-start"
         >
+          <Play />
           {open ? 'Lanjutkan' : 'Mulai'}
-        </button>
+        </Button>
         {/*
           An unfinished attempt is picked up, not replaced. The server returns
           the same attempt with the same questions (D-050), so this is a plain
           statement of where things stand rather than a warning.
         */}
-        {open && <p className="text-sm text-slate-500">Ada percobaan yang belum selesai.</p>}
-        {start.isError && (
-          <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">
-            {start.error.message}
-          </p>
+        {open && (
+          <p className="text-sm text-muted-fg">Ada percobaan yang belum selesai.</p>
         )}
+        {start.isError && <Notice>{start.error.message}</Notice>}
       </div>
 
       {exam.selection === 'fixed' && (
         <CardPicker examId={id} domainId={exam.domainId} pinned={exam.cards} />
       )}
 
-      <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium text-slate-500">Riwayat</h2>
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium text-muted-fg">Riwayat</h2>
         {finished.length === 0 ? (
-          <p className="text-sm text-slate-400">Belum pernah dikerjakan.</p>
+          <p className="text-sm text-subtle-fg">Belum pernah dikerjakan.</p>
         ) : (
-          <ul className="flex flex-col gap-1">
-            {finished.map((a) => (
-              <AttemptRow key={a.id} attempt={a} />
-            ))}
-          </ul>
+          <Card>
+            <ul className="divide-y divide-border">
+              {finished.map((a) => (
+                <AttemptRow key={a.id} attempt={a} />
+              ))}
+            </ul>
+          </Card>
         )}
       </section>
 
-      <div className="flex gap-3 border-t border-slate-100 pt-4 text-xs text-slate-500">
-        <button
-          onClick={() => archive.mutate(id, { onSuccess: () => navigate('/exams') })}
-          className="underline underline-offset-4"
-        >
-          Arsipkan
-        </button>
-        <button
-          onClick={() => del.mutate(id, { onSuccess: () => navigate('/exams') })}
-          className="underline underline-offset-4"
-        >
-          Hapus
-        </button>
-      </div>
+      <Separator />
 
-      {/*
-        An exam that has been sat cannot be deleted: that would destroy its
-        score history while the answers survive in review_logs (D-051). The
-        server's message says to archive instead.
-      */}
-      {del.isError && <p className="text-xs text-slate-600">{del.error.message}</p>}
+      <div className="flex flex-col gap-2">
+        <div className="flex gap-3">
+          <Button
+            variant="link"
+            size="inline"
+            onClick={() => archive.mutate(id, { onSuccess: () => navigate('/exams') })}
+          >
+            Arsipkan
+          </Button>
+          <Button
+            variant="link"
+            size="inline"
+            onClick={() => del.mutate(id, { onSuccess: () => navigate('/exams') })}
+          >
+            Hapus
+          </Button>
+        </div>
+
+        {/*
+          An exam that has been sat cannot be deleted: that would destroy its
+          score history while the answers survive in review_logs (D-051). The
+          server's message says to archive instead.
+        */}
+        {del.isError && <Notice>{del.error.message}</Notice>}
+      </div>
     </div>
   )
 }
@@ -135,8 +166,8 @@ function CardPicker({
   const { data: candidates, isPending } = usePickableCards(domainId)
   const save = useSetExamCards()
 
-  const [chosen, setChosen] = useState<string[]>(
-    () => pinned.map((c) => `${c.noteId}:${c.cardId}`),
+  const [chosen, setChosen] = useState<string[]>(() =>
+    pinned.map((c) => `${c.noteId}:${c.cardId}`),
   )
 
   function toggle(key: string) {
@@ -156,53 +187,60 @@ function CardPicker({
     })
   }
 
-  if (isPending) return <p className="text-sm text-slate-500">Memuat kartu…</p>
+  if (isPending) return <Loading label="Memuat kartu…" />
 
   const cards = candidates ?? []
 
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between">
-        <h2 className="text-sm font-medium text-slate-500">Soal</h2>
-        <span className="text-xs text-slate-400">{chosen.length} dipilih</span>
+        <h2 className="text-sm font-medium text-muted-fg">Soal</h2>
+        <span className="text-xs text-subtle-fg tabular-nums">
+          {chosen.length} dipilih
+        </span>
       </div>
 
       {cards.length === 0 ? (
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-subtle-fg">
           Belum ada kartu yang bisa dipilih. Tulis beberapa kartu di catatan dulu.
         </p>
       ) : (
         <>
-          <ul className="flex max-h-72 flex-col gap-1 overflow-y-auto rounded-xl border border-slate-200 p-2">
-            {cards.map((c) => {
-              const key = `${c.noteId}:${c.cardId}`
-              return (
-                <li key={key}>
-                  <label className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
-                    <input
-                      type="checkbox"
-                      checked={chosen.includes(key)}
-                      onChange={() => toggle(key)}
-                      className="mt-1"
-                    />
-                    <span className="flex-1">
-                      {c.front}
-                      <span className="ml-2 text-xs text-slate-400">{c.noteTitle}</span>
-                    </span>
-                  </label>
-                </li>
-              )
-            })}
-          </ul>
+          <Card className="max-h-80 overflow-y-auto p-2">
+            <ul className="flex flex-col gap-0.5">
+              {cards.map((c) => {
+                const key = `${c.noteId}:${c.cardId}`
+                return (
+                  <li key={key}>
+                    <label className="flex cursor-pointer items-start gap-2.5 rounded-md px-2 py-2 text-sm text-secondary-fg hover:bg-muted">
+                      <input
+                        type="checkbox"
+                        checked={chosen.includes(key)}
+                        onChange={() => toggle(key)}
+                        className="mt-1 accent-primary"
+                      />
+                      <span className="flex-1">
+                        {c.front}
+                        <span className="ml-2 text-xs text-subtle-fg">
+                          {c.noteTitle}
+                        </span>
+                      </span>
+                    </label>
+                  </li>
+                )
+              })}
+            </ul>
+          </Card>
 
-          <button
+          <Button
+            variant="secondary"
             onClick={submit}
             disabled={save.isPending}
-            className="self-start rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-40"
+            className="self-start"
           >
             Simpan daftar soal
-          </button>
-          {save.isError && <p className="text-sm text-slate-600">{save.error.message}</p>}
+          </Button>
+          {save.isError && <Notice>{save.error.message}</Notice>}
         </>
       )}
     </section>
@@ -211,14 +249,14 @@ function CardPicker({
 
 function AttemptRow({ attempt }: { attempt: Attempt }) {
   return (
-    <li className="flex items-baseline justify-between rounded-lg px-3 py-2 odd:bg-slate-50">
-      <span className="text-sm text-slate-600">{humanDay(attempt.startedAt)}</span>
+    <li className="flex items-baseline justify-between px-4 py-2.5">
+      <span className="text-sm text-muted-fg">{humanDay(attempt.startedAt)}</span>
       {/*
         A plain ratio, no colour and no pass mark. There is no threshold to
         fall below here — the number is information about what to revisit, not
         a verdict (rule 6).
       */}
-      <span className="text-sm text-slate-900">
+      <span className="text-sm text-card-fg tabular-nums">
         {attempt.correctCount} / {attempt.totalCount}
       </span>
     </li>

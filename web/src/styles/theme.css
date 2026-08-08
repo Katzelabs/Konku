@@ -100,8 +100,10 @@
   --ring: #6366f1;
 
   /* Lighter than the page, not darker — on a dark background the focus pill
-     has to step forward the same way it steps back on a light one. */
-  --focus: #1f2937;
+     has to step forward the same way it steps back on a light one. Two steps
+     up from `card`, not one: shadow-float is a dark shadow and contributes
+     nothing here, so separation has to come from the fill alone. */
+  --focus: #374151;
   --focus-fg: #f9fafb;
   --focus-muted-fg: #9ca3af;
 

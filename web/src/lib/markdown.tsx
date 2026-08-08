@@ -27,7 +27,7 @@ export function renderMarkdown(md: string): ReactNode {
   function flushParagraph() {
     if (!paragraph.length) return
     out.push(
-      <p key={key++} className="leading-relaxed text-slate-700">
+      <p key={key++} className="text-reading text-reading-fg">
         {renderInline(paragraph.join(' '))}
       </p>,
     )
@@ -37,7 +37,7 @@ export function renderMarkdown(md: string): ReactNode {
   function flushList() {
     if (!list.length) return
     out.push(
-      <ul key={key++} className="list-disc space-y-1 pl-5 text-slate-700">
+      <ul key={key++} className="list-disc space-y-1 pl-5 text-reading text-reading-fg">
         {list.map((item, i) => (
           <li key={i}>{renderInline(item)}</li>
         ))}
@@ -49,7 +49,7 @@ export function renderMarkdown(md: string): ReactNode {
   function flushQuote() {
     if (!quote.length) return
     out.push(
-      <blockquote key={key++} className="border-l-2 border-slate-300 pl-4 italic text-slate-600">
+      <blockquote key={key++} className="rounded-r-md border-l-2 border-primary bg-accent py-2 pl-4 text-reading text-accent-fg">
         {renderInline(quote.join(' '))}
       </blockquote>,
     )
@@ -69,7 +69,7 @@ export function renderMarkdown(md: string): ReactNode {
     if (code !== null) {
       if (delimiter && delimiter[0] === fence[0] && delimiter.length >= fence.length) {
         out.push(
-          <pre key={key++} className="overflow-x-auto rounded-lg bg-slate-100 p-3 text-sm">
+          <pre key={key++} className="overflow-x-auto rounded-md bg-muted p-3 font-mono text-sm text-secondary-fg">
             <code>{code.join('\n')}</code>
           </pre>,
         )
@@ -99,13 +99,13 @@ export function renderMarkdown(md: string): ReactNode {
     if (card) {
       flushAll()
       out.push(
-        <div key={key++} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-          <p className="font-medium text-slate-800">{renderInline(card.front)}</p>
-          <p className="mt-1 text-slate-600">{renderInline(card.back)}</p>
+        <div key={key++} className="rounded-lg border border-border bg-muted px-4 py-3">
+          <p className="font-medium text-card-fg">{renderInline(card.front)}</p>
+          <p className="mt-1 text-reading-fg">{renderInline(card.back)}</p>
           {!card.id && (
             /* Not yet saved, so the parser has not given it an ID. Said
                without alarm — it is simply not saved yet. */
-            <p className="mt-2 text-xs text-slate-400">Kartu baru</p>
+            <p className="mt-2 text-xs text-subtle-fg">Kartu baru</p>
           )}
         </div>,
       )
@@ -118,7 +118,7 @@ export function renderMarkdown(md: string): ReactNode {
       const level = heading[1].length
       const size = level === 1 ? 'text-xl' : level === 2 ? 'text-lg' : 'text-base'
       out.push(
-        <p key={key++} className={`${size} font-semibold text-slate-900`}>
+        <p key={key++} className={`${size} font-semibold text-card-fg`}>
           {renderInline(heading[2])}
         </p>,
       )
@@ -148,14 +148,14 @@ export function renderMarkdown(md: string): ReactNode {
 
   if (code !== null) {
     out.push(
-      <pre key={key++} className="overflow-x-auto rounded-lg bg-slate-100 p-3 text-sm">
+      <pre key={key++} className="overflow-x-auto rounded-md bg-muted p-3 font-mono text-sm text-secondary-fg">
         <code>{code.join('\n')}</code>
       </pre>,
     )
   }
   flushAll()
 
-  return <div className="flex flex-col gap-3">{out}</div>
+  return <div className="flex max-w-reading-measure flex-col gap-4">{out}</div>
 }
 
 /** Inline code, bold and italic. Everything else stays literal text. */
@@ -172,7 +172,7 @@ function renderInline(text: string): ReactNode[] {
 
     if (token.startsWith('`')) {
       out.push(
-        <code key={key++} className="rounded-sm bg-slate-100 px-1 py-0.5 text-[0.9em]">
+        <code key={key++} className="rounded-sm bg-muted px-1 py-0.5 font-mono text-[0.9em]">
           {token.slice(1, -1)}
         </code>,
       )

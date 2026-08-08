@@ -1,6 +1,12 @@
 import { useState } from 'react'
+import { ArrowLeft } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import type { AttemptDetail, AttemptQuestion, Rating } from '../../api/types'
+import { Button } from '../../components/ui/button'
+import { Card } from '../../components/ui/card'
+import { Notice } from '../../components/ui/notice'
+import { PageHeader } from '../../components/ui/page-header'
+import { Loading } from '../../components/ui/spinner'
 import {
   useAnswerQuestion,
   useAttempt,
@@ -22,10 +28,8 @@ export default function SitExamPage() {
   const { id = '' } = useParams()
   const { data: attempt, isPending, error } = useAttempt(id)
 
-  if (isPending) return <p className="text-sm text-slate-500">Memuat…</p>
-  if (error) {
-    return <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">{error.message}</p>
-  }
+  if (isPending) return <Loading />
+  if (error) return <Notice>{error.message}</Notice>
   if (!attempt) return null
 
   if (attempt.finishedAt !== null) return <Result attempt={attempt} />
@@ -44,28 +48,39 @@ function Sitting({ attempt }: { attempt: AttemptDetail }) {
 
   if (remaining === 0 || !question) {
     return (
-      <div className="flex flex-col gap-5">
-        <h1 className="text-xl font-semibold text-slate-900">Selesai menjawab</h1>
-        <p className="text-sm text-slate-600">Semua soal sudah dijawab.</p>
-        <button
+      <div className="mx-auto flex max-w-2xl flex-col gap-5">
+        <PageHeader
+          title="Selesai menjawab"
+          description="Semua soal sudah dijawab."
+        />
+        <Button
+          variant="primary"
+          size="lg"
           onClick={() => finish.mutate(attempt.id)}
           disabled={finish.isPending}
-          className="self-start rounded-lg bg-slate-900 px-4 py-2.5 font-medium text-white disabled:opacity-40"
+          className="self-start"
         >
           Lihat hasil
-        </button>
-        {finish.isError && <p className="text-sm text-slate-600">{finish.error.message}</p>}
+        </Button>
+        {finish.isError && <Notice>{finish.error.message}</Notice>}
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="mx-auto flex max-w-2xl flex-col gap-6">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold text-slate-900">Ujian</h1>
-        <span className="text-sm text-slate-400">
+        <h1 className="text-2xl font-bold tracking-tight text-surface-fg">Ujian</h1>
+        <span className="text-sm text-subtle-fg tabular-nums">
           Soal {index + 1} dari {attempt.questions.length}
         </span>
+      </div>
+
+      <div className="h-1 overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full bg-primary transition-[width] duration-(--animate-duration-calm) ease-(--ease-quiet)"
+          style={{ width: `${(index / attempt.questions.length) * 100}%` }}
+        />
       </div>
 
       <Question
@@ -105,23 +120,20 @@ function Question({
   if (question.missing) {
     return (
       <div className="flex flex-col gap-5">
-        <div className="rounded-xl border border-slate-200 px-5 py-8">
-          <p className="text-slate-500">Kartu ini sudah tidak ada.</p>
-        </div>
-        <button
-          onClick={onAnswered}
-          className="self-start rounded-lg border border-slate-300 px-4 py-2.5 font-medium text-slate-700"
-        >
+        <Card className="px-6 py-10">
+          <p className="text-muted-fg">Kartu ini sudah tidak ada.</p>
+        </Card>
+        <Button variant="secondary" size="lg" onClick={onAnswered} className="self-start">
           Lewati
-        </button>
+        </Button>
       </div>
     )
   }
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="rounded-xl border border-slate-200 px-5 py-8">
-        <p className="text-lg text-slate-900">{question.front}</p>
+      <Card className="px-6 py-10">
+        <p className="text-reading text-card-fg">{question.front}</p>
 
         {/*
           Nothing about the answer exists here until the request resolves — no
@@ -129,46 +141,45 @@ function Question({
           is defeated by one glance at the DOM (D-003).
         */}
         {reveal && (
-          <div className="mt-5 border-t border-slate-100 pt-5">
-            {answer.isPending && <p className="text-sm text-slate-400">Membuka…</p>}
-            {answer.error && <p className="text-sm text-slate-500">{answer.error.message}</p>}
-            {answer.data && <p className="text-lg text-slate-700">{answer.data.back}</p>}
+          <div className="mt-6 border-t border-border pt-6">
+            {answer.isPending && <Loading label="Membuka…" />}
+            {answer.error && (
+              <p className="text-sm text-muted-fg">{answer.error.message}</p>
+            )}
+            {answer.data && (
+              <p className="text-reading text-reading-fg">{answer.data.back}</p>
+            )}
           </div>
         )}
-      </div>
+      </Card>
 
       {!reveal ? (
-        <button
-          onClick={() => setReveal(true)}
-          className="rounded-lg bg-slate-900 px-4 py-2.5 font-medium text-white"
-        >
+        <Button variant="primary" size="lg" onClick={() => setReveal(true)}>
           Tampilkan jawaban
-        </button>
+        </Button>
       ) : (
         <div className="grid grid-cols-2 gap-3">
-          {/* Both answers are ordinary. Forgetting carries no red. */}
-          <button
+          {/* Both answers are ordinary. Forgetting carries no red (D-054). */}
+          <Button
+            variant="secondary"
+            size="lg"
             onClick={() => rate('lupa')}
             disabled={submit.isPending || !answer.data}
-            className="rounded-lg border border-slate-300 px-4 py-2.5 font-medium text-slate-700 disabled:opacity-40"
           >
             Belum ingat
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="primary"
+            size="lg"
             onClick={() => rate('ingat')}
             disabled={submit.isPending || !answer.data}
-            className="rounded-lg bg-slate-900 px-4 py-2.5 font-medium text-white disabled:opacity-40"
           >
             Ingat
-          </button>
+          </Button>
         </div>
       )}
 
-      {submit.isError && (
-        <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">
-          {submit.error.message}
-        </p>
-      )}
+      {submit.isError && <Notice>{submit.error.message}</Notice>}
     </div>
   )
 }
@@ -177,47 +188,51 @@ function Result({ attempt }: { attempt: AttemptDetail }) {
   const missed = attempt.questions.filter((q) => q.rating === 'lupa')
 
   return (
-    <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold text-slate-900">Hasil</h1>
+    <div className="mx-auto flex max-w-2xl flex-col gap-6">
+      <PageHeader title="Hasil" />
 
       {/*
         The number, stated plainly. No grade, no pass mark, no colour: there is
         nothing to fall below here, and the useful part is the list underneath
-        it (rule 6).
+        it (rule 6). The mockup's letter grades and green/red readiness chips
+        are exactly what this refuses to be (D-054).
       */}
-      <div className="rounded-lg bg-slate-50 px-4 py-6">
-        <p className="text-2xl text-slate-900">
-          {attempt.correctCount} <span className="text-slate-400">/ {attempt.totalCount}</span>
+      <Card className="px-6 py-8">
+        <p className="text-3xl font-semibold text-card-fg tabular-nums">
+          {attempt.correctCount}
+          <span className="text-subtle-fg"> / {attempt.totalCount}</span>
         </p>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-2 text-sm text-muted-fg">
           Ini tidak mengubah jadwal ulangan kartu-kartu ini.
         </p>
-      </div>
+      </Card>
 
       {missed.length > 0 && (
-        <section className="flex flex-col gap-2">
-          <h2 className="text-sm font-medium text-slate-500">Yang belum nempel</h2>
-          <ul className="flex flex-col gap-1">
-            {missed.map((q) => (
-              <li key={`${q.noteId}:${q.cardId}`}>
-                <Link
-                  to={`/notes/${q.noteId}`}
-                  className="block rounded-lg px-3 py-2 text-sm text-slate-700 odd:bg-slate-50"
-                >
-                  {q.front || 'Kartu ini sudah tidak ada.'}
-                </Link>
-              </li>
-            ))}
-          </ul>
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-medium text-muted-fg">Yang belum nempel</h2>
+          <Card>
+            <ul className="divide-y divide-border">
+              {missed.map((q) => (
+                <li key={`${q.noteId}:${q.cardId}`}>
+                  <Link
+                    to={`/notes/${q.noteId}`}
+                    className="block px-4 py-3 text-sm text-secondary-fg transition-colors hover:bg-muted"
+                  >
+                    {q.front || 'Kartu ini sudah tidak ada.'}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </Card>
         </section>
       )}
 
-      <Link
-        to={`/exams/${attempt.examId}`}
-        className="self-start rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
-      >
-        Kembali ke ujian
-      </Link>
+      <Button asChild variant="secondary" className="self-start">
+        <Link to={`/exams/${attempt.examId}`}>
+          <ArrowLeft />
+          Kembali ke ujian
+        </Link>
+      </Button>
     </div>
   )
 }

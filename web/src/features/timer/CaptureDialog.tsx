@@ -1,5 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import type { DomainId } from '../../api/types'
+import { Button } from '../../components/ui/button'
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../../components/ui/dialog'
+import { Notice } from '../../components/ui/notice'
+import { Textarea } from '../../components/ui/textarea'
 import { useCreateNote } from '../notes/queries'
 
 /**
@@ -12,6 +24,10 @@ import { useCreateNote } from '../notes/queries'
  *
  * So: one field, already focused, and skipping costs nothing. No "are you
  * sure", no second screen, no nagging. A skipped session is a normal session.
+ *
+ * Now on Radix, which brings the focus trap, focus restore and scroll lock the
+ * hand-rolled version never had. Escape and outside-click still just close,
+ * because closing is a skip and a skip needs no confirmation.
  */
 export default function CaptureDialog({
   domainId,
@@ -28,15 +44,6 @@ export default function CaptureDialog({
     field.current?.focus()
   }, [])
 
-  useEffect(() => {
-    // Escape simply closes. It is a skip, and a skip needs no confirmation.
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
-
   function save() {
     const contentMd = text.trim()
     if (!contentMd) {
@@ -50,58 +57,46 @@ export default function CaptureDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-10 flex items-end justify-center bg-slate-900/20 p-4 sm:items-center">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Apa yang kamu pelajari?"
-        className="w-full max-w-lg rounded-xl bg-white p-5 shadow-lg"
-      >
-        <h2 className="text-lg font-medium text-slate-900">Apa yang kamu pelajari?</h2>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent showClose={false}>
+        <DialogHeader>
+          <DialogTitle>Apa yang kamu pelajari?</DialogTitle>
+          <DialogDescription>Satu baris saja cukup.</DialogDescription>
+        </DialogHeader>
 
-        <textarea
-          ref={field}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) save()
-          }}
-          rows={4}
-          placeholder="Satu baris saja cukup."
-          className="mt-3 w-full resize-y rounded-lg border border-slate-200 p-3 text-sm leading-relaxed focus:border-slate-400"
-        />
+        <DialogBody className="flex flex-col gap-2">
+          <Textarea
+            ref={field}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) save()
+            }}
+            rows={4}
+            placeholder="Satu baris saja cukup."
+          />
 
-        <p className="mt-2 text-xs text-slate-500">
-          Tulis kartu dengan format <code className="rounded-sm bg-slate-100 px-1">Tanya :: Jawab</code>
-        </p>
-
-        {create.isError && (
-          <p className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">
-            {create.error.message}
+          <p className="text-xs text-subtle-fg">
+            Tulis kartu dengan format{' '}
+            <code className="rounded-sm bg-muted px-1 font-mono">Tanya :: Jawab</code>
           </p>
-        )}
 
-        <div className="mt-4 flex items-center justify-end gap-3">
+          {create.isError && <Notice>{create.error.message}</Notice>}
+        </DialogBody>
+
+        <DialogFooter>
           {/*
             "Lewati" is a plain, equal option — same weight as saving, no
             greying out, no guilt copy. Nothing was lost by not writing.
           */}
-          <button
-            onClick={onClose}
-            disabled={create.isPending}
-            className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600"
-          >
+          <Button variant="secondary" onClick={onClose} disabled={create.isPending}>
             Lewati
-          </button>
-          <button
-            onClick={save}
-            disabled={create.isPending}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-          >
+          </Button>
+          <Button variant="primary" onClick={save} disabled={create.isPending}>
             {create.isPending ? 'Menyimpan…' : 'Simpan'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

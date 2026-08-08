@@ -1,4 +1,10 @@
 import { useState, type FormEvent } from 'react'
+import { GraduationCap } from 'lucide-react'
+import { Button } from '../../components/ui/button'
+import { Card } from '../../components/ui/card'
+import { Input } from '../../components/ui/input'
+import { Label } from '../../components/ui/label'
+import { Notice } from '../../components/ui/notice'
 import { useLogin } from './useAuth'
 
 export default function LoginPage() {
@@ -12,60 +18,73 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center p-6">
-      <h1 className="text-2xl font-semibold text-slate-900">Konku</h1>
-      <p className="mt-1 text-sm text-slate-500">Masuk untuk melanjutkan.</p>
+    <main className="flex min-h-dvh items-center justify-center p-6">
+      <div className="flex w-full max-w-sm flex-col gap-6">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <span className="flex size-11 items-center justify-center rounded-lg bg-primary text-primary-fg">
+            <GraduationCap className="size-6" />
+          </span>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-surface-fg">
+              Konku
+            </h1>
+            <p className="mt-1 text-sm text-muted-fg">Masuk untuk melanjutkan.</p>
+          </div>
+        </div>
 
-      <form onSubmit={onSubmit} className="mt-8 flex flex-col gap-4">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-slate-700">Email</span>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            autoComplete="username"
-            autoFocus
-            className="rounded-lg border border-slate-300 px-3 py-2 focus:border-slate-500"
-          />
-        </label>
+        <Card className="p-6">
+          <form onSubmit={onSubmit} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="username"
+                autoFocus
+              />
+            </div>
 
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-slate-700">Kata sandi</span>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            autoComplete="current-password"
-            className="rounded-lg border border-slate-300 px-3 py-2 focus:border-slate-500"
-          />
-        </label>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="password">Kata sandi</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+              />
+            </div>
 
-        {login.isError && (
-          /*
-           * Calm, not alarming. GOALS.md rules out aggressive red and anything
-           * that reads as punishment — a mistyped password is an ordinary
-           * event, so it gets an ordinary colour.
-           */
-          <p role="alert" className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">
-            {login.error.message}
-          </p>
-        )}
+            {login.isError && (
+              /*
+               * Calm, not alarming. GOALS.md rules out aggressive red and
+               * anything that reads as punishment — a mistyped password is an
+               * ordinary event, so it gets an ordinary colour.
+               */
+              <Notice role="alert">{login.error.message}</Notice>
+            )}
 
-        <button
-          type="submit"
-          disabled={login.isPending}
-          className="mt-2 rounded-lg bg-slate-900 px-4 py-2.5 font-medium text-white disabled:opacity-50"
-        >
-          {login.isPending ? 'Sebentar…' : 'Masuk'}
-        </button>
-      </form>
+            <Button
+              type="submit"
+              variant="primary"
+              size="lg"
+              disabled={login.isPending}
+              className="mt-2"
+            >
+              {login.isPending ? 'Sebentar…' : 'Masuk'}
+            </Button>
+          </form>
+        </Card>
 
-      {/*
-        No signup link on purpose: there is no public registration in the MVP.
-        Accounts are created with `konku seed-user` (D-039).
-      */}
+        {/*
+          No signup link on purpose: there is no public registration in the MVP.
+          Accounts are created with `konku seed-user` (D-039).
+        */}
+      </div>
     </main>
   )
 }

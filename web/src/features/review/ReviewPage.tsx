@@ -2,6 +2,12 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import type { DueCard, Rating } from '../../api/types'
+import { Button } from '../../components/ui/button'
+import { Card } from '../../components/ui/card'
+import { EmptyState } from '../../components/ui/empty-state'
+import { Notice } from '../../components/ui/notice'
+import { PageHeader } from '../../components/ui/page-header'
+import { Loading } from '../../components/ui/spinner'
 import { reviewKeys, useAnswer, useDueCards, useRate } from './queries'
 
 export default function ReviewPage() {
@@ -13,10 +19,8 @@ export default function ReviewPage() {
   // reshuffle mid-review. Leaving the screen is when it becomes stale.
   useEffect(() => () => void qc.invalidateQueries({ queryKey: reviewKeys.due() }), [qc])
 
-  if (isPending) return <p className="text-sm text-slate-500">Memuat…</p>
-  if (error) {
-    return <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">{error.message}</p>
-  }
+  if (isPending) return <Loading />
+  if (error) return <Notice>{error.message}</Notice>
 
   const cards = data?.cards ?? []
   const deferred = Math.max(0, (data?.total ?? 0) - cards.length)
@@ -25,12 +29,26 @@ export default function ReviewPage() {
   if (index >= cards.length) return <Finished deferred={deferred} />
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="mx-auto flex max-w-2xl flex-col gap-6">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold text-slate-900">Ulangan</h1>
-        <span className="text-sm text-slate-400">
+        <h1 className="text-2xl font-bold tracking-tight text-surface-fg">
+          Ulangan
+        </h1>
+        <span className="text-sm text-subtle-fg tabular-nums">
           {index + 1} dari {cards.length}
         </span>
+      </div>
+
+      {/*
+        A plain position bar, not a score and not a target. It says how far
+        through today's cards you are and nothing else — there is no quota to
+        fall short of (D-009, D-054).
+      */}
+      <div className="h-1 overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full bg-primary transition-[width] duration-(--animate-duration-calm) ease-(--ease-quiet)"
+          style={{ width: `${(index / cards.length) * 100}%` }}
+        />
       </div>
 
       <CardReview
@@ -55,8 +73,8 @@ function CardReview({ card, onRated }: { card: DueCard; onRated: () => void }) {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="rounded-xl border border-slate-200 px-5 py-8">
-        <p className="text-lg text-slate-900">{card.front}</p>
+      <Card className="px-6 py-10">
+        <p className="text-reading text-card-fg">{card.front}</p>
 
         {/*
           Nothing about the answer exists here until the request resolves —
@@ -65,91 +83,86 @@ function CardReview({ card, onRated }: { card: DueCard; onRated: () => void }) {
           answer that is merely hidden is defeated by one glance at the DOM.
         */}
         {reveal && (
-          <div className="mt-5 border-t border-slate-100 pt-5">
-            {answer.isPending && <p className="text-sm text-slate-400">Membuka…</p>}
-            {answer.error && <p className="text-sm text-slate-500">{answer.error.message}</p>}
-            {answer.data && <p className="text-lg text-slate-700">{answer.data.back}</p>}
+          <div className="mt-6 border-t border-border pt-6">
+            {answer.isPending && <Loading label="Membuka…" />}
+            {answer.error && (
+              <p className="text-sm text-muted-fg">{answer.error.message}</p>
+            )}
+            {answer.data && (
+              <p className="text-reading text-reading-fg">{answer.data.back}</p>
+            )}
           </div>
         )}
-      </div>
+      </Card>
 
       {!reveal ? (
-        <button
-          onClick={() => setReveal(true)}
-          className="rounded-lg bg-slate-900 px-4 py-2.5 font-medium text-white"
-        >
+        <Button variant="primary" size="lg" onClick={() => setReveal(true)}>
           Tampilkan jawaban
-        </button>
+        </Button>
       ) : (
         <div className="grid grid-cols-2 gap-3">
           {/*
             Both answers are ordinary. "Belum ingat" carries no red and no
             warning tone: forgetting is the normal case the entire schedule is
-            built around, not a mistake to flag.
+            built around, not a mistake to flag. The palette has no token that
+            would let this go wrong (D-054).
           */}
-          <button
+          <Button
+            variant="secondary"
+            size="lg"
             onClick={() => submit('lupa')}
             disabled={rate.isPending || !answer.data}
-            className="rounded-lg border border-slate-300 px-4 py-2.5 font-medium text-slate-700 disabled:opacity-40"
           >
             Belum ingat
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="primary"
+            size="lg"
             onClick={() => submit('ingat')}
             disabled={rate.isPending || !answer.data}
-            className="rounded-lg bg-slate-900 px-4 py-2.5 font-medium text-white disabled:opacity-40"
           >
             Ingat
-          </button>
+          </Button>
         </div>
       )}
 
       {/* A card you could not answer leads back to where it came from. */}
-      <Link
-        to={`/notes/${card.noteId}`}
-        className="self-start text-sm text-slate-500 underline underline-offset-4"
-      >
-        Lihat catatan asal
-      </Link>
+      <Button asChild variant="link" size="inline" className="self-start">
+        <Link to={`/notes/${card.noteId}`}>Lihat catatan asal</Link>
+      </Button>
 
-      {rate.isError && (
-        <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">{rate.error.message}</p>
-      )}
+      {rate.isError && <Notice>{rate.error.message}</Notice>}
     </div>
   )
 }
 
 function Finished({ deferred, nothingToday }: { deferred: number; nothingToday?: boolean }) {
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold text-slate-900">Ulangan</h1>
+    <div className="mx-auto flex max-w-2xl flex-col gap-6">
+      <PageHeader title="Ulangan" />
 
       {/*
         Calm, not congratulatory. No confetti and nothing to lose: an empty
         day is a normal day, and a streak that could break here is exactly
         what GOALS.md rules out.
-      */}
-      <div className="rounded-lg bg-slate-50 px-4 py-6">
-        <p className="text-slate-700">
-          {nothingToday ? 'Tidak ada yang perlu diulang hari ini.' : 'Selesai untuk hari ini.'}
-        </p>
-        {deferred > 0 && (
-          /*
-            Stated plainly and left there. No button to carry on: the cap
-            exists so that coming back after two weeks away is ten cards and
-            not forty, and an "continue anyway" button would quietly undo it
-            (D-009).
-          */
-          <p className="mt-1 text-sm text-slate-500">Sisanya besok.</p>
-        )}
-      </div>
 
-      <Link
-        to="/notes"
-        className="self-start rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
-      >
-        Ke catatan
-      </Link>
+        `deferred` is stated and left there. No "continue anyway" button: the
+        cap exists so that coming back after two weeks away is ten cards and
+        not forty, and a button to override it would quietly undo that (D-009).
+      */}
+      <EmptyState
+        title={
+          nothingToday
+            ? 'Tidak ada yang perlu diulang hari ini.'
+            : 'Selesai untuk hari ini.'
+        }
+        description={deferred > 0 ? 'Sisanya besok.' : undefined}
+        action={
+          <Button asChild variant="secondary" size="sm">
+            <Link to="/notes">Ke catatan</Link>
+          </Button>
+        }
+      />
     </div>
   )
 }

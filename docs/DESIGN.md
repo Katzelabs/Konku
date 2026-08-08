@@ -18,6 +18,7 @@ Rollup drops the module, so it never reaches the embedded binary.
 | `web/src/index.css` | One line: imports the above. |
 | `web/src/components/ui/` | The primitives. Owned source, not a dependency. |
 | `web/src/lib/utils.ts` | `cn()` — clsx + tailwind-merge. |
+| `web/src/components/layout/` | The shell: sidebar, mobile nav, focus pill. |
 | `web/src/design/StyleGuide.tsx` | The living style guide at `/design`. |
 
 Tailwind is **v4**. Tokens are CSS (`@theme`), not a JS config — there is no
@@ -137,6 +138,7 @@ and `Switch`. Everything else is markup.
 | `Button` | `primary` `secondary` `ghost` `accent` `link` `destructive`; `sm/md/lg/icon/inline`; `asChild` for `<Link>`. |
 | `Input` `Textarea` `Label` | Native elements. No Radix Label — every control here is native. |
 | `Card` + `Header/Title/Description/Content/Footer` | |
+| `ToggleGroup` / `ToggleGroupItem` | Pick one from a short, always-visible set: editor mode, timer duration, domain. |
 | `Badge` `DomainDot` `DomainBadge` | |
 | `Dialog` + parts | Radix. `DialogTitle` is required for a11y. |
 | `Switch` `Separator` | |

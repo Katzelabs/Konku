@@ -1,14 +1,18 @@
-import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes } from 'react-router-dom'
+import { AppShell } from './components/layout/AppShell'
+import { Loading } from './components/ui/spinner'
+import { Notice } from './components/ui/notice'
 import LoginPage from './features/auth/LoginPage'
-import { useLogout, useMe } from './features/auth/useAuth'
+import { useMe } from './features/auth/useAuth'
 import DomainsPage from './features/domains/DomainsPage'
 import ExamPage from './features/exams/ExamPage'
 import ExamsPage from './features/exams/ExamsPage'
 import SitExamPage from './features/exams/SitExamPage'
 import NoteEditorPage from './features/notes/NoteEditorPage'
-import NoteListPage from './features/notes/NoteListPage'
+import NotesPage from './features/notes/NotesPage'
+import NoNoteSelected from './features/notes/NoNoteSelected'
 import ReviewPage from './features/review/ReviewPage'
-import { useDueCards } from './features/review/queries'
+import { TimerProvider } from './features/timer/TimerProvider'
 import TimerPage from './features/timer/TimerPage'
 
 export default function App() {
@@ -17,7 +21,7 @@ export default function App() {
   if (isPending) {
     return (
       <main className="flex min-h-dvh items-center justify-center">
-        <p className="text-sm text-slate-500">Memuat…</p>
+        <Loading />
       </main>
     )
   }
@@ -25,9 +29,7 @@ export default function App() {
   if (error) {
     return (
       <main className="mx-auto max-w-sm p-6 pt-24">
-        <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">
-          Tidak bisa menghubungi server. Coba muat ulang halaman.
-        </p>
+        <Notice>Tidak bisa menghubungi server. Coba muat ulang halaman.</Notice>
       </main>
     )
   }
@@ -35,13 +37,21 @@ export default function App() {
   if (!user) return <LoginPage />
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-3xl flex-col gap-6 p-6">
-      <Nav />
-      <main className="flex-1">
+    <TimerProvider>
+      <AppShell email={user.email}>
         <Routes>
           <Route path="/" element={<Navigate to="/notes" replace />} />
-          <Route path="/notes" element={<NoteListPage />} />
-          <Route path="/notes/:id" element={<NoteEditorPage />} />
+
+          {/*
+            The list and the editor share a route so the two-pane layout keeps
+            the list mounted while you move between notes. On phones NotesPage
+            shows one pane at a time.
+          */}
+          <Route path="/notes" element={<NotesPage />}>
+            <Route index element={<NoNoteSelected />} />
+            <Route path=":id" element={<NoteEditorPage />} />
+          </Route>
+
           <Route path="/review" element={<ReviewPage />} />
           <Route path="/timer" element={<TimerPage />} />
           <Route path="/exams" element={<ExamsPage />} />
@@ -50,66 +60,7 @@ export default function App() {
           <Route path="/domains" element={<DomainsPage />} />
           <Route path="*" element={<Navigate to="/notes" replace />} />
         </Routes>
-      </main>
-    </div>
-  )
-}
-
-function Nav() {
-  const logout = useLogout()
-  const due = useDueCards()
-
-  return (
-    <header className="flex items-center justify-between border-b border-slate-100 pb-4">
-      <nav className="flex items-center gap-1">
-        <Tab to="/notes">Catatan</Tab>
-        <Tab to="/review">
-          Ulangan
-          {/*
-            A quiet count, not a badge demanding attention. There is no home
-            screen in the MVP, so this is the only place that says whether
-            anything is waiting — it stays grey and says nothing at zero,
-            because an empty day is a normal day and not a failure to fix
-            (GOALS.md).
-          */}
-          {due.data && due.data.total > 0 && (
-            <span className="ml-1.5 text-xs text-slate-400">{due.data.total}</span>
-          )}
-        </Tab>
-        <Tab to="/timer">Fokus</Tab>
-        <Tab to="/exams">Ujian</Tab>
-      </nav>
-
-      <div className="flex items-center gap-3">
-        {/*
-          Domain management is a settings-shaped thing, not a fifth place to
-          go every day. It sits beside "Keluar" rather than in the tab row.
-        */}
-        <NavLink to="/domains" className="text-sm text-slate-400 underline underline-offset-4">
-          Domain
-        </NavLink>
-        <button
-          onClick={() => logout.mutate()}
-          className="text-sm text-slate-400 underline underline-offset-4"
-        >
-          Keluar
-        </button>
-      </div>
-    </header>
-  )
-}
-
-function Tab({ to, children }: { to: string; children: React.ReactNode }) {
-  return (
-    <NavLink
-      to={to}
-      className={({ isActive }) =>
-        `rounded-lg px-3 py-1.5 text-sm ${
-          isActive ? 'bg-slate-100 font-medium text-slate-900' : 'text-slate-500'
-        }`
-      }
-    >
-      {children}
-    </NavLink>
+      </AppShell>
+    </TimerProvider>
   )
 }
