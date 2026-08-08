@@ -103,6 +103,67 @@ func TestSessionValidation(t *testing.T) {
 	}
 }
 
+// The history the timer page reads back: newest first, and only this user's.
+func TestListSessions(t *testing.T) {
+	app := newApp(t)
+	c := app.newClient(t)
+
+	today := srs.Today(time.Now())
+	// Posted oldest-first so "newest first" is a real assertion rather than
+	// insertion order surviving by accident.
+	for _, offset := range []int{-2, -1, 0} {
+		c.expect(c.do(http.MethodPost, "/sessions", map[string]any{
+			"durationMinutes": 15 + -offset,
+			"sessionDate":     string(today.AddDays(offset)),
+		}), http.StatusCreated, nil)
+	}
+
+	var got []sessionBody
+	c.expect(c.do(http.MethodGet, "/sessions", nil), http.StatusOK, &got)
+
+	if len(got) != 3 {
+		t.Fatalf("got %d sessions, want 3", len(got))
+	}
+	for i, want := range []srs.Date{today, today.AddDays(-1), today.AddDays(-2)} {
+		if got[i].SessionDate != string(want) {
+			t.Errorf("session %d date = %q, want %q — not newest first", i, got[i].SessionDate, want)
+		}
+	}
+
+	// Another user's sessions are invisible, and it is the WHERE clause that
+	// makes them so — an empty list, never a 403 (D-039).
+	other := app.newClient(t)
+	other.expect(other.do(http.MethodPost, "/sessions", map[string]any{
+		"durationMinutes": 45,
+		"sessionDate":     string(today),
+	}), http.StatusCreated, nil)
+
+	var mine []sessionBody
+	c.expect(c.do(http.MethodGet, "/sessions", nil), http.StatusOK, &mine)
+	if len(mine) != 3 {
+		t.Errorf("got %d sessions, want 3 — another user's session leaked in", len(mine))
+	}
+}
+
+func TestListSessionsLimit(t *testing.T) {
+	app := newApp(t)
+	c := app.newClient(t)
+
+	today := string(srs.Today(time.Now()))
+	for range 3 {
+		c.expect(c.do(http.MethodPost, "/sessions", map[string]any{
+			"durationMinutes": 20,
+			"sessionDate":     today,
+		}), http.StatusCreated, nil)
+	}
+
+	var got []sessionBody
+	c.expect(c.do(http.MethodGet, "/sessions?limit=2", nil), http.StatusOK, &got)
+	if len(got) != 2 {
+		t.Errorf("got %d sessions, want 2", len(got))
+	}
+}
+
 // A session with a date one day either side of the server's is normal — the
 // user may simply be in a different timezone.
 func TestSessionAcceptsNeighbouringDays(t *testing.T) {

@@ -79,13 +79,45 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, sessionResponse{
+	writeJSON(w, http.StatusCreated, toSessionResponse(sess))
+}
+
+// handleListSessions returns the recent focus sessions, newest first.
+//
+// A plain log, not a report: no totals, no streak, no per-domain quota
+// progress. What it answers is "did I sit down, and for how long" — the
+// weekly quota stays a direction marker rather than a debt to settle
+// (D-007, D-009, D-054).
+func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
+	user, _ := UserFrom(r.Context())
+
+	limit := intParam(r, "limit", defaultLimit, 1, maxLimit)
+
+	rows, err := s.store.Q().ListRecentFocusSessions(r.Context(), gen.ListRecentFocusSessionsParams{
+		UserID: user.ID,
+		Limit:  int32(limit),
+	})
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+
+	out := make([]sessionResponse, 0, len(rows))
+	for _, sess := range rows {
+		out = append(out, toSessionResponse(sess))
+	}
+
+	writeJSON(w, http.StatusOK, out)
+}
+
+func toSessionResponse(sess gen.FocusSession) sessionResponse {
+	return sessionResponse{
 		ID:              sess.ID.String(),
 		DomainID:        uuidString(sess.DomainID),
 		DurationMinutes: sess.DurationMinutes,
 		SessionDate:     string(store.FromTime(sess.SessionDate)),
 		CompletedAt:     sess.CompletedAt,
-	})
+	}
 }
 
 // withinClockSkew compares calendar dates only. Both sides are reduced to a

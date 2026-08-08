@@ -33,7 +33,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { to: '/notes', label: 'Catatan', icon: FileText },
   { to: '/cards', label: 'Kartu', icon: Layers },
   { to: '/review', label: 'Ulangan', icon: Repeat, showsDue: true },
-  { to: '/timer', label: 'Fokus', icon: Clock },
+  { to: '/timer', label: 'Timer', icon: Clock },
   { to: '/exams', label: 'Ujian', icon: ClipboardList },
 ]
 
@@ -61,7 +61,7 @@ const TRAIL: { match: RegExp; crumbs: Crumb[] }[] = [
   { match: /^\/notes/, crumbs: [{ label: 'Catatan' }] },
   { match: /^\/cards/, crumbs: [{ label: 'Kartu' }] },
   { match: /^\/review/, crumbs: [{ label: 'Ulangan' }] },
-  { match: /^\/timer/, crumbs: [{ label: 'Fokus' }] },
+  { match: /^\/timer/, crumbs: [{ label: 'Timer' }] },
   { match: /^\/exams\/.+/, crumbs: [{ label: 'Ujian', to: '/exams' }] },
   { match: /^\/exams/, crumbs: [{ label: 'Ujian' }] },
   { match: /^\/attempts/, crumbs: [{ label: 'Ujian', to: '/exams' }] },

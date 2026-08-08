@@ -73,6 +73,7 @@ func (s *Server) Routes() http.Handler {
 				r.Post("/{noteID}/{cardID}", s.handleRate)
 			})
 
+			r.Get("/sessions", s.handleListSessions)
 			r.Post("/sessions", s.handleCreateSession)
 
 			// Domains are per-user and editable (D-046). Deletion only

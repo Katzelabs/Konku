@@ -26,7 +26,24 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', '
 export function humanDay(iso: string, now: Date = new Date()): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
+  return dayLabel(d, now)
+}
 
+/**
+ * The same label for a stored local date (`YYYY-MM-DD`) rather than a
+ * timestamp.
+ *
+ * The parts are read by hand because `new Date('2026-08-08')` is specified as
+ * UTC midnight — west of UTC that renders every session one day early, which
+ * is exactly the bug the stored-local-date design exists to avoid.
+ */
+export function humanDate(ymd: string, now: Date = new Date()): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd)
+  if (!m) return ''
+  return dayLabel(new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])), now)
+}
+
+function dayLabel(d: Date, now: Date): string {
   const day = format(d)
   if (day === format(now)) return 'Hari ini'
 
@@ -37,6 +54,13 @@ export function humanDay(iso: string, now: Date = new Date()): string {
   const sameYear = d.getFullYear() === now.getFullYear()
   const base = `${d.getDate()} ${MONTHS[d.getMonth()]}`
   return sameYear ? base : `${base} ${d.getFullYear()}`
+}
+
+/** A timestamp as a local 24-hour clock time, for the session log. */
+export function timeOfDay(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${String(d.getHours()).padStart(2, '0')}.${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 /** Minutes and seconds for the timer face. */
