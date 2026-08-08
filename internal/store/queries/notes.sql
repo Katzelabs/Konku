@@ -11,8 +11,11 @@ VALUES ($1, $2, $3, $4)
 RETURNING *;
 
 -- name: GetNote :one
+-- A deleted note reads as absent. The Terhapus view lists them, but every
+-- other path — the editor, a PATCH, a category lookup — must not resurrect one
+-- by accident.
 SELECT * FROM notes
-WHERE id = $1 AND user_id = $2;
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL;
 
 -- name: UpdateNote :one
 UPDATE notes
@@ -20,16 +23,34 @@ SET title      = $3,
     content_md = $4,
     domain_id  = $5,
     updated_at = now()
-WHERE id = $1 AND user_id = $2
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 RETURNING *;
 
--- name: DeleteNote :execrows
-DELETE FROM notes
-WHERE id = $1 AND user_id = $2;
+-- name: SoftDeleteNotes :execrows
+-- Never a hard delete (00005). One statement serves the single-note button and
+-- the bulk selection alike: deleting one is deleting an array of one, so there
+-- is no second code path to keep in step.
+--
+-- Already-deleted ids simply do not match, which makes a repeated request a
+-- no-op rather than a way to push deleted_at forward.
+UPDATE notes
+SET deleted_at = now(), updated_at = now()
+WHERE user_id = $1 AND id = ANY(sqlc.arg(ids)::uuid[]) AND deleted_at IS NULL;
+
+-- name: RestoreNotes :execrows
+-- The undo. note_categories was never touched, so a restored note comes back
+-- still wearing its labels.
+UPDATE notes
+SET deleted_at = NULL, updated_at = now()
+WHERE user_id = $1 AND id = ANY(sqlc.arg(ids)::uuid[]) AND deleted_at IS NOT NULL;
 
 -- name: ListNotes :many
 -- The card count is gone with D-055: a note no longer contains cards, so
 -- counting them per note would be counting nothing.
+--
+-- `deleted` switches the whole list between live notes and the Terhapus view.
+-- One query rather than two so the filters, the ordering and the category
+-- aggregation cannot drift apart between them.
 SELECT n.*,
        COALESCE(
            (SELECT array_agg(nc.category_id ORDER BY nc.category_id)
@@ -39,6 +60,10 @@ SELECT n.*,
        )::uuid[] AS category_ids
 FROM notes n
 WHERE n.user_id = $1
+  AND CASE WHEN sqlc.arg(deleted)::bool
+           THEN n.deleted_at IS NOT NULL
+           ELSE n.deleted_at IS NULL
+      END
   AND (sqlc.narg(domain_id)::uuid IS NULL OR n.domain_id = sqlc.narg(domain_id))
   AND (sqlc.narg(category_id)::uuid IS NULL OR EXISTS (
           SELECT 1 FROM note_categories nc

@@ -153,6 +153,148 @@ func TestNotesFilterByCategory(t *testing.T) {
 	})
 }
 
+// TestNoteDeleteAndRestore. Deleting is soft (00005): the note leaves every
+// normal path but survives, and the Terhapus view is what makes restoring
+// possible after the user has navigated away.
+func TestNoteDeleteAndRestore(t *testing.T) {
+	app := newApp(t)
+	c := app.newClient(t)
+
+	tag := c.createCategory("Statistika")
+	note := c.createNote(map[string]any{
+		"title": "Teorema Bayes", "contentMd": "isi", "categoryIds": []string{tag.ID},
+	})
+
+	c.expect(c.do(http.MethodDelete, "/notes/"+note.ID, nil), http.StatusNoContent, nil)
+
+	t.Run("a deleted note is gone from the list and the editor", func(t *testing.T) {
+		var list []noteBody
+		c.expect(c.do(http.MethodGet, "/notes", nil), http.StatusOK, &list)
+		for _, got := range list {
+			if got.ID == note.ID {
+				t.Fatal("a deleted note is still listed")
+			}
+		}
+		if res := c.do(http.MethodGet, "/notes/"+note.ID, nil); res.StatusCode != http.StatusNotFound {
+			t.Errorf("get status = %d, want 404 for a deleted note", res.StatusCode)
+		}
+		// Editing one would silently resurrect it, which is worse than a 404:
+		// the note would reappear in the list with no one having restored it.
+		res := c.do(http.MethodPatch, "/notes/"+note.ID, map[string]any{"title": "diubah"})
+		if res.StatusCode != http.StatusNotFound {
+			t.Errorf("patch status = %d, want 404 for a deleted note", res.StatusCode)
+		}
+	})
+
+	t.Run("the Terhapus view lists it", func(t *testing.T) {
+		var deleted []noteBody
+		c.expect(c.do(http.MethodGet, "/notes?deleted=true", nil), http.StatusOK, &deleted)
+		if len(deleted) != 1 || deleted[0].ID != note.ID {
+			t.Fatalf("deleted list = %v, want the one deleted note", deleted)
+		}
+	})
+
+	t.Run("a category count excludes it", func(t *testing.T) {
+		// The join row survives so a restore brings the label back with the
+		// note, but counting it would read as "1 catatan" beside an empty list.
+		var cats []categoryBody
+		c.expect(c.do(http.MethodGet, "/categories", nil), http.StatusOK, &cats)
+		for _, got := range cats {
+			if got.ID == tag.ID && got.NoteCount != 0 {
+				t.Errorf("noteCount = %d, want 0 while the note is deleted", got.NoteCount)
+			}
+		}
+	})
+
+	t.Run("restoring brings it back with its labels", func(t *testing.T) {
+		c.expect(c.do(http.MethodPost, "/notes/"+note.ID+"/restore", nil), http.StatusNoContent, nil)
+
+		var back noteBody
+		c.expect(c.do(http.MethodGet, "/notes/"+note.ID, nil), http.StatusOK, &back)
+		if back.Title != "Teorema Bayes" {
+			t.Errorf("title = %q, want the note as it was", back.Title)
+		}
+		if len(back.CategoryIDs) != 1 || back.CategoryIDs[0] != tag.ID {
+			t.Errorf("categoryIds = %v, want %v — labels survive a delete", back.CategoryIDs, tag.ID)
+		}
+	})
+
+	t.Run("deleting twice is a 404, not a second delete", func(t *testing.T) {
+		c.expect(c.do(http.MethodDelete, "/notes/"+note.ID, nil), http.StatusNoContent, nil)
+		res := c.do(http.MethodDelete, "/notes/"+note.ID, nil)
+		if res.StatusCode != http.StatusNotFound {
+			t.Errorf("status = %d, want 404 for an already-deleted note", res.StatusCode)
+		}
+	})
+}
+
+// TestBulkDeleteNotes covers the selection bar: several notes at once, and a
+// count that reflects the rows that actually changed.
+func TestBulkDeleteNotes(t *testing.T) {
+	app := newApp(t)
+	c := app.newClient(t)
+
+	one := c.createNote(map[string]any{"title": "satu", "contentMd": "isi"})
+	two := c.createNote(map[string]any{"title": "dua", "contentMd": "isi"})
+	kept := c.createNote(map[string]any{"title": "tiga", "contentMd": "isi"})
+
+	var out struct {
+		Count int64 `json:"count"`
+	}
+	c.expect(c.do(http.MethodPost, "/notes/bulk-delete", map[string]any{
+		"ids": []string{one.ID, two.ID},
+	}), http.StatusOK, &out)
+	if out.Count != 2 {
+		t.Fatalf("count = %d, want 2", out.Count)
+	}
+
+	var list []noteBody
+	c.expect(c.do(http.MethodGet, "/notes", nil), http.StatusOK, &list)
+	if len(list) != 1 || list[0].ID != kept.ID {
+		t.Fatalf("list = %v, want only the note that was not selected", list)
+	}
+
+	t.Run("bulk restore puts them back", func(t *testing.T) {
+		c.expect(c.do(http.MethodPost, "/notes/bulk-restore", map[string]any{
+			"ids": []string{one.ID, two.ID},
+		}), http.StatusOK, &out)
+		if out.Count != 2 {
+			t.Fatalf("count = %d, want 2", out.Count)
+		}
+		c.expect(c.do(http.MethodGet, "/notes/"+one.ID, nil), http.StatusOK, nil)
+	})
+
+	// An id that names nothing this user owns is not an error — "delete these
+	// three" is still satisfied — but it must not be counted, or the screen
+	// would report more deleted than went.
+	t.Run("ids that match nothing are not counted", func(t *testing.T) {
+		other := app.newClient(t)
+		theirs := other.createNote(map[string]any{"title": "milik orang lain", "contentMd": "isi"})
+
+		c.expect(c.do(http.MethodPost, "/notes/bulk-delete", map[string]any{
+			"ids": []string{one.ID, theirs.ID, uuid.NewString()},
+		}), http.StatusOK, &out)
+		if out.Count != 1 {
+			t.Fatalf("count = %d, want 1 — only the caller's own note", out.Count)
+		}
+
+		// And the other user's note is untouched.
+		other.expect(other.do(http.MethodGet, "/notes/"+theirs.ID, nil), http.StatusOK, nil)
+	})
+
+	t.Run("an empty or malformed selection is a 400", func(t *testing.T) {
+		for _, body := range []map[string]any{
+			{"ids": []string{}},
+			{"ids": []string{"not-a-uuid"}},
+		} {
+			res := c.do(http.MethodPost, "/notes/bulk-delete", body)
+			if res.StatusCode != http.StatusBadRequest {
+				t.Errorf("status = %d for %v, want 400", res.StatusCode, body)
+			}
+		}
+	})
+}
+
 // TestAnotherUsersNoteIsNotFound: never 403. A 403 would confirm the note
 // exists and turn the API into a probe for other users' data (D-039).
 func TestAnotherUsersNoteIsNotFound(t *testing.T) {
@@ -172,6 +314,8 @@ func TestAnotherUsersNoteIsNotFound(t *testing.T) {
 	}{
 		{"get another user's note", http.MethodGet, "/notes/" + note.ID, nil},
 		{"patch another user's note", http.MethodPatch, "/notes/" + note.ID, map[string]any{"title": "dibajak"}},
+		{"delete another user's note", http.MethodDelete, "/notes/" + note.ID, nil},
+		{"restore another user's note", http.MethodPost, "/notes/" + note.ID + "/restore", nil},
 		{"get a note that does not exist", http.MethodGet, "/notes/" + missing, nil},
 		{"a malformed id", http.MethodGet, "/notes/not-a-uuid", nil},
 	} {

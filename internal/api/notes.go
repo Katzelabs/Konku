@@ -268,6 +268,89 @@ func (s *Server) handleUpdateNote(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toNoteResponse(note, in.CategoryIDs))
 }
 
+// handleDeleteNote soft-deletes. The note keeps its labels and can be restored
+// from the Terhapus view, so this is recoverable rather than final — writing
+// must not be destroyable in one click (00005).
+func (s *Server) handleDeleteNote(w http.ResponseWriter, r *http.Request) {
+	user, _ := UserFrom(r.Context())
+
+	id, ok := noteIDParam(w, r)
+	if !ok {
+		return
+	}
+
+	err := s.store.DeleteNote(r.Context(), user.ID, id)
+	if errors.Is(err, store.ErrNoteNotFound) {
+		writeNotFound(w)
+		return
+	}
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+func (s *Server) handleRestoreNote(w http.ResponseWriter, r *http.Request) {
+	user, _ := UserFrom(r.Context())
+
+	id, ok := noteIDParam(w, r)
+	if !ok {
+		return
+	}
+
+	err := s.store.RestoreNote(r.Context(), user.ID, id)
+	if errors.Is(err, store.ErrNoteNotFound) {
+		writeNotFound(w)
+		return
+	}
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// handleDeleteNotes and handleRestoreNotes serve the selection bar. They
+// answer with a count rather than 204: after deleting a selection the screen
+// says how many went, and that number has to come from the rows that actually
+// changed.
+func (s *Server) handleDeleteNotes(w http.ResponseWriter, r *http.Request) {
+	user, _ := UserFrom(r.Context())
+
+	ids, ok := parseBulkIDs(w, r)
+	if !ok {
+		return
+	}
+
+	count, err := s.store.DeleteNotes(r.Context(), user.ID, ids)
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, bulkResponse{Count: count})
+}
+
+func (s *Server) handleRestoreNotes(w http.ResponseWriter, r *http.Request) {
+	user, _ := UserFrom(r.Context())
+
+	ids, ok := parseBulkIDs(w, r)
+	if !ok {
+		return
+	}
+
+	count, err := s.store.RestoreNotes(r.Context(), user.ID, ids)
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, bulkResponse{Count: count})
+}
+
 func (s *Server) handleListNotes(w http.ResponseWriter, r *http.Request) {
 	user, _ := UserFrom(r.Context())
 
@@ -284,9 +367,13 @@ func (s *Server) handleListNotes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := s.store.Q().ListNotes(r.Context(), gen.ListNotesParams{
-		UserID:     user.ID,
-		Limit:      int32(limit),
-		Offset:     int32(offset),
+		UserID: user.ID,
+		Limit:  int32(limit),
+		Offset: int32(offset),
+		// The Terhapus view, off unless asked for: the same list, filtered to
+		// what has been deleted, so restoring is a normal screen rather than a
+		// toast the user has to catch.
+		Deleted:    boolQuery(r, "deleted"),
 		DomainID:   domainID,
 		CategoryID: categoryID,
 	})

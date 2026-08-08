@@ -400,6 +400,28 @@ Cards are their own resource with their own table, their own uuid, and their own
 
 ---
 
+### D-056 — Deleting a note is soft, and "recoverable" means a screen, not a toast
+
+Notes get `deleted_at` (migration `00005`) and the same delete/restore pair cards have carried since `00001`. Both lists take `?deleted=true` for a **Terhapus** view, and both screens let you tick several rows and act on the selection at once.
+
+**Why notes were not deletable at all until now:** they simply had no endpoint. `notes.sql` carried a `DeleteNote` hard delete that nothing ever called — one `DELETE FROM notes`, one route away from being wired up.
+
+**Why not just wire that up.** Nothing references a note but its own labels, so a hard delete is referentially safe, and that is exactly the trap: it is safe for the *database* and unsafe for the *person*. Shipping it would have put a button in the UI that destroys writing permanently on one click, in an app whose stated thesis is that nothing you learn disappears silently. The card precedent already existed; only its justification differed, and a justification is not a reason to reach a different answer.
+
+**Why a Terhapus view rather than an undo toast alone.** A toast makes recovery a reflex test — miss it, navigate away, and a reversible action has become an irreversible one with extra steps. The undo notice is still there, because it is the fast path, but it is a shortcut *to* the bin, never the only route back. This is also why the selection is not stored in the URL the way `?view=` and `?q=` are: a filter is worth reloading into, a half-made selection of things you were about to delete is not.
+
+**One statement for one and for many.** `SoftDeleteNotes` / `SoftDeleteCards` take a uuid array, and the single-item endpoints pass an array of one. Deleting one is deleting a selection of one, so there is no second code path to keep in step — the alternative is two statements that drift, and the one that drifts is the bulk one nobody tests.
+
+**Bulk answers a count, not 204.** An id that was already deleted, or that names nothing this user owns, does not match, so the rows changed can be fewer than the ids sent. That is not an error — "delete these twelve" is satisfied when one had already gone — but the screen reports the number, so it reports the true one. Tenancy is unchanged: `user_id` is in the `WHERE` clause, so another user's id is silently not counted rather than refused (D-039).
+
+**Consequences worth knowing:**
+
+- `GetNote` and `UpdateNote` both gained `deleted_at IS NULL`. Without it on `UpdateNote`, the note editor's save-on-unmount would **resurrect a note the user had just deleted** — the row would reappear in the list with nobody having restored it. The editor also suppresses that save after a delete, but the SQL is what makes it impossible rather than merely unlikely.
+- Category counts now exclude soft-deleted notes and cards. The join rows survive a delete so a restore brings the labels back with the item; counting them would read "12 catatan" beside a list of four.
+- A category attached only to deleted notes still cannot be hard-deleted — the join row is a real reference. Archiving remains the normal path (D-051), so no new policy was added for it.
+
+---
+
 ## Open questions
 
 None blocking. Deferred details, intentionally left until the feature is being built:

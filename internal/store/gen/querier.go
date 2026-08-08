@@ -83,7 +83,6 @@ type Querier interface {
 	// the handler answers 409.
 	DeleteExam(ctx context.Context, arg DeleteExamParams) (int64, error)
 	DeleteExpiredSessions(ctx context.Context) error
-	DeleteNote(ctx context.Context, arg DeleteNoteParams) (int64, error)
 	DeleteSession(ctx context.Context, id string) error
 	// Validation for an incoming domainId. The composite foreign key is what
 	// actually prevents a cross-tenant write (D-047); this exists only so the
@@ -116,6 +115,9 @@ type Querier interface {
 	GetCategoryBySlug(ctx context.Context, arg GetCategoryBySlugParams) (Category, error)
 	GetDomain(ctx context.Context, arg GetDomainParams) (Domain, error)
 	GetExam(ctx context.Context, arg GetExamParams) (Exam, error)
+	// A deleted note reads as absent. The Terhapus view lists them, but every
+	// other path — the editor, a PATCH, a category lookup — must not resurrect one
+	// by accident.
 	GetNote(ctx context.Context, arg GetNoteParams) (Note, error)
 	// Attempts.
 	// At most one can exist: a partial unique index enforces it.
@@ -150,6 +152,10 @@ type Querier interface {
 	ListAttempts(ctx context.Context, arg ListAttemptsParams) ([]ExamAttempt, error)
 	// The Cards page. Every filter is optional and independent; passing none lists
 	// everything live, newest first.
+	//
+	// `deleted` switches the whole list to the Terhapus view. One query rather
+	// than two so the filters and the category aggregation cannot drift apart
+	// between them.
 	ListCards(ctx context.Context, arg ListCardsParams) ([]ListCardsRow, error)
 	// Categories are one shared vocabulary across notes and cards (D-055).
 	//
@@ -158,6 +164,10 @@ type Querier interface {
 	// card, means nothing to the scheduler, and exists to organise.
 	// Archived categories are excluded unless asked for: they stay attached to
 	// everything they ever labelled, they just leave the picker.
+	//
+	// Both counts exclude soft-deleted notes and cards. The join rows survive a
+	// delete so a restore brings the labels back with the item (00005), but a
+	// count that includes them reads as "12 catatan" next to a list showing four.
 	ListCategories(ctx context.Context, arg ListCategoriesParams) ([]ListCategoriesRow, error)
 	ListCategoriesForCard(ctx context.Context, arg ListCategoriesForCardParams) ([]Category, error)
 	ListCategoriesForNote(ctx context.Context, arg ListCategoriesForNoteParams) ([]Category, error)
@@ -184,16 +194,35 @@ type Querier interface {
 	ListExams(ctx context.Context, userID uuid.UUID) ([]ListExamsRow, error)
 	// The card count is gone with D-055: a note no longer contains cards, so
 	// counting them per note would be counting nothing.
+	//
+	// `deleted` switches the whole list between live notes and the Terhapus view.
+	// One query rather than two so the filters, the ordering and the category
+	// aggregation cannot drift apart between them.
 	ListNotes(ctx context.Context, arg ListNotesParams) ([]ListNotesRow, error)
 	ListRecentFocusSessions(ctx context.Context, arg ListRecentFocusSessionsParams) ([]FocusSession, error)
 	// The undo. card_schedules was never touched, so the review history comes back
 	// with the card.
-	RestoreCard(ctx context.Context, arg RestoreCardParams) (int64, error)
+	RestoreCards(ctx context.Context, arg RestoreCardsParams) (int64, error)
+	// The undo. note_categories was never touched, so a restored note comes back
+	// still wearing its labels.
+	RestoreNotes(ctx context.Context, arg RestoreNotesParams) (int64, error)
 	SnapshotAttemptCard(ctx context.Context, arg SnapshotAttemptCardParams) error
 	// Never a hard delete. A finished exam attempt renders its questions by
 	// joining cards, so removing the row would blank out past results, and
 	// deletion on a CRUD screen should be undoable.
-	SoftDeleteCard(ctx context.Context, arg SoftDeleteCardParams) (int64, error)
+	//
+	// Takes an array so the single-card button and the bulk selection run the same
+	// statement: deleting one is deleting an array of one. Already-deleted ids do
+	// not match, so a repeated request is a no-op rather than a way to push
+	// deleted_at forward.
+	SoftDeleteCards(ctx context.Context, arg SoftDeleteCardsParams) (int64, error)
+	// Never a hard delete (00005). One statement serves the single-note button and
+	// the bulk selection alike: deleting one is deleting an array of one, so there
+	// is no second code path to keep in step.
+	//
+	// Already-deleted ids simply do not match, which makes a repeated request a
+	// no-op rather than a way to push deleted_at forward.
+	SoftDeleteNotes(ctx context.Context, arg SoftDeleteNotesParams) (int64, error)
 	UnarchiveCategory(ctx context.Context, arg UnarchiveCategoryParams) (Category, error)
 	UnarchiveDomain(ctx context.Context, arg UnarchiveDomainParams) (Domain, error)
 	// No content matching anywhere: the uuid identifies the card and the text is

@@ -1,11 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
-import type { DomainId, Note, NoteSummary } from '../../api/types'
+import type { BulkResult, DomainId, Note, NoteSummary } from '../../api/types'
 
 export const noteKeys = {
   all: ['notes'] as const,
   list: (f: NoteFilters = {}) =>
-    [...noteKeys.all, 'list', f.domainId ?? null, f.categoryId ?? null] as const,
+    [
+      ...noteKeys.all,
+      'list',
+      f.domainId ?? null,
+      f.categoryId ?? null,
+      f.deleted ?? false,
+    ] as const,
   detail: (id: string) => [...noteKeys.all, 'detail', id] as const,
 }
 
@@ -19,6 +25,8 @@ export interface NoteInput {
 export interface NoteFilters {
   domainId?: string | null
   categoryId?: string | null
+  /** The Terhapus view: the same list, filtered to what has been deleted. */
+  deleted?: boolean
 }
 
 export function useNotes(filters: NoteFilters = {}) {
@@ -28,6 +36,7 @@ export function useNotes(filters: NoteFilters = {}) {
       const params = new URLSearchParams()
       if (filters.domainId) params.set('domainId', filters.domainId)
       if (filters.categoryId) params.set('categoryId', filters.categoryId)
+      if (filters.deleted) params.set('deleted', 'true')
       const query = params.toString()
       return api.get<NoteSummary[]>(query ? `/notes?${query}` : '/notes')
     },
@@ -73,4 +82,54 @@ export function useSaveNote(id: string) {
       qc.invalidateQueries({ queryKey: noteKeys.all })
     },
   })
+}
+
+/**
+ * Deleting a note is a soft delete (00005): it leaves every normal path but
+ * survives, keeps its labels, and comes back whole from the Terhapus view.
+ *
+ * Every one of these invalidates the whole `notes` key rather than patching
+ * the cache. A delete moves a row between two lists — the live one and the
+ * Terhapus one — and both are cached under that key, so surgically removing it
+ * from one would leave the other wrong.
+ */
+function useNoteMutation<V, R>(fn: (v: V) => Promise<R>) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: fn,
+    // The braces matter. An arrow that *returns* the invalidate promise makes
+    // TanStack Query await the refetch before running the callbacks passed to
+    // `mutate` — and after a delete that refetch asks for the row just
+    // deleted, gets a 404, and rejects. The caller's onSuccess is then skipped
+    // entirely, so a confirm dialog never closes and a peek stays open on a
+    // thing that is gone. Invalidate, return nothing.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: noteKeys.all })
+    },
+  })
+}
+
+export function useDeleteNote() {
+  return useNoteMutation((id: string) => api.del<void>(`/notes/${id}`))
+}
+
+export function useRestoreNote() {
+  return useNoteMutation((id: string) => api.post<void>(`/notes/${id}/restore`))
+}
+
+/**
+ * The selection bar. The response carries how many rows actually changed,
+ * which the screen reports — an id that had already gone is not counted, so
+ * the number shown is never larger than what happened.
+ */
+export function useDeleteNotes() {
+  return useNoteMutation((ids: string[]) =>
+    api.post<BulkResult>('/notes/bulk-delete', { ids }),
+  )
+}
+
+export function useRestoreNotes() {
+  return useNoteMutation((ids: string[]) =>
+    api.post<BulkResult>('/notes/bulk-restore', { ids }),
+  )
 }

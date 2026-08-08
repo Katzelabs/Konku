@@ -136,11 +136,14 @@ and `Switch`. Everything else is markup.
 | Component | Notes |
 |---|---|
 | `Button` | `primary` `secondary` `ghost` `accent` `link` `destructive`; `sm/md/lg/icon/inline`; `asChild` for `<Link>`. |
-| `Input` `Textarea` `Label` | Native elements. No Radix Label — every control here is native. |
+| `Input` `Textarea` `Label` | Native elements. No Radix Label — every control here is native. `Textarea` has a `plain` variant for writing surfaces: no border, no fill, **no focus ring** — see below. |
 | `Card` + `Header/Title/Description/Content/Footer` | |
 | `ToggleGroup` / `ToggleGroupItem` | Pick one from a short, always-visible set: editor mode, timer duration, domain. |
 | `Badge` `DomainDot` `DomainBadge` | |
 | `Dialog` + parts | Radix. `DialogTitle` is required for a11y. |
+| `ConfirmDialog` | "Are you sure?" for an action that removes data, built on `Dialog`. The description says **where the thing goes**, not that it is gone — deleting a note or a card is soft, and an alarming prompt for a reversible action is both punitive (§5) and how people learn to click through the prompts that matter. Cancel stays `secondary` so the pair does not read as a threat. |
+| `Checkbox` | A native `<input type="checkbox">` under a styled box, **not Radix** — a checkbox has no focus management, typeahead or layering to get wrong, which is the bar for pulling a primitive in. `indeterminate` is a DOM property, so it is set through a ref. |
+| `SelectionBar` + `SelectCheckbox` + `useSelection` | Ticking rows on the note and card lists. The bar sits **in the flow above the list**, not fixed to the viewport: a floating bar covers the last row of the list it is acting on, and on a phone it lands on the bottom nav. `SelectCheckbox` is a *sibling* of the row's button, never inside it — a `<button>` cannot legally contain a control. The selection deliberately does **not** live in the URL the way `?view=` and `?q=` do: a filter is worth reloading into, a half-made selection of things you were about to delete is not. |
 | `DropdownMenu` + parts | Radix. Roving focus, typeahead, Escape. |
 | `Avatar` | Initials from the email — there is no name or photo in the data model. |
 | `Switch` `Separator` | |
@@ -151,7 +154,8 @@ and `Switch`. Everything else is markup.
 | `Markdown` `MarkdownInline` | `react-markdown` + `remark-gfm`, every element mapped to tokens by hand. **Never `innerHTML`, never `rehype-raw`** — an agent writes notes via MCP in v0.3, so embedded HTML would be a standing XSS (D-018). No typography plugin: it ships its own colour and spacing scale, which is a second source of truth. |
 | `CategoryChip` `CategoryChips` `CategoryPicker` | Shared labels for notes and cards (D-055). **No colour** — domain colour is the one colour signal in a row, and a second palette competing with it turns a list into confetti. The picker creates on type, because being sent elsewhere to define a label first is the friction that stops things being captured (hard rule 7). |
 | `ViewToggle` + `useViewMode` | Grid or list for the notes and cards indexes. State lives in `?view=` beside `?q=`, with `localStorage` only as a fallback, so a filtered grid is a link you can reload into. |
-| `DetailsDrawer` `DetailsDrawerTrigger` `DetailsField` | Metadata beside a note or card. A static column at `lg`+ and a real Radix dialog below it — **not one component styled two ways**: rendering both and hiding one would put every field in the DOM twice and break label association. The caller passes `docked` from `useMediaQuery`. |
+| `PeekPanel` + `usePeekMode` + `lib/peek-route` | Preview one item over the list it came from — `side`, `center` or `full`. **The peek is a URL**, not component state: opening one navigates to `/notes/:id` and carries the list's location in history state, so App renders the main routes against *that* while the panel renders against the real one. Back closes it, the link is copyable, and a URL opened cold has no history state so it falls through to the full-page editor — which is right, since a peek only means something over a list you were already on. Opening a second row replaces rather than pushes, so Back returns to the list, not through every preview. **Side is deliberately not a modal**: no overlay, no focus trap, no scroll lock, so the list stays live and clicking another row swaps the panel instead of dismissing it. That is the entire reason to peek rather than navigate. Escape still closes it. Center *does* cover the list, so it gets Radix Dialog. `full` never reaches the component — the caller navigates. Side peek insets the page content from `xl` rather than covering it, because clicking a covered row to swap the preview is the point. |
+| `PropertyBar` `PropertyRow` `DomainProperty` `CategoryProperty` | An item's domain and categories, **above its title**. Borderless, label in subtle grey, edges only on hover: a row of boxed form fields above a title reads as a form you must complete before you are allowed to write, which is the friction hard rule 7 exists to remove. `CategoryProperty` expands its picker inline rather than inside a dropdown — Radix menus own typeahead, and typing is the whole interaction. |
 
 ### Adding one
 
@@ -183,6 +187,11 @@ Where it is encoded:
   Indonesian from `writeError`; they are information, not a telling-off.
 - **No progress bar toward a daily quota exists**, because no daily quota
   exists (D-009).
+- **Deleting says where the thing went.** "Dipindahkan ke Terhapus" with an
+  "Urungkan" beside it, not "permanently deleted" and not a countdown to catch.
+  Both notes and cards soft-delete, so the honest copy is also the calm one —
+  and the undo notice is a shortcut to the Terhapus view, never the only way
+  back.
 
 If a design asks for a colour this palette does not have, that is usually the
 palette catching a mechanic the product rejected — check `DECISIONS.md` before
@@ -221,6 +230,24 @@ Two kinds of exception:
   `mx-auto max-w-2xl`, because there is exactly one thing to look at.
 
 Everything else (Beranda, Catatan, Kartu, Ujian, Pengaturan, Domain) fills.
+
+---
+
+## 6b. The one place the focus ring is removed
+
+`theme.css` sets a single `:focus-visible` outline everywhere and says never to
+remove it. That still holds — with exactly one exception, `Textarea`'s `plain`
+variant, used for the note body and a card's two sides.
+
+A 2px outline drawn around a 34rem writing area is not a focus indicator; it is
+a box you are typing inside, and it fights everything else about the palette.
+The exception is safe **only because a text area has a blinking caret**: focus
+stays unambiguous without the ring. It must never be copied onto a button, a
+link, or anything with no caret of its own — those have no second indicator and
+would simply become unusable by keyboard.
+
+If you find yourself reaching for `focus-visible:outline-none` anywhere else,
+the answer is no.
 
 ---
 

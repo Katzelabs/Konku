@@ -114,25 +114,34 @@ func (s *Store) UpdateCard(ctx context.Context, userID, cardID uuid.UUID, in Car
 // row was never removed — the FK cascade only fires on a hard delete, which
 // nothing does.
 func (s *Store) DeleteCard(ctx context.Context, userID, cardID uuid.UUID) error {
-	rows, err := s.q.SoftDeleteCard(ctx, gen.SoftDeleteCardParams{ID: cardID, UserID: userID})
-	if err != nil {
-		return fmt.Errorf("store: deleting card: %w", err)
-	}
-	if rows == 0 {
-		return ErrCardNotFound
-	}
-	return nil
+	rows, err := s.DeleteCards(ctx, userID, []uuid.UUID{cardID})
+	return single(rows, err, ErrCardNotFound)
 }
 
 func (s *Store) RestoreCard(ctx context.Context, userID, cardID uuid.UUID) error {
-	rows, err := s.q.RestoreCard(ctx, gen.RestoreCardParams{ID: cardID, UserID: userID})
+	rows, err := s.RestoreCards(ctx, userID, []uuid.UUID{cardID})
+	return single(rows, err, ErrCardNotFound)
+}
+
+// DeleteCards soft-deletes a whole selection and reports how many rows changed.
+//
+// One statement, same contract as DeleteNotes: ids that are missing, already
+// deleted, or somebody else's do not match, so the count can be lower than the
+// number asked for without that being an error.
+func (s *Store) DeleteCards(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) (int64, error) {
+	rows, err := s.q.SoftDeleteCards(ctx, gen.SoftDeleteCardsParams{UserID: userID, Ids: ids})
 	if err != nil {
-		return fmt.Errorf("store: restoring card: %w", err)
+		return 0, fmt.Errorf("store: deleting cards: %w", err)
 	}
-	if rows == 0 {
-		return ErrCardNotFound
+	return rows, nil
+}
+
+func (s *Store) RestoreCards(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) (int64, error) {
+	rows, err := s.q.RestoreCards(ctx, gen.RestoreCardsParams{UserID: userID, Ids: ids})
+	if err != nil {
+		return 0, fmt.Errorf("store: restoring cards: %w", err)
 	}
-	return nil
+	return rows, nil
 }
 
 // createSchedule gives a fresh card its first due date.

@@ -77,8 +77,94 @@ func TestCardCRUD(t *testing.T) {
 			t.Errorf("status = %d, want 404 for a deleted card", res.StatusCode)
 		}
 
+		// The Terhapus view is the same list asked the other way, and it is
+		// what makes restoring reachable after the user has navigated away.
+		var deleted []cardBody
+		c.expect(c.do(http.MethodGet, "/cards?deleted=true", nil), http.StatusOK, &deleted)
+		if len(deleted) != 1 || deleted[0].ID != card.ID {
+			t.Fatalf("deleted list = %v, want the one deleted card", deleted)
+		}
+
 		c.expect(c.do(http.MethodPost, "/cards/"+card.ID+"/restore", nil), http.StatusNoContent, nil)
 		c.expect(c.do(http.MethodGet, "/cards/"+card.ID, nil), http.StatusOK, nil)
+	})
+}
+
+// TestBulkDeleteCards covers the selection bar on the Cards page. The count is
+// the rows that actually changed, not the size of the selection.
+func TestBulkDeleteCards(t *testing.T) {
+	app := newApp(t)
+	c := app.newClient(t)
+
+	one := c.createCard(map[string]any{"front": "satu", "back": "a"})
+	two := c.createCard(map[string]any{"front": "dua", "back": "b"})
+	kept := c.createCard(map[string]any{"front": "tiga", "back": "c"})
+
+	var out struct {
+		Count int64 `json:"count"`
+	}
+	c.expect(c.do(http.MethodPost, "/cards/bulk-delete", map[string]any{
+		"ids": []string{one.ID, two.ID},
+	}), http.StatusOK, &out)
+	if out.Count != 2 {
+		t.Fatalf("count = %d, want 2", out.Count)
+	}
+
+	var list []cardBody
+	c.expect(c.do(http.MethodGet, "/cards", nil), http.StatusOK, &list)
+	if len(list) != 1 || list[0].ID != kept.ID {
+		t.Fatalf("list = %v, want only the card that was not selected", list)
+	}
+
+	t.Run("bulk restore keeps the schedule", func(t *testing.T) {
+		c.expect(c.do(http.MethodPost, "/cards/bulk-restore", map[string]any{
+			"ids": []string{one.ID, two.ID},
+		}), http.StatusOK, &out)
+		if out.Count != 2 {
+			t.Fatalf("count = %d, want 2", out.Count)
+		}
+
+		// The whole point of soft delete on a card: card_schedules is never
+		// touched, so a card deleted with months of history behind it comes
+		// back with all of it rather than as a fresh card wearing the old
+		// wording (D-019's property, now structural).
+		makeDue(t, c, one.ID, 3, 1)
+		c.expect(c.do(http.MethodPost, "/cards/bulk-delete", map[string]any{
+			"ids": []string{one.ID},
+		}), http.StatusOK, &out)
+		c.expect(c.do(http.MethodPost, "/cards/bulk-restore", map[string]any{
+			"ids": []string{one.ID},
+		}), http.StatusOK, &out)
+
+		if s := scheduleOf(t, c, one.ID); s.Stage != 3 || s.Lapses != 1 {
+			t.Errorf("stage = %d, lapses = %d, want 3 and 1 — a restore must not reset review history",
+				s.Stage, s.Lapses)
+		}
+	})
+
+	t.Run("another user's card is not counted and not touched", func(t *testing.T) {
+		other := app.newClient(t)
+		theirs := other.createCard(map[string]any{"front": "milik orang lain", "back": "x"})
+
+		c.expect(c.do(http.MethodPost, "/cards/bulk-delete", map[string]any{
+			"ids": []string{one.ID, theirs.ID},
+		}), http.StatusOK, &out)
+		if out.Count != 1 {
+			t.Fatalf("count = %d, want 1 — only the caller's own card", out.Count)
+		}
+		other.expect(other.do(http.MethodGet, "/cards/"+theirs.ID, nil), http.StatusOK, nil)
+	})
+
+	t.Run("an empty or malformed selection is a 400", func(t *testing.T) {
+		for _, body := range []map[string]any{
+			{"ids": []string{}},
+			{"ids": []string{"not-a-uuid"}},
+		} {
+			res := c.do(http.MethodPost, "/cards/bulk-delete", body)
+			if res.StatusCode != http.StatusBadRequest {
+				t.Errorf("status = %d for %v, want 400", res.StatusCode, body)
+			}
+		}
 	})
 }
 

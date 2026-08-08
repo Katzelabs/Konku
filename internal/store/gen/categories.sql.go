@@ -140,8 +140,12 @@ func (q *Queries) GetCategoryBySlug(ctx context.Context, arg GetCategoryBySlugPa
 const listCategories = `-- name: ListCategories :many
 
 SELECT c.id, c.user_id, c.slug, c.label, c.archived_at, c.created_at,
-       (SELECT count(*) FROM note_categories nc WHERE nc.category_id = c.id) AS note_count,
-       (SELECT count(*) FROM card_categories cc WHERE cc.category_id = c.id) AS card_count
+       (SELECT count(*) FROM note_categories nc
+          JOIN notes n ON n.id = nc.note_id AND n.user_id = nc.user_id
+         WHERE nc.category_id = c.id AND n.deleted_at IS NULL) AS note_count,
+       (SELECT count(*) FROM card_categories cc
+          JOIN cards cd ON cd.id = cc.card_id AND cd.user_id = cc.user_id
+         WHERE cc.category_id = c.id AND cd.deleted_at IS NULL) AS card_count
 FROM categories c
 WHERE c.user_id = $1
   AND (c.archived_at IS NULL OR $2::bool)
@@ -171,6 +175,10 @@ type ListCategoriesRow struct {
 // card, means nothing to the scheduler, and exists to organise.
 // Archived categories are excluded unless asked for: they stay attached to
 // everything they ever labelled, they just leave the picker.
+//
+// Both counts exclude soft-deleted notes and cards. The join rows survive a
+// delete so a restore brings the labels back with the item (00005), but a
+// count that includes them reads as "12 catatan" next to a list showing four.
 func (q *Queries) ListCategories(ctx context.Context, arg ListCategoriesParams) ([]ListCategoriesRow, error) {
 	rows, err := q.db.Query(ctx, listCategories, arg.UserID, arg.IncludeArchived)
 	if err != nil {

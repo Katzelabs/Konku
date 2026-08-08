@@ -284,16 +284,19 @@ SELECT c.id, c.user_id, c.domain_id, c.type, c.front, c.back, c.deleted_at, c.cr
        )::uuid[] AS category_ids
 FROM cards c
 WHERE c.user_id = $1
-  AND c.deleted_at IS NULL
-  AND ($3::uuid IS NULL OR c.domain_id = $3)
-  AND ($4::uuid IS NULL OR EXISTS (
+  AND CASE WHEN $3::bool
+           THEN c.deleted_at IS NOT NULL
+           ELSE c.deleted_at IS NULL
+      END
+  AND ($4::uuid IS NULL OR c.domain_id = $4)
+  AND ($5::uuid IS NULL OR EXISTS (
           SELECT 1 FROM card_categories cc
-           WHERE cc.card_id = c.id AND cc.category_id = $4))
+           WHERE cc.card_id = c.id AND cc.category_id = $5))
   -- ILIKE, not full-text: D-031 defers ranked search to v0.2. cards_front_trgm_idx
   -- is what keeps this from being a sequential scan.
-  AND ($5::text IS NULL
-       OR c.front ILIKE '%' || $5 || '%'
-       OR c.back  ILIKE '%' || $5 || '%')
+  AND ($6::text IS NULL
+       OR c.front ILIKE '%' || $6 || '%'
+       OR c.back  ILIKE '%' || $6 || '%')
 ORDER BY c.created_at DESC
 LIMIT $2
 `
@@ -301,6 +304,7 @@ LIMIT $2
 type ListCardsParams struct {
 	UserID     uuid.UUID  `json:"user_id"`
 	Limit      int32      `json:"limit"`
+	Deleted    bool       `json:"deleted"`
 	DomainID   *uuid.UUID `json:"domain_id"`
 	CategoryID *uuid.UUID `json:"category_id"`
 	Query      *string    `json:"query"`
@@ -321,10 +325,15 @@ type ListCardsRow struct {
 
 // The Cards page. Every filter is optional and independent; passing none lists
 // everything live, newest first.
+//
+// `deleted` switches the whole list to the Terhapus view. One query rather
+// than two so the filters and the category aggregation cannot drift apart
+// between them.
 func (q *Queries) ListCards(ctx context.Context, arg ListCardsParams) ([]ListCardsRow, error) {
 	rows, err := q.db.Query(ctx, listCards,
 		arg.UserID,
 		arg.Limit,
+		arg.Deleted,
 		arg.DomainID,
 		arg.CategoryID,
 		arg.Query,
@@ -451,43 +460,48 @@ func (q *Queries) ListDueCards(ctx context.Context, arg ListDueCardsParams) ([]L
 	return items, nil
 }
 
-const restoreCard = `-- name: RestoreCard :execrows
+const restoreCards = `-- name: RestoreCards :execrows
 UPDATE cards
 SET deleted_at = NULL, updated_at = now()
-WHERE id = $1 AND user_id = $2 AND deleted_at IS NOT NULL
+WHERE user_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NOT NULL
 `
 
-type RestoreCardParams struct {
-	ID     uuid.UUID `json:"id"`
-	UserID uuid.UUID `json:"user_id"`
+type RestoreCardsParams struct {
+	UserID uuid.UUID   `json:"user_id"`
+	Ids    []uuid.UUID `json:"ids"`
 }
 
 // The undo. card_schedules was never touched, so the review history comes back
 // with the card.
-func (q *Queries) RestoreCard(ctx context.Context, arg RestoreCardParams) (int64, error) {
-	result, err := q.db.Exec(ctx, restoreCard, arg.ID, arg.UserID)
+func (q *Queries) RestoreCards(ctx context.Context, arg RestoreCardsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, restoreCards, arg.UserID, arg.Ids)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
 }
 
-const softDeleteCard = `-- name: SoftDeleteCard :execrows
+const softDeleteCards = `-- name: SoftDeleteCards :execrows
 UPDATE cards
 SET deleted_at = now(), updated_at = now()
-WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
+WHERE user_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL
 `
 
-type SoftDeleteCardParams struct {
-	ID     uuid.UUID `json:"id"`
-	UserID uuid.UUID `json:"user_id"`
+type SoftDeleteCardsParams struct {
+	UserID uuid.UUID   `json:"user_id"`
+	Ids    []uuid.UUID `json:"ids"`
 }
 
 // Never a hard delete. A finished exam attempt renders its questions by
 // joining cards, so removing the row would blank out past results, and
 // deletion on a CRUD screen should be undoable.
-func (q *Queries) SoftDeleteCard(ctx context.Context, arg SoftDeleteCardParams) (int64, error) {
-	result, err := q.db.Exec(ctx, softDeleteCard, arg.ID, arg.UserID)
+//
+// Takes an array so the single-card button and the bulk selection run the same
+// statement: deleting one is deleting an array of one. Already-deleted ids do
+// not match, so a repeated request is a no-op rather than a way to push
+// deleted_at forward.
+func (q *Queries) SoftDeleteCards(ctx context.Context, arg SoftDeleteCardsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteCards, arg.UserID, arg.Ids)
 	if err != nil {
 		return 0, err
 	}

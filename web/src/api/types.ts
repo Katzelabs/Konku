@@ -37,6 +37,19 @@ export interface Category {
   cardCount: number
 }
 
+/**
+ * What a bulk delete or restore answers with.
+ *
+ * `count` is the rows that actually changed, which is not always the size of
+ * the selection: an id that was already deleted, or that names nothing this
+ * user owns, does not match. That is not an error — "delete these twelve" is
+ * satisfied when one had already gone — but the screen reports the number, so
+ * it has to be the true one.
+ */
+export interface BulkResult {
+  count: number
+}
+
 export interface Note {
   id: string
   title: string

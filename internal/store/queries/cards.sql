@@ -29,24 +29,33 @@ SET domain_id  = $3,
 WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 RETURNING *;
 
--- name: SoftDeleteCard :execrows
+-- name: SoftDeleteCards :execrows
 -- Never a hard delete. A finished exam attempt renders its questions by
 -- joining cards, so removing the row would blank out past results, and
 -- deletion on a CRUD screen should be undoable.
+--
+-- Takes an array so the single-card button and the bulk selection run the same
+-- statement: deleting one is deleting an array of one. Already-deleted ids do
+-- not match, so a repeated request is a no-op rather than a way to push
+-- deleted_at forward.
 UPDATE cards
 SET deleted_at = now(), updated_at = now()
-WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL;
+WHERE user_id = $1 AND id = ANY(sqlc.arg(ids)::uuid[]) AND deleted_at IS NULL;
 
--- name: RestoreCard :execrows
+-- name: RestoreCards :execrows
 -- The undo. card_schedules was never touched, so the review history comes back
 -- with the card.
 UPDATE cards
 SET deleted_at = NULL, updated_at = now()
-WHERE id = $1 AND user_id = $2 AND deleted_at IS NOT NULL;
+WHERE user_id = $1 AND id = ANY(sqlc.arg(ids)::uuid[]) AND deleted_at IS NOT NULL;
 
 -- name: ListCards :many
 -- The Cards page. Every filter is optional and independent; passing none lists
 -- everything live, newest first.
+--
+-- `deleted` switches the whole list to the Terhapus view. One query rather
+-- than two so the filters and the category aggregation cannot drift apart
+-- between them.
 SELECT c.*,
        COALESCE(
            (SELECT array_agg(cc.category_id ORDER BY cc.category_id)
@@ -56,7 +65,10 @@ SELECT c.*,
        )::uuid[] AS category_ids
 FROM cards c
 WHERE c.user_id = $1
-  AND c.deleted_at IS NULL
+  AND CASE WHEN sqlc.arg(deleted)::bool
+           THEN c.deleted_at IS NOT NULL
+           ELSE c.deleted_at IS NULL
+      END
   AND (sqlc.narg(domain_id)::uuid IS NULL OR c.domain_id = sqlc.narg(domain_id))
   AND (sqlc.narg(category_id)::uuid IS NULL OR EXISTS (
           SELECT 1 FROM card_categories cc

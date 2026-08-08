@@ -99,7 +99,10 @@ func (s *Server) handleListCards(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := s.store.Q().ListCards(r.Context(), gen.ListCardsParams{
-		UserID:     user.ID,
+		UserID: user.ID,
+		// The Terhapus view, off unless asked for. The exam picker never asks
+		// for it: a deleted card must not be pinnable as a question.
+		Deleted:    boolQuery(r, "deleted"),
 		DomainID:   domainID,
 		CategoryID: categoryID,
 		Query:      query,
@@ -306,6 +309,44 @@ func (s *Server) handleRestoreCard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// handleDeleteCards and handleRestoreCards serve the selection bar, and answer
+// with a count rather than 204 for the same reason the note ones do: the
+// screen reports how many went, and that number must be the rows that actually
+// changed.
+func (s *Server) handleDeleteCards(w http.ResponseWriter, r *http.Request) {
+	user, _ := UserFrom(r.Context())
+
+	ids, ok := parseBulkIDs(w, r)
+	if !ok {
+		return
+	}
+
+	count, err := s.store.DeleteCards(r.Context(), user.ID, ids)
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, bulkResponse{Count: count})
+}
+
+func (s *Server) handleRestoreCards(w http.ResponseWriter, r *http.Request) {
+	user, _ := UserFrom(r.Context())
+
+	ids, ok := parseBulkIDs(w, r)
+	if !ok {
+		return
+	}
+
+	count, err := s.store.RestoreCards(r.Context(), user.ID, ids)
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, bulkResponse{Count: count})
 }
 
 // cardCategoryIDs reads a card's current labels.

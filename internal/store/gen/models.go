@@ -122,6 +122,7 @@ type Note struct {
 	UpdatedAt time.Time   `json:"updated_at"`
 	Tsv       interface{} `json:"tsv"`
 	DomainID  *uuid.UUID  `json:"domain_id"`
+	DeletedAt *time.Time  `json:"deleted_at"`
 }
 
 type NoteCategory struct {

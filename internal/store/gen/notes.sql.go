@@ -50,7 +50,7 @@ const createNote = `-- name: CreateNote :one
 
 INSERT INTO notes (user_id, title, content_md, domain_id)
 VALUES ($1, $2, $3, $4)
-RETURNING id, user_id, title, content_md, created_at, updated_at, tsv, domain_id
+RETURNING id, user_id, title, content_md, created_at, updated_at, tsv, domain_id, deleted_at
 `
 
 type CreateNoteParams struct {
@@ -83,31 +83,14 @@ func (q *Queries) CreateNote(ctx context.Context, arg CreateNoteParams) (Note, e
 		&i.UpdatedAt,
 		&i.Tsv,
 		&i.DomainID,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
-const deleteNote = `-- name: DeleteNote :execrows
-DELETE FROM notes
-WHERE id = $1 AND user_id = $2
-`
-
-type DeleteNoteParams struct {
-	ID     uuid.UUID `json:"id"`
-	UserID uuid.UUID `json:"user_id"`
-}
-
-func (q *Queries) DeleteNote(ctx context.Context, arg DeleteNoteParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteNote, arg.ID, arg.UserID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const getNote = `-- name: GetNote :one
-SELECT id, user_id, title, content_md, created_at, updated_at, tsv, domain_id FROM notes
-WHERE id = $1 AND user_id = $2
+SELECT id, user_id, title, content_md, created_at, updated_at, tsv, domain_id, deleted_at FROM notes
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 `
 
 type GetNoteParams struct {
@@ -115,6 +98,9 @@ type GetNoteParams struct {
 	UserID uuid.UUID `json:"user_id"`
 }
 
+// A deleted note reads as absent. The Terhapus view lists them, but every
+// other path — the editor, a PATCH, a category lookup — must not resurrect one
+// by accident.
 func (q *Queries) GetNote(ctx context.Context, arg GetNoteParams) (Note, error) {
 	row := q.db.QueryRow(ctx, getNote, arg.ID, arg.UserID)
 	var i Note
@@ -127,6 +113,7 @@ func (q *Queries) GetNote(ctx context.Context, arg GetNoteParams) (Note, error) 
 		&i.UpdatedAt,
 		&i.Tsv,
 		&i.DomainID,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -171,7 +158,7 @@ func (q *Queries) ListCategoriesForNote(ctx context.Context, arg ListCategoriesF
 }
 
 const listNotes = `-- name: ListNotes :many
-SELECT n.id, n.user_id, n.title, n.content_md, n.created_at, n.updated_at, n.tsv, n.domain_id,
+SELECT n.id, n.user_id, n.title, n.content_md, n.created_at, n.updated_at, n.tsv, n.domain_id, n.deleted_at,
        COALESCE(
            (SELECT array_agg(nc.category_id ORDER BY nc.category_id)
               FROM note_categories nc
@@ -180,10 +167,14 @@ SELECT n.id, n.user_id, n.title, n.content_md, n.created_at, n.updated_at, n.tsv
        )::uuid[] AS category_ids
 FROM notes n
 WHERE n.user_id = $1
-  AND ($4::uuid IS NULL OR n.domain_id = $4)
-  AND ($5::uuid IS NULL OR EXISTS (
+  AND CASE WHEN $4::bool
+           THEN n.deleted_at IS NOT NULL
+           ELSE n.deleted_at IS NULL
+      END
+  AND ($5::uuid IS NULL OR n.domain_id = $5)
+  AND ($6::uuid IS NULL OR EXISTS (
           SELECT 1 FROM note_categories nc
-           WHERE nc.note_id = n.id AND nc.category_id = $5))
+           WHERE nc.note_id = n.id AND nc.category_id = $6))
 ORDER BY n.updated_at DESC
 LIMIT $2 OFFSET $3
 `
@@ -192,6 +183,7 @@ type ListNotesParams struct {
 	UserID     uuid.UUID  `json:"user_id"`
 	Limit      int32      `json:"limit"`
 	Offset     int32      `json:"offset"`
+	Deleted    bool       `json:"deleted"`
 	DomainID   *uuid.UUID `json:"domain_id"`
 	CategoryID *uuid.UUID `json:"category_id"`
 }
@@ -205,16 +197,22 @@ type ListNotesRow struct {
 	UpdatedAt   time.Time   `json:"updated_at"`
 	Tsv         interface{} `json:"tsv"`
 	DomainID    *uuid.UUID  `json:"domain_id"`
+	DeletedAt   *time.Time  `json:"deleted_at"`
 	CategoryIds []uuid.UUID `json:"category_ids"`
 }
 
 // The card count is gone with D-055: a note no longer contains cards, so
 // counting them per note would be counting nothing.
+//
+// `deleted` switches the whole list between live notes and the Terhapus view.
+// One query rather than two so the filters, the ordering and the category
+// aggregation cannot drift apart between them.
 func (q *Queries) ListNotes(ctx context.Context, arg ListNotesParams) ([]ListNotesRow, error) {
 	rows, err := q.db.Query(ctx, listNotes,
 		arg.UserID,
 		arg.Limit,
 		arg.Offset,
+		arg.Deleted,
 		arg.DomainID,
 		arg.CategoryID,
 	)
@@ -234,6 +232,7 @@ func (q *Queries) ListNotes(ctx context.Context, arg ListNotesParams) ([]ListNot
 			&i.UpdatedAt,
 			&i.Tsv,
 			&i.DomainID,
+			&i.DeletedAt,
 			&i.CategoryIds,
 		); err != nil {
 			return nil, err
@@ -246,14 +245,60 @@ func (q *Queries) ListNotes(ctx context.Context, arg ListNotesParams) ([]ListNot
 	return items, nil
 }
 
+const restoreNotes = `-- name: RestoreNotes :execrows
+UPDATE notes
+SET deleted_at = NULL, updated_at = now()
+WHERE user_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NOT NULL
+`
+
+type RestoreNotesParams struct {
+	UserID uuid.UUID   `json:"user_id"`
+	Ids    []uuid.UUID `json:"ids"`
+}
+
+// The undo. note_categories was never touched, so a restored note comes back
+// still wearing its labels.
+func (q *Queries) RestoreNotes(ctx context.Context, arg RestoreNotesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, restoreNotes, arg.UserID, arg.Ids)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const softDeleteNotes = `-- name: SoftDeleteNotes :execrows
+UPDATE notes
+SET deleted_at = now(), updated_at = now()
+WHERE user_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL
+`
+
+type SoftDeleteNotesParams struct {
+	UserID uuid.UUID   `json:"user_id"`
+	Ids    []uuid.UUID `json:"ids"`
+}
+
+// Never a hard delete (00005). One statement serves the single-note button and
+// the bulk selection alike: deleting one is deleting an array of one, so there
+// is no second code path to keep in step.
+//
+// Already-deleted ids simply do not match, which makes a repeated request a
+// no-op rather than a way to push deleted_at forward.
+func (q *Queries) SoftDeleteNotes(ctx context.Context, arg SoftDeleteNotesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteNotes, arg.UserID, arg.Ids)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateNote = `-- name: UpdateNote :one
 UPDATE notes
 SET title      = $3,
     content_md = $4,
     domain_id  = $5,
     updated_at = now()
-WHERE id = $1 AND user_id = $2
-RETURNING id, user_id, title, content_md, created_at, updated_at, tsv, domain_id
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
+RETURNING id, user_id, title, content_md, created_at, updated_at, tsv, domain_id, deleted_at
 `
 
 type UpdateNoteParams struct {
@@ -282,6 +327,7 @@ func (q *Queries) UpdateNote(ctx context.Context, arg UpdateNoteParams) (Note, e
 		&i.UpdatedAt,
 		&i.Tsv,
 		&i.DomainID,
+		&i.DeletedAt,
 	)
 	return i, err
 }

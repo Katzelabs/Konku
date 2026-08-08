@@ -58,11 +58,19 @@ func (s *Server) Routes() http.Handler {
 
 			r.Get("/auth/me", s.handleMe)
 
+			// Deleting is soft on both resources, so both carry a restore and
+			// both lists take ?deleted=true for the Terhapus view. The bulk
+			// pair serves the selection bar; a static segment cannot collide
+			// with {id}, which chi resolves ahead of the wildcard anyway.
 			r.Route("/notes", func(r chi.Router) {
 				r.Get("/", s.handleListNotes)
 				r.Post("/", s.handleCreateNote)
+				r.Post("/bulk-delete", s.handleDeleteNotes)
+				r.Post("/bulk-restore", s.handleRestoreNotes)
 				r.Get("/{id}", s.handleGetNote)
 				r.Patch("/{id}", s.handleUpdateNote)
+				r.Delete("/{id}", s.handleDeleteNote)
+				r.Post("/{id}/restore", s.handleRestoreNote)
 			})
 
 			// Cards are their own resource with their own CRUD (D-055). This
@@ -71,6 +79,8 @@ func (s *Server) Routes() http.Handler {
 			r.Route("/cards", func(r chi.Router) {
 				r.Get("/", s.handleListCards)
 				r.Post("/", s.handleCreateCard)
+				r.Post("/bulk-delete", s.handleDeleteCards)
+				r.Post("/bulk-restore", s.handleRestoreCards)
 				r.Get("/{id}", s.handleGetCard)
 				r.Patch("/{id}", s.handleUpdateCard)
 				r.Delete("/{id}", s.handleDeleteCard)

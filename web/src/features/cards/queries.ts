@@ -1,17 +1,26 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
-import type { Card, CardSummary } from '../../api/types'
+import type { BulkResult, Card, CardSummary } from '../../api/types'
 
 export interface CardFilters {
   domainId?: string | null
   categoryId?: string | null
   q?: string
+  /** The Terhapus view: the same list, filtered to what has been deleted. */
+  deleted?: boolean
 }
 
 export const cardKeys = {
   all: ['cards'] as const,
   list: (f: CardFilters) =>
-    [...cardKeys.all, 'list', f.domainId ?? null, f.categoryId ?? null, f.q ?? ''] as const,
+    [
+      ...cardKeys.all,
+      'list',
+      f.domainId ?? null,
+      f.categoryId ?? null,
+      f.q ?? '',
+      f.deleted ?? false,
+    ] as const,
   detail: (id: string) => [...cardKeys.all, 'detail', id] as const,
 }
 
@@ -33,6 +42,7 @@ export function useCards(filters: CardFilters = {}) {
       if (filters.domainId) params.set('domainId', filters.domainId)
       if (filters.categoryId) params.set('categoryId', filters.categoryId)
       if (filters.q?.trim()) params.set('q', filters.q.trim())
+      if (filters.deleted) params.set('deleted', 'true')
       return api.get<CardSummary[]>(`/cards?${params}`)
     },
   })
@@ -61,7 +71,15 @@ function useCardMutation<V, R>(fn: (v: V) => Promise<R>) {
     // Cards feed the review queue and the exam draw, so a change here can
     // alter what is due. Invalidating the whole key is cheap and avoids a
     // stale due list after an edit.
-    onSuccess: () => qc.invalidateQueries({ queryKey: cardKeys.all }),
+    // The braces matter. An arrow that *returns* the invalidate promise makes
+    // TanStack Query await the refetch before running the callbacks passed to
+    // `mutate` — and after a delete that refetch asks for the row just
+    // deleted, gets a 404, and rejects. The caller's onSuccess is then skipped
+    // entirely, so a confirm dialog never closes and a peek stays open on a
+    // thing that is gone. Invalidate, return nothing.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: cardKeys.all })
+    },
   })
 }
 
@@ -90,4 +108,20 @@ export function useDeleteCard() {
 
 export function useRestoreCard() {
   return useCardMutation((id: string) => api.post<void>(`/cards/${id}/restore`))
+}
+
+/**
+ * The selection bar. The response carries how many rows actually changed,
+ * which the screen reports — an id that had already gone is not counted.
+ */
+export function useDeleteCards() {
+  return useCardMutation((ids: string[]) =>
+    api.post<BulkResult>('/cards/bulk-delete', { ids }),
+  )
+}
+
+export function useRestoreCards() {
+  return useCardMutation((ids: string[]) =>
+    api.post<BulkResult>('/cards/bulk-restore', { ids }),
+  )
 }

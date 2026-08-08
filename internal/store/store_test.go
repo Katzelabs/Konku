@@ -114,12 +114,15 @@ func TestTenantIsolation(t *testing.T) {
 	})
 
 	t.Run("bob cannot delete alice's note", func(t *testing.T) {
-		rows, err := st.Q().DeleteNote(ctx, gen.DeleteNoteParams{ID: note.ID, UserID: bob.ID})
-		if err != nil {
-			t.Fatalf("delete: %v", err)
+		if err := st.DeleteNote(ctx, bob.ID, note.ID); !errors.Is(err, store.ErrNoteNotFound) {
+			t.Fatalf("got %v, want ErrNoteNotFound", err)
 		}
-		if rows != 0 {
-			t.Fatalf("deleted %d rows, want 0", rows)
+
+		// And alice's note is genuinely still there, not soft-deleted by the
+		// attempt: the user_id in the WHERE clause is what makes the delete a
+		// no-op rather than anything checked afterwards.
+		if _, err := st.Q().GetNote(ctx, gen.GetNoteParams{ID: note.ID, UserID: alice.ID}); err != nil {
+			t.Fatalf("re-reading alice's note: %v", err)
 		}
 	})
 

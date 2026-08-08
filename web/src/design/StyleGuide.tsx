@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react'
-import { LogOut, Moon, Plus, Settings, Sun, Trash2 } from 'lucide-react'
+import type { Domain } from '../api/types'
+import { Folder, LogOut, Moon, Plus, Settings, Sun, Trash2 } from 'lucide-react'
 import { Avatar } from '../components/ui/avatar'
 import { Badge, DomainBadge, DomainDot } from '../components/ui/badge'
 import { CategoryChip } from '../components/ui/category'
-import { DetailsField } from '../components/ui/details-drawer'
+import { Checkbox } from '../components/ui/checkbox'
+import { ConfirmDialog } from '../components/ui/confirm-dialog'
 import { Markdown } from '../components/ui/markdown'
+import { SelectionBar } from '../components/ui/selection-bar'
+import { PropertyBar, PropertyRow, DomainProperty } from '../components/ui/property'
 import { ViewToggle, type ViewMode } from '../components/ui/view-toggle'
 import {
   DropdownMenu,
@@ -56,6 +60,8 @@ export default function StyleGuide() {
   const [dark, setDark] = useState(false)
   const [duration, setDuration] = useState(20)
   const [view, setView] = useState<ViewMode>('list')
+  const [checked, setChecked] = useState(true)
+  const [confirming, setConfirming] = useState(false)
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark)
@@ -206,6 +212,32 @@ export default function StyleGuide() {
               <Label htmlFor="sg-switch">Ikut rotasi mingguan</Label>
               <Switch id="sg-switch" defaultChecked />
             </div>
+
+            {/*
+              A native input under a styled box — no Radix. All three states,
+              because the indeterminate one is the reason a select-all box can
+              be honest about a partial selection instead of guessing.
+            */}
+            <div className="flex flex-col gap-2">
+              <Label>Checkbox</Label>
+              <div className="flex items-center gap-4">
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-fg">
+                  <Checkbox
+                    checked={checked}
+                    onChange={() => setChecked((v) => !v)}
+                  />
+                  Dipilih
+                </label>
+                <span className="flex items-center gap-2 text-sm text-muted-fg">
+                  <Checkbox checked={false} indeterminate readOnly />
+                  Sebagian
+                </span>
+                <span className="flex items-center gap-2 text-sm text-subtle-fg">
+                  <Checkbox checked={false} disabled readOnly />
+                  Disabled
+                </span>
+              </div>
+            </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="sg-disabled">Disabled</Label>
               <Input id="sg-disabled" disabled defaultValue="Tidak bisa diubah" />
@@ -307,13 +339,19 @@ export default function StyleGuide() {
         </Section>
 
         <Section
-          title="Details field"
-          hint="One labelled row inside the details drawer. The drawer itself is a column at lg+ and a dialog below."
+          title="Properties"
+          hint="Above an item's title, not in a drawer. Borderless — a row of boxed fields above a title reads as a form to fill in before you may write."
         >
-          <div className="max-w-xs rounded-lg border border-border bg-card p-4">
-            <DetailsField label="Domain">
-              <DomainBadge color="#4F7CAC" label="Matematika" />
-            </DetailsField>
+          <div className="max-w-lg rounded-lg border border-border bg-card p-4">
+            <PropertyBar>
+              <PropertyRow icon={<Folder className="size-3.5" />} label="Domain">
+                <DomainProperty
+                  domains={STYLE_GUIDE_DOMAINS}
+                  value={STYLE_GUIDE_DOMAINS[0].id}
+                  onChange={() => {}}
+                />
+              </PropertyRow>
+            </PropertyBar>
           </div>
         </Section>
 
@@ -373,6 +411,45 @@ export default function StyleGuide() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+        </Section>
+
+        <Section
+          title="Selection"
+          hint="Ticking rows on a list, and confirming what it removes."
+        >
+          <Row label="bar">
+            <SelectionBar
+              count={3}
+              allSelected={false}
+              onToggleAll={() => {}}
+              onClear={() => {}}
+              className="w-full"
+            >
+              <Button variant="destructive" size="sm">
+                <Trash2 />
+                Hapus
+              </Button>
+            </SelectionBar>
+          </Row>
+
+          {/*
+            The confirm reads as information, not a threat: deleting is soft on
+            both notes and cards, so the description says where the thing goes
+            rather than warning that it is gone (hard rule 6).
+          */}
+          <Row label="confirm">
+            <Button variant="secondary" onClick={() => setConfirming(true)}>
+              Buka konfirmasi
+            </Button>
+            <ConfirmDialog
+              open={confirming}
+              onOpenChange={setConfirming}
+              title="Hapus 3 catatan?"
+              description="Catatan pindah ke Terhapus beserta kategorinya, dan bisa dikembalikan kapan saja."
+              confirmLabel="Hapus"
+              onConfirm={() => setConfirming(false)}
+            />
+          </Row>
         </Section>
 
         <Section title="Account" hint="Initials, not a photo — there is no name field.">
@@ -509,3 +586,14 @@ const DOMAINS = [
   { label: 'Psikologi', color: '#B08968' },
   { label: 'Musik', color: '#8E7DBE' },
 ]
+
+/** A typed fixture for DomainProperty, which takes real Domain rows. */
+const STYLE_GUIDE_DOMAINS: Domain[] = DOMAINS.map((d, i) => ({
+  id: `sg-${i}`,
+  slug: `sg-${i}`,
+  label: d.label,
+  color: d.color,
+  weeklyQuota: 0,
+  sortOrder: i,
+  archivedAt: null,
+}))

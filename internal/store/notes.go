@@ -99,6 +99,59 @@ func (s *Store) UpdateNote(ctx context.Context, userID, noteID uuid.UUID, in Not
 	return out, nil
 }
 
+// DeleteNote soft-deletes one note, and RestoreNote undoes it.
+//
+// Soft, not hard, and for the user's sake rather than for referential
+// integrity: nothing but its own labels points at a note. Deletion on a CRUD
+// screen should be undoable, and in an app whose thesis is that nothing you
+// learn disappears silently, one click must not destroy writing (00005).
+func (s *Store) DeleteNote(ctx context.Context, userID, noteID uuid.UUID) error {
+	rows, err := s.DeleteNotes(ctx, userID, []uuid.UUID{noteID})
+	return single(rows, err, ErrNoteNotFound)
+}
+
+func (s *Store) RestoreNote(ctx context.Context, userID, noteID uuid.UUID) error {
+	rows, err := s.RestoreNotes(ctx, userID, []uuid.UUID{noteID})
+	return single(rows, err, ErrNoteNotFound)
+}
+
+// DeleteNotes soft-deletes a whole selection and reports how many rows changed.
+//
+// One statement, so the selection either lands or does not — a bulk delete that
+// gave up halfway would leave the user looking at a list they cannot reason
+// about. Ids that are missing, already deleted, or someone else's simply do not
+// match, so the count can be lower than the number asked for; the handler
+// reports the count rather than treating that as an error, because "delete
+// these twelve" is still satisfied when one of them was already gone.
+func (s *Store) DeleteNotes(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) (int64, error) {
+	rows, err := s.q.SoftDeleteNotes(ctx, gen.SoftDeleteNotesParams{UserID: userID, Ids: ids})
+	if err != nil {
+		return 0, fmt.Errorf("store: deleting notes: %w", err)
+	}
+	return rows, nil
+}
+
+func (s *Store) RestoreNotes(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) (int64, error) {
+	rows, err := s.q.RestoreNotes(ctx, gen.RestoreNotesParams{UserID: userID, Ids: ids})
+	if err != nil {
+		return 0, fmt.Errorf("store: restoring notes: %w", err)
+	}
+	return rows, nil
+}
+
+// single turns a bulk result into a single-item one. No row changed means the
+// id named nothing this user owns — missing, already deleted, or somebody
+// else's, all the same answer (D-039).
+func single(rows int64, err error, notFound error) error {
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return notFound
+	}
+	return nil
+}
+
 // syncNoteCategories replaces a note's labels wholesale.
 //
 // Clear-then-insert rather than a diff. Labels carry no history — unlike a
