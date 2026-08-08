@@ -41,7 +41,7 @@ export default function CardsPage() {
   }, [cards, query])
 
   return (
-    <div className="flex max-w-4xl flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <PageHeader
         title="Kartu"
         description="Semua kartu yang sudah ditulis di catatan. Kartu dibuat dan diubah di catatannya, bukan di sini."

@@ -190,19 +190,33 @@ adding the token.
 
 Every authenticated screen sits inside the same shell:
 
-- **Sidebar** (desktop, 260px) — the six destinations, plus Pengaturan below a
-  divider. **Bottom nav** on phones; Pengaturan is not there, it lives in the
+- **Sidebar** (desktop) — the six destinations, plus Pengaturan below a divider.
+  **Collapsible** to a 64px icon rail via the toggle at the left of the top bar;
+  the state persists in `localStorage`. Collapsed, each link takes its
+  accessible name from `title`/`aria-label` and the due count moves onto the
+  icon. **Bottom nav** on phones; Pengaturan is not there, it lives in the
   account menu.
-- **Top bar** — breadcrumb (`Konku / <page>`), note search, the focus pill when
-  a session is running, the account menu. It is on every screen, which is why
+- **Top bar** — sidebar toggle, breadcrumb, note search, the focus pill when a
+  session is running, the account menu. It is on every screen, which is why
   `PageHeader` carries no breadcrumb of its own.
 - **`PageHeader`** — the first thing in the page body, always.
 
-**Width.** Browse and settings screens are **left-aligned** at their own measure
-(`max-w-3xl`, `max-w-4xl`) and the container never centres them, so the left
-edge does not jump as you navigate. The two focus flows — reviewing and sitting
-an exam — are the deliberate exception and *are* centred (`mx-auto max-w-2xl`),
-because there is one thing to look at.
+**Breadcrumbs** come from the `TRAIL` table in `layout/Nav.tsx`, not from URL
+segments — Domain sits under Pengaturan in the trail but lives at `/domains`,
+and an attempt is a child of Ujian without `/exams` in its path. Add a route
+there when you add a page.
+
+**Width.** The content area is **full width**; the gutter is the only thing
+between a page and the edge. Any narrower measure is the page's own decision.
+Two kinds of exception:
+
+- **Prose** keeps a measure — `max-w-reading-measure` on note bodies,
+  `max-w-prose` on `PageHeader` descriptions. Line length is a legibility
+  constraint, not a layout preference.
+- **The two focus flows** — reviewing and sitting an exam — are centred at
+  `mx-auto max-w-2xl`, because there is exactly one thing to look at.
+
+Everything else (Beranda, Catatan, Kartu, Ujian, Pengaturan, Domain) fills.
 
 ---
 

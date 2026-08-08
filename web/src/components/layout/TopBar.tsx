@@ -3,6 +3,8 @@ import {
   ChevronRight,
   GraduationCap,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
   Search,
   Settings,
 } from 'lucide-react'
@@ -18,7 +20,7 @@ import {
 } from '../ui/dropdown-menu'
 import { Input } from '../ui/input'
 import { FocusPill } from './FocusPill'
-import { navLabelFor } from './Nav'
+import { crumbsFor } from './Nav'
 
 /**
  * The bar across the top of every authenticated screen: where you are, a way
@@ -28,10 +30,33 @@ import { navLabelFor } from './Nav'
  * stays reachable on desktop, where the main column is its own scroll
  * container.
  */
-export function TopBar({ email, onLogout }: { email: string; onLogout: () => void }) {
+export function TopBar({
+  email,
+  onLogout,
+  sidebarCollapsed,
+  onToggleSidebar,
+}: {
+  email: string
+  onLogout: () => void
+  sidebarCollapsed: boolean
+  onToggleSidebar: () => void
+}) {
   return (
-    <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-card px-4 py-2.5 md:px-gutter">
+    <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-card px-1 py-2.5 md:px-gutter">
       <BrandMark />
+      <button
+        onClick={onToggleSidebar}
+        aria-label={sidebarCollapsed ? 'Buka sidebar' : 'Tutup sidebar'}
+        title={sidebarCollapsed ? 'Buka sidebar' : 'Tutup sidebar'}
+        aria-expanded={!sidebarCollapsed}
+        className="hidden shrink-0 rounded-md p-1.5 text-subtle-fg transition-colors hover:bg-muted hover:text-surface-fg md:block"
+      >
+        {sidebarCollapsed ? (
+          <PanelLeftOpen className="size-4" />
+        ) : (
+          <PanelLeftClose className="size-4" />
+        )}
+      </button>
       <Breadcrumbs />
 
       <div className="ml-auto flex items-center gap-2 md:gap-3">
@@ -56,24 +81,33 @@ function BrandMark() {
 
 function Breadcrumbs() {
   const { pathname } = useLocation()
-  const label = navLabelFor(pathname)
+  const crumbs = crumbsFor(pathname)
 
   return (
     <nav aria-label="Breadcrumb" className="hidden min-w-0 items-center gap-1.5 text-sm md:flex">
       <Link
         to="/home"
-        className="text-muted-fg transition-colors hover:text-surface-fg"
+        className="shrink-0 text-muted-fg transition-colors hover:text-surface-fg"
       >
         Konku
       </Link>
-      {label && (
-        <>
+      {crumbs.map((crumb, i) => (
+        <span key={crumb.label} className="flex min-w-0 items-center gap-1.5">
           <ChevronRight className="size-3.5 shrink-0 text-subtle-fg" aria-hidden />
-          <span className="truncate font-medium text-surface-fg" aria-current="page">
-            {label}
-          </span>
-        </>
-      )}
+          {crumb.to && i < crumbs.length - 1 ? (
+            <Link
+              to={crumb.to}
+              className="truncate text-muted-fg transition-colors hover:text-surface-fg"
+            >
+              {crumb.label}
+            </Link>
+          ) : (
+            <span className="truncate font-medium text-surface-fg" aria-current="page">
+              {crumb.label}
+            </span>
+          )}
+        </span>
+      ))}
     </nav>
   )
 }

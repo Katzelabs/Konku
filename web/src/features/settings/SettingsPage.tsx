@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react'
-import { LogOut, Monitor, Moon, Sun } from 'lucide-react'
+import { ChevronRight, LogOut, Monitor, Moon, Sun } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { Button } from '../../components/ui/button'
 import { Card } from '../../components/ui/card'
 import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
 import { PageHeader } from '../../components/ui/page-header'
 import { ToggleGroup, ToggleGroupItem } from '../../components/ui/toggle-group'
-import DomainSettings from '../domains/DomainSettings'
 import { useLogout, useMe } from '../auth/useAuth'
 import { useTheme, type Theme } from './useTheme'
 
@@ -29,7 +29,7 @@ export default function SettingsPage() {
   const logout = useLogout()
 
   return (
-    <div className="flex max-w-3xl flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Pengaturan"
         description="Domain, tampilan, dan akun."
@@ -80,7 +80,22 @@ export default function SettingsPage() {
       </Section>
 
       <Section title="Domain">
-        <DomainSettings />
+        {/*
+          A link rather than the editor inline. Domain management is a page's
+          worth of forms; folding it into a settings section buried the rest of
+          this screen under it, and it deserves a URL you can link to.
+        */}
+        <Link to="/domains" className="block">
+          <Card className="flex items-center gap-4 px-5 py-4 transition-colors hover:bg-muted">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-card-fg">Atur domain</p>
+              <p className="text-sm text-muted-fg">
+                Nama, warna, target mingguan, dan arsip.
+              </p>
+            </div>
+            <ChevronRight className="size-4 shrink-0 text-subtle-fg" />
+          </Card>
+        </Link>
       </Section>
     </div>
   )

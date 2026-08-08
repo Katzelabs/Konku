@@ -24,7 +24,7 @@ export default function ExamsPage() {
   const exams = data ?? []
 
   return (
-    <div className="flex max-w-3xl flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <PageHeader
         title="Ujian"
         description="Latihan dari kartu yang sudah ada di catatan. Hasilnya tidak mengubah jadwal ulangan — ini buat mengukur, bukan buat dihukum."

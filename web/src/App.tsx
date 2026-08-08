@@ -5,6 +5,7 @@ import { Notice } from './components/ui/notice'
 import LoginPage from './features/auth/LoginPage'
 import { useMe } from './features/auth/useAuth'
 import CardsPage from './features/cards/CardsPage'
+import DomainsPage from './features/domains/DomainsPage'
 import ExamPage from './features/exams/ExamPage'
 import ExamsPage from './features/exams/ExamsPage'
 import SitExamPage from './features/exams/SitExamPage'
@@ -63,8 +64,8 @@ export default function App() {
           <Route path="/attempts/:id" element={<SitExamPage />} />
           <Route path="/settings" element={<SettingsPage />} />
 
-          {/* Domains moved into Pengaturan; old links still land somewhere sane. */}
-          <Route path="/domains" element={<Navigate to="/settings" replace />} />
+          {/* Its own route, reached from Pengaturan rather than the nav. */}
+          <Route path="/domains" element={<DomainsPage />} />
 
           <Route path="*" element={<Navigate to="/home" replace />} />
         </Routes>

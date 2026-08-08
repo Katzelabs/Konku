@@ -45,7 +45,7 @@ export default function ExamPage() {
   }
 
   return (
-    <div className="flex max-w-3xl flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3">
         <Button asChild variant="link" size="inline" className="self-start">
           <Link to="/exams">
