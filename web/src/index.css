@@ -1,3 +1,3 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tokens, fonts and base layer. Everything lives in styles/theme.css so there
+   is exactly one file to open when asking "what colour is that?". */
+@import './styles/theme.css';

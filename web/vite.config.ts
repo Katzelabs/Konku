@@ -1,8 +1,12 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
-  plugins: [react()],
+  // Tailwind v4 runs as a Vite plugin, not through PostCSS. The design tokens
+  // live in CSS (`@theme` in src/styles/theme.css) rather than a JS config —
+  // that is the whole reason for being on v4 (see docs/DESIGN.md).
+  plugins: [react(), tailwindcss()],
 
   build: {
     // Write straight into the Go package that embeds it. go:embed cannot

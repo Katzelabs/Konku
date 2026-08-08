@@ -332,6 +332,40 @@ Handlers map `foreign_key_violation` to a 409 with Indonesian copy, never a 500.
 ### D-052 — `sessions` is renamed to `auth_sessions`
 Server-side auth sessions and focus sessions both wanted the name. With exam attempts arriving as a third timed thing, "which sessions table" stops being a joke. One migration line, permanent clarity.
 
+### D-053 — Tokens in CSS, components owned; shadcn is a source, not a dependency
+Tailwind **v4**, with every design token declared in `web/src/styles/theme.css` (`@theme`, plus `:root`/`.dark` semantic layers). No `tailwind.config.js` — reintroducing one splits the source of truth for "what colour is that". The upgrade from v3 was done before the token layer existed, when it cost eight renamed utilities; after, it would have meant rewriting the tokens.
+
+Component primitives live in `web/src/components/ui/` and are **ours**. shadcn/ui supplied the starting source for the ones worth not hand-writing; the files were then restyled against the tokens. Radix is pulled in only where behaviour is genuinely hard and invisible when wrong: `Dialog` (focus trap, focus restore, scroll lock, Escape, `aria-modal`) and `Switch`. The modal it replaced had none of those. Everything else — Button, Input, Card, Badge, Separator, Label — is markup, because with a mockup in hand writing them is faster than bending someone else's variants.
+
+The deciding fact was that the Figma mockup's palette *is* Tailwind's defaults — `indigo-600`, `gray-*`, `rounded-xl`, hairline borders. That is shadcn's own look, so adopting it removed work instead of creating override layers. Had the mockup carried a bespoke identity, the call would have gone the other way.
+
+Runtime cost: seven frontend packages (three Radix, `clsx`, `tailwind-merge`, `cva`, `lucide-react`) plus self-hosted Geist. All build-time in the D-041 sense — Vite emits, Go embeds, no Node in production.
+
+`/design` renders every token and variant, gated behind `import.meta.env.DEV` so Rollup drops it from the embedded build. A living style guide is the only thing that reliably stops the same button being reinvented in five feature folders.
+
+**Rejected:** MUI/Mantine/Chakra — a competing styling engine and a house style to override. `tailwind.config.js` on v3 — tokens in JS. Installing shadcn's full catalogue. Hand-rolling the dialog, again.
+
+### D-054 — The Figma mockup is a visual reference; its mechanics are not adopted
+The mockup (six 1440px frames: home, notes, cards, exams, timer, settings) is where the palette, the Geist typeface, the 260px sidebar, the two-pane notes layout, the floating focus pill and the card geometry come from. **Its product model is not this product**, and the differences are not gaps to fill later — most are things this file already rejected.
+
+Rejected, with the decision each one contradicts:
+
+- **`Study Streak — 18 Days` / "Personal record is 21 days!"** — D-007. A daily streak is punitive for someone who said up front there will be off days. The weekly streak (D-035) stands.
+- **`Cards Reviewed 142 / 200`, `80% of daily target reached`** — D-009. The due-card cap exists so that two weeks away is ten cards, not forty. A daily target inverts the one mechanic protecting against quitting.
+- **"You are on track to complete all of your goals today"** — on-track framing manufactures off-track guilt.
+- **Four-way grading with a red `Hard` button** — the scheduler is binary (`lupa`/`ingat`), and colouring "forgot" as an error contradicts the entire premise of spaced repetition. No red on a review outcome, ever.
+- **`Score: 92% accuracy`, `Grade: B+`, `Action Required`, readiness bars in red/green** — gamification and pass/fail framing.
+- **`Cards` as a top-level page with decks, cover art and import** — cards are embedded in notes (`Q :: A`) and addressed by note + ID. There are no decks and no card CRUD outside the note.
+- **Timer duration picker (`25m / 45m / 50m / Custom`) and break lengths** — D-014. A manual picker puts problem 4 back on the user's discipline, which is problem 1. Progressive focus raises the default quietly, starting at 15–20 minutes.
+- **`Share` on a note** — D-039, multi-tenant but never social.
+- **`Pro Member`, avatar upload, push notifications, CSV export** — not in scope.
+
+The mockup also has **no review screen**, which is the product's core loop, and **no domains UI**, which D-046 made mandatory. Its `Settings` page offers a daily review target — the one setting that must not exist.
+
+Recorded here rather than fixed silently because a mockup outlives a conversation: without this entry, the next person to open the Figma file reintroduces the streak.
+
+**Consequence:** the palette has no `success` or `warning` token and no green or amber, and `destructive` is documented as delete-only. Painting a punitive screen requires leaving the design system, which is the point. See `docs/DESIGN.md` §5.
+
 ---
 
 ## Open questions

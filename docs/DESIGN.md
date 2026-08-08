@@ -1,0 +1,202 @@
+# DESIGN.md — the design system
+
+What the UI is made of, and the rules that keep it consistent. `PRD.md` says
+what to build; this says what it looks like and which pieces to build it from.
+
+**Live reference:** `make dev-web`, then <http://localhost:5173/design>. Every
+token and every component variant renders there, with a light/dark toggle. It
+is dev-only — `import.meta.env.DEV` folds to `false` in a production build and
+Rollup drops the module, so it never reaches the embedded binary.
+
+---
+
+## 1. Where things live
+
+| Path | What |
+|---|---|
+| `web/src/styles/theme.css` | **Every** token. The only file with hex values in it. |
+| `web/src/index.css` | One line: imports the above. |
+| `web/src/components/ui/` | The primitives. Owned source, not a dependency. |
+| `web/src/lib/utils.ts` | `cn()` — clsx + tailwind-merge. |
+| `web/src/design/StyleGuide.tsx` | The living style guide at `/design`. |
+
+Tailwind is **v4**. Tokens are CSS (`@theme`), not a JS config — there is no
+`tailwind.config.js` and adding one back would split the source of truth.
+
+---
+
+## 2. The one rule
+
+**A component never names a colour. It names a role.**
+
+```tsx
+// no
+<div className="rounded-lg bg-white border border-slate-200 text-slate-900">
+
+// yes
+<Card>
+```
+
+```tsx
+// no
+className="text-slate-500"
+
+// yes
+className="text-muted-fg"
+```
+
+Raw palette classes (`bg-slate-100`, `text-red-500`, `#4F46E5`) in a feature
+folder are a bug in `theme.css`, not a shortcut. If a screen needs something the
+system does not have, add it to the system.
+
+The exception is **domain colours**, which are user data — an arbitrary
+`#RRGGBB` the user picked in the domains UI. Those arrive as inline `style` on
+`<DomainDot>` and nowhere else. The system palette is deliberately low-chroma so
+that those dots are the most saturated thing on any screen.
+
+---
+
+## 3. Tokens
+
+Derived from the Figma mockup: Geist, `indigo-600` accent, a grey ink scale.
+Light values on `:root`, dark on `.dark`, mapped into Tailwind via
+`@theme inline`.
+
+### Colour
+
+| Token | Role |
+|---|---|
+| `surface` / `surface-fg` | The page. |
+| `card` / `card-fg` | Panels, list rows, the editor. |
+| `popover` / `popover-fg` | Dialogs, menus. |
+| `primary` / `primary-fg` | The one action a screen wants. **One per view.** |
+| `accent` / `accent-fg` | Selected/active: current nav item, open note, callouts. |
+| `secondary` / `secondary-fg` | Outline buttons — the border carries them. |
+| `muted` / `muted-fg` | Quiet fills and secondary text. |
+| `subtle-fg` | Timestamps, counts, metadata. The quietest text. |
+| `reading-fg` | Note bodies. Softer than headings on purpose. |
+| `border` / `input` / `ring` | Lines and focus. |
+| `focus` / `focus-fg` / `focus-muted-fg` | The focus-session surface. |
+| `destructive` / `destructive-fg` / `destructive-muted` | **Deleting data only.** |
+
+Two absences are deliberate:
+
+- **There is no `success` token and no green.** Nothing in this product is a
+  pass. Finishing a review is not an achievement to celebrate; it is Tuesday.
+- **There is no `warning` token and no amber.** Nothing here warns you.
+
+`focus` is dark on a light page and *light* on a dark page — it is the surface
+that makes the rest of the app step back, which is a relationship, not a colour.
+
+### Type
+
+Geist Variable, self-hosted via `@fontsource-variable/geist` (no CDN, D-041).
+Geist Mono for card syntax and code.
+
+| Use | Class |
+|---|---|
+| Page title | `text-2xl font-bold tracking-tight` |
+| Card title | `text-base font-semibold` |
+| UI text | `text-sm` |
+| Secondary | `text-sm text-muted-fg` |
+| Metadata | `text-xs text-subtle-fg` |
+| **Note bodies** | `text-reading text-reading-fg` — 17px / 1.7 |
+
+`text-reading` exists because hard rule 7 is about protecting capture, and rule
+5 is about actually reading what you captured. Prose set at UI size is prose you
+skim.
+
+### Radius, elevation, motion
+
+`rounded-sm` chips · `rounded-md` buttons, inputs, nav items · `rounded-lg`
+cards · `rounded-xl` dialogs.
+
+**Border-first.** A panel is a border, not a shadow. `shadow-float` and
+`shadow-dialog` are only for things that genuinely float.
+
+`--ease-quiet` with 120ms/200ms durations. Nothing bounces, nothing celebrates,
+and `prefers-reduced-motion` is honoured in the base layer.
+
+### Layout
+
+`--spacing-sidebar` (260px) · `--spacing-gutter` (40px) ·
+`--spacing-reading-measure` (46rem max line length).
+
+---
+
+## 4. Components
+
+In `web/src/components/ui/`. shadcn/ui was used as a **source of vetted
+component code, not a dependency** — the files are ours, restyled against the
+tokens above. Radix is pulled in only where behaviour is genuinely hard to get
+right: `Dialog` (focus trap, focus restore, scroll lock, Escape, `aria-modal`)
+and `Switch`. Everything else is markup.
+
+| Component | Notes |
+|---|---|
+| `Button` | `primary` `secondary` `ghost` `accent` `link` `destructive`; `sm/md/lg/icon/inline`; `asChild` for `<Link>`. |
+| `Input` `Textarea` `Label` | Native elements. No Radix Label — every control here is native. |
+| `Card` + `Header/Title/Description/Content/Footer` | |
+| `Badge` `DomainDot` `DomainBadge` | |
+| `Dialog` + parts | Radix. `DialogTitle` is required for a11y. |
+| `Switch` `Separator` | |
+| `Loading` | Always paired with text. |
+| `Notice` | Replaces the repeated `bg-slate-100` message box. `neutral` by default. |
+| `EmptyState` | See below. |
+| `PageHeader` | Title, one line of purpose, at most one action. |
+
+### Adding one
+
+1. Check `/design` first — it probably exists.
+2. If the design comes from Figma, take the geometry, not the mechanics
+   (§5).
+3. Tokens only. If you need a new colour, it goes in `theme.css` with a role
+   name and a comment saying why.
+4. Add it to `StyleGuide.tsx`. A component not on that page will be
+   reimplemented by the next person who needs it.
+
+---
+
+## 5. Never punitive, in components
+
+Hard rule 6 is a constraint on the *system*, not a thing to remember per screen.
+Where it is encoded:
+
+- **`destructive` is for deleting data.** Deleting a note, deleting a domain.
+  Never a review outcome, never a missed day, never an exam result, never an
+  empty state. `Button`'s variant comment says so at the call site.
+- **The two SRS answers are `secondary` and `primary`.** "Belum ingat" carries
+  no red and no warning tone. Forgetting is the case the entire scheduler is
+  built around — see `ReviewPage.tsx` and D-054.
+- **`EmptyState` states a fact and offers the next action.** It never counts
+  what was missed, never implies falling behind, and has no disappointed
+  illustration. "Belum ada catatan", not "You haven't written anything yet!".
+- **`Notice` defaults to neutral.** Server errors are already user-facing
+  Indonesian from `writeError`; they are information, not a telling-off.
+- **No progress bar toward a daily quota exists**, because no daily quota
+  exists (D-009).
+
+If a design asks for a colour this palette does not have, that is usually the
+palette catching a mechanic the product rejected — check `DECISIONS.md` before
+adding the token.
+
+---
+
+## 6. Dark mode
+
+Both palettes are authored. `.dark` on `<html>` switches them; the class-based
+`@custom-variant` means a future toggle beats the OS preference rather than
+fighting it.
+
+**Nothing switches it yet** — there is no settings surface to put the control on
+(see the open question in `DECISIONS.md` about per-user settings). The style
+guide toggles it locally so the dark values stay honest. Any new component must
+look right in both; `/design` is where you check.
+
+---
+
+## 7. Copy
+
+Hard rule 8: **user-facing copy is Bahasa Indonesia**, code and comments are
+English. That includes `aria-label`s and placeholder text — they are read by
+users. The style guide's own section headings are English; it is a dev tool.

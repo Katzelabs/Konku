@@ -26,7 +26,7 @@ export default function LoginPage() {
             required
             autoComplete="username"
             autoFocus
-            className="rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-slate-500"
+            className="rounded-lg border border-slate-300 px-3 py-2 focus:border-slate-500"
           />
         </label>
 
@@ -38,7 +38,7 @@ export default function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
             required
             autoComplete="current-password"
-            className="rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-slate-500"
+            className="rounded-lg border border-slate-300 px-3 py-2 focus:border-slate-500"
           />
         </label>
 

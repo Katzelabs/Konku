@@ -68,11 +68,11 @@ export default function CaptureDialog({
           }}
           rows={4}
           placeholder="Satu baris saja cukup."
-          className="mt-3 w-full resize-y rounded-lg border border-slate-200 p-3 text-sm leading-relaxed outline-none focus:border-slate-400"
+          className="mt-3 w-full resize-y rounded-lg border border-slate-200 p-3 text-sm leading-relaxed focus:border-slate-400"
         />
 
         <p className="mt-2 text-xs text-slate-500">
-          Tulis kartu dengan format <code className="rounded bg-slate-100 px-1">Tanya :: Jawab</code>
+          Tulis kartu dengan format <code className="rounded-sm bg-slate-100 px-1">Tanya :: Jawab</code>
         </p>
 
         {create.isError && (

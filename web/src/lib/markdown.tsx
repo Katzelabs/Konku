@@ -172,7 +172,7 @@ function renderInline(text: string): ReactNode[] {
 
     if (token.startsWith('`')) {
       out.push(
-        <code key={key++} className="rounded bg-slate-100 px-1 py-0.5 text-[0.9em]">
+        <code key={key++} className="rounded-sm bg-slate-100 px-1 py-0.5 text-[0.9em]">
           {token.slice(1, -1)}
         </code>,
       )

@@ -122,7 +122,7 @@ export default function NoteEditorPage() {
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder="Judul"
-        className="w-full text-xl font-semibold text-slate-900 outline-none placeholder:text-slate-300"
+        className="w-full text-xl font-semibold text-slate-900 placeholder:text-slate-300"
       />
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -133,12 +133,12 @@ export default function NoteEditorPage() {
             onChange={(e) => setContent(e.target.value)}
             spellCheck={false}
             placeholder="Tulis di sini…"
-            className="min-h-[24rem] w-full resize-y rounded-lg border border-slate-200 p-3 font-mono text-sm leading-relaxed outline-none focus:border-slate-400"
+            className="min-h-[24rem] w-full resize-y rounded-lg border border-slate-200 p-3 font-mono text-sm leading-relaxed focus:border-slate-400"
           />
 
           {/* The syntax is the one thing a new user has to be told. */}
           <p className="text-xs text-slate-500">
-            Tulis kartu dengan format <code className="rounded bg-slate-100 px-1">Tanya :: Jawab</code>
+            Tulis kartu dengan format <code className="rounded-sm bg-slate-100 px-1">Tanya :: Jawab</code>
             {cards > 0 && ` · ${cards} kartu di catatan ini`}
           </p>
         </div>

@@ -31,6 +31,7 @@ Scope is the **MVP** in `PRD.md` §8 **plus schema v2**. Cloze/feynman card type
 | `docs/DECISIONS.md` | Why things were decided, and **what was rejected**. Check before proposing anything — a lot of obvious-seeming ideas were cut deliberately. |
 | `docs/PRD.md` | Product: features, priorities, milestones |
 | `docs/TECH.md` | Architecture, data model, card syntax, infra |
+| `docs/DESIGN.md` | **The design system** — tokens, components, and the rules. Read before touching any UI. |
 
 ## Commands
 
@@ -69,11 +70,13 @@ go run ./cmd/konku seed-user -email you@example.com
 
 **Frontend.** Feature folders under `web/src/features/`. TanStack Query owns all server state; `useState`/Zustand only for genuine client state, which is essentially just the timer (D-044). A 401 from `/auth/me` is a normal "signed out" answer, not an error.
 
+**Design system.** Tailwind **v4** — tokens live in `web/src/styles/theme.css`, there is no `tailwind.config.js`. Build screens from `web/src/components/ui/`; a raw palette class (`bg-slate-100`, `text-red-500`) or a hex value in a feature folder is a bug in the token file, not a shortcut. Domain colours are the one exception — they are user data. See `docs/DESIGN.md` and the live style guide at `/design` (dev only). The palette has no green and no `success` token on purpose (D-054).
+
 ## Stack
 
-Go + **chi** (single binary, monolith) · Postgres 17 + pgvector via **pgx + sqlc** · **goose** migrations, embedded and run at startup · stdlib `log/slog` · React + TS + Vite + Tailwind + **TanStack Query**, embedded via `go:embed` · Caddy · Docker Compose.
+Go + **chi** (single binary, monolith) · Postgres 17 + pgvector via **pgx + sqlc** · **goose** migrations, embedded and run at startup · stdlib `log/slog` · React + TS + Vite + **Tailwind v4** + **TanStack Query**, embedded via `go:embed` · Caddy · Docker Compose.
 
-`go.mod` at repo root, React in `web/` (D-032). Vite writes straight into `internal/web/dist` — no copy step. Non-stdlib backend deps are exactly **chi, pgx, goose, x/crypto, x/term, google/uuid** — keep the list short (D-045). No ORM (D-043), no Gin/Echo/Fiber (D-042), no Redis (D-023), no MongoDB (D-027), no Node process in production (D-041).
+`go.mod` at repo root, React in `web/` (D-032). Vite writes straight into `internal/web/dist` — no copy step. Non-stdlib backend deps are exactly **chi, pgx, goose, x/crypto, x/term, google/uuid** — keep the list short (D-045). Frontend runtime deps beyond React/Router/Query are **clsx, tailwind-merge, cva, lucide-react** and three Radix packages (dialog, slot, switch) — same discipline (D-053). No ORM (D-043), no Gin/Echo/Fiber (D-042), no Redis (D-023), no MongoDB (D-027), no Node process in production (D-041).
 
 Prod runs on a self-hosted VPS against a **shared** Postgres (own database + own role), so the pgx pool is capped at 10 connections — an uncapped pool can starve every other project on the box (D-028). Dev compose ships its own Postgres on 5433.
 
