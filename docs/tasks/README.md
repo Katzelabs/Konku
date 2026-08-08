@@ -1,27 +1,34 @@
 # Tasks
 
-MVP execution plan. **~41 h remaining** of the ~62 h scoped in `PRD.md` §8.
+MVP execution plan. **~6 h remaining** — only shipping is left.
 
-These four files are the source of truth for MVP work. `docs/backlog.csv` stays
+These five files are the source of truth for MVP work. `docs/backlog.csv` stays
 as the ClickUp-import artifact and covers v0.2 / v0.3 / Later.
 
 | File | Scope | Remaining |
 |---|---|---|
 | [01-foundation.md](01-foundation.md) | DB wiring, store with user scoping, auth | **done** |
-| [02-card-engine.md](02-card-engine.md) | Markdown parser, card sync transaction | ~9 h |
-| [03-app.md](03-app.md) | API endpoints, React screens, timer | ~26 h |
+| [02-card-engine.md](02-card-engine.md) | Markdown parser, card sync transaction | **done** — superseded by 05 |
+| [03-app.md](03-app.md) | API endpoints, React screens, timer | **done** |
+| [05-cards-and-categories.md](05-cards-and-categories.md) | Standalone cards, categories, Notion-shaped UI | **done** |
 | [04-ship.md](04-ship.md) | CI, deploy, backups, validation | ~6 h |
 
 ## Build order
 
 ```
-01 Foundation ──► 02 Card engine ──► 03 App ──► 04 Ship
-   ✅ done          ← next
+01 Foundation ──► 02 Card engine ──► 03 App ──► 05 Cards & categories ──► 04 Ship
+   ✅ done          ✅ done            ✅ done      ✅ done                   ← next
 ```
 
+**05 runs before 04**, out of numeric order: it reshapes the schema, and
+shipping first would mean migrating real data instead of dev data.
+
 Strictly sequential at the file level. Inside a file, dependencies are noted
-per task. **02 is the highest-risk work** — a bug there silently corrupts
-review history rather than throwing, so it gets tests before it gets callers.
+per task.
+
+**02's parser is deleted by 05.** The file stays for the history — it records
+why stable IDs existed and what they protected, which `D-055` had to argue
+against to remove them.
 
 ## Already done (~21 h)
 
@@ -40,9 +47,9 @@ review history rather than throwing, so it gets tests before it gets callers.
 
 ## Rules that outrank any task here
 
-1. `internal/card` and `internal/srs` import nothing from `internal/` — `make check-pure`
-2. Cards match by **stable ID**, never by content
-3. Note update + card sync commit in **one transaction**
+1. `internal/srs` imports nothing from `internal/` — `make check-pure`
+2. Editing a card's text never resets its schedule
+3. A note or card and its category links commit in **one transaction**
 4. Every query scoped by `user_id` in the `WHERE` clause, never fetch-then-check
 5. Dates are local `YYYY-MM-DD`, never UTC
 6. Never punitive — no guilt copy, no losable streaks

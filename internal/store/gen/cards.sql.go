@@ -12,9 +12,57 @@ import (
 	"github.com/google/uuid"
 )
 
+const addCardCategory = `-- name: AddCardCategory :exec
+INSERT INTO card_categories (user_id, card_id, category_id)
+VALUES ($1, $2, $3)
+ON CONFLICT DO NOTHING
+`
+
+type AddCardCategoryParams struct {
+	UserID     uuid.UUID `json:"user_id"`
+	CardID     uuid.UUID `json:"card_id"`
+	CategoryID uuid.UUID `json:"category_id"`
+}
+
+// ON CONFLICT DO NOTHING so re-sending the same set is idempotent rather than
+// a 500.
+func (q *Queries) AddCardCategory(ctx context.Context, arg AddCardCategoryParams) error {
+	_, err := q.db.Exec(ctx, addCardCategory, arg.UserID, arg.CardID, arg.CategoryID)
+	return err
+}
+
+const clearCardCategories = `-- name: ClearCardCategories :exec
+
+DELETE FROM card_categories
+WHERE card_id = $1 AND user_id = $2
+`
+
+type ClearCardCategoriesParams struct {
+	CardID uuid.UUID `json:"card_id"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+// The card's categories.
+func (q *Queries) ClearCardCategories(ctx context.Context, arg ClearCardCategoriesParams) error {
+	_, err := q.db.Exec(ctx, clearCardCategories, arg.CardID, arg.UserID)
+	return err
+}
+
+const countCards = `-- name: CountCards :one
+SELECT count(*) FROM cards
+WHERE user_id = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) CountCards(ctx context.Context, userID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countCards, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countDueCards = `-- name: CountDueCards :one
 SELECT count(*) FROM card_schedules s
-JOIN cards c ON c.note_id = s.note_id AND c.id = s.card_id
+JOIN cards c ON c.id = s.card_id AND c.user_id = s.user_id
 WHERE s.user_id = $1
   AND s.state = 'learning'
   AND s.next_review_date IS NOT NULL
@@ -34,27 +82,73 @@ func (q *Queries) CountDueCards(ctx context.Context, arg CountDueCardsParams) (i
 	return count, err
 }
 
+const createCard = `-- name: CreateCard :one
+
+INSERT INTO cards (user_id, domain_id, type, front, back)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, user_id, domain_id, type, front, back, deleted_at, created_at, updated_at
+`
+
+type CreateCardParams struct {
+	UserID   uuid.UUID  `json:"user_id"`
+	DomainID *uuid.UUID `json:"domain_id"`
+	Type     string     `json:"type"`
+	Front    string     `json:"front"`
+	Back     string     `json:"back"`
+}
+
+// Cards are their own feature (D-055): rows created and edited directly, not
+// parsed out of a note body. There is no note_id, and no ID to keep stable
+// across a text edit — UPDATE keeps the uuid, so editing a card's wording can
+// no longer cost it its schedule.
+//
+// Every query here carries user_id in the WHERE clause. A row belonging to
+// another user simply does not match, so the caller gets "no rows" and the API
+// returns 404 — never 403, which would confirm the row exists (D-039).
+func (q *Queries) CreateCard(ctx context.Context, arg CreateCardParams) (Card, error) {
+	row := q.db.QueryRow(ctx, createCard,
+		arg.UserID,
+		arg.DomainID,
+		arg.Type,
+		arg.Front,
+		arg.Back,
+	)
+	var i Card
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.DomainID,
+		&i.Type,
+		&i.Front,
+		&i.Back,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createSchedule = `-- name: CreateSchedule :one
-INSERT INTO card_schedules (note_id, card_id, user_id, stage, next_review_date, state)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (note_id, card_id) DO NOTHING
-RETURNING note_id, card_id, user_id, stage, next_review_date, lapses, state
+
+INSERT INTO card_schedules (card_id, user_id, stage, next_review_date, state)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (card_id) DO NOTHING
+RETURNING card_id, user_id, stage, next_review_date, lapses, state
 `
 
 type CreateScheduleParams struct {
-	NoteID         uuid.UUID  `json:"note_id"`
-	CardID         string     `json:"card_id"`
+	CardID         uuid.UUID  `json:"card_id"`
 	UserID         uuid.UUID  `json:"user_id"`
 	Stage          int32      `json:"stage"`
 	NextReviewDate *time.Time `json:"next_review_date"`
 	State          string     `json:"state"`
 }
 
-// ON CONFLICT DO NOTHING is what preserves history across an edit: a card that
-// already has a schedule keeps it, so fixing a typo never resets stage.
+// Scheduling.
+// ON CONFLICT DO NOTHING is what preserves history: a card that already has a
+// schedule keeps it, so restoring a deleted card never resets its stage.
 func (q *Queries) CreateSchedule(ctx context.Context, arg CreateScheduleParams) (CardSchedule, error) {
 	row := q.db.QueryRow(ctx, createSchedule,
-		arg.NoteID,
 		arg.CardID,
 		arg.UserID,
 		arg.Stage,
@@ -63,7 +157,6 @@ func (q *Queries) CreateSchedule(ctx context.Context, arg CreateScheduleParams) 
 	)
 	var i CardSchedule
 	err := row.Scan(
-		&i.NoteID,
 		&i.CardID,
 		&i.UserID,
 		&i.Stage,
@@ -74,16 +167,42 @@ func (q *Queries) CreateSchedule(ctx context.Context, arg CreateScheduleParams) 
 	return i, err
 }
 
+const getCard = `-- name: GetCard :one
+SELECT id, user_id, domain_id, type, front, back, deleted_at, created_at, updated_at FROM cards
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
+`
+
+type GetCardParams struct {
+	ID     uuid.UUID `json:"id"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+func (q *Queries) GetCard(ctx context.Context, arg GetCardParams) (Card, error) {
+	row := q.db.QueryRow(ctx, getCard, arg.ID, arg.UserID)
+	var i Card
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.DomainID,
+		&i.Type,
+		&i.Front,
+		&i.Back,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getCardWithSchedule = `-- name: GetCardWithSchedule :one
-SELECT c.id, c.note_id, c.user_id, c.type, c.front, c.back, c.line, c.deleted_at, c.created_at, s.note_id, s.card_id, s.user_id, s.stage, s.next_review_date, s.lapses, s.state
+SELECT c.id, c.user_id, c.domain_id, c.type, c.front, c.back, c.deleted_at, c.created_at, c.updated_at, s.card_id, s.user_id, s.stage, s.next_review_date, s.lapses, s.state
 FROM cards c
-JOIN card_schedules s ON s.note_id = c.note_id AND s.card_id = c.id
-WHERE c.note_id = $1 AND c.id = $2 AND c.user_id = $3 AND c.deleted_at IS NULL
+JOIN card_schedules s ON s.card_id = c.id AND s.user_id = c.user_id
+WHERE c.id = $1 AND c.user_id = $2 AND c.deleted_at IS NULL
 `
 
 type GetCardWithScheduleParams struct {
-	NoteID uuid.UUID `json:"note_id"`
-	ID     string    `json:"id"`
+	ID     uuid.UUID `json:"id"`
 	UserID uuid.UUID `json:"user_id"`
 }
 
@@ -93,19 +212,18 @@ type GetCardWithScheduleRow struct {
 }
 
 func (q *Queries) GetCardWithSchedule(ctx context.Context, arg GetCardWithScheduleParams) (GetCardWithScheduleRow, error) {
-	row := q.db.QueryRow(ctx, getCardWithSchedule, arg.NoteID, arg.ID, arg.UserID)
+	row := q.db.QueryRow(ctx, getCardWithSchedule, arg.ID, arg.UserID)
 	var i GetCardWithScheduleRow
 	err := row.Scan(
 		&i.Card.ID,
-		&i.Card.NoteID,
 		&i.Card.UserID,
+		&i.Card.DomainID,
 		&i.Card.Type,
 		&i.Card.Front,
 		&i.Card.Back,
-		&i.Card.Line,
 		&i.Card.DeletedAt,
 		&i.Card.CreatedAt,
-		&i.CardSchedule.NoteID,
+		&i.Card.UpdatedAt,
 		&i.CardSchedule.CardID,
 		&i.CardSchedule.UserID,
 		&i.CardSchedule.Stage,
@@ -117,14 +235,13 @@ func (q *Queries) GetCardWithSchedule(ctx context.Context, arg GetCardWithSchedu
 }
 
 const insertReviewLog = `-- name: InsertReviewLog :one
-INSERT INTO review_logs (note_id, card_id, user_id, rating, interval_before, interval_after)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, note_id, card_id, user_id, rating, interval_before, interval_after, reviewed_at, source, exam_attempt_id
+INSERT INTO review_logs (card_id, user_id, rating, interval_before, interval_after)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, user_id, rating, interval_before, interval_after, reviewed_at, source, exam_attempt_id, card_id
 `
 
 type InsertReviewLogParams struct {
-	NoteID         uuid.UUID `json:"note_id"`
-	CardID         string    `json:"card_id"`
+	CardID         uuid.UUID `json:"card_id"`
 	UserID         uuid.UUID `json:"user_id"`
 	Rating         string    `json:"rating"`
 	IntervalBefore int32     `json:"interval_before"`
@@ -136,7 +253,6 @@ type InsertReviewLogParams struct {
 // that reads it (D-029).
 func (q *Queries) InsertReviewLog(ctx context.Context, arg InsertReviewLogParams) (ReviewLog, error) {
 	row := q.db.QueryRow(ctx, insertReviewLog,
-		arg.NoteID,
 		arg.CardID,
 		arg.UserID,
 		arg.Rating,
@@ -146,8 +262,6 @@ func (q *Queries) InsertReviewLog(ctx context.Context, arg InsertReviewLogParams
 	var i ReviewLog
 	err := row.Scan(
 		&i.ID,
-		&i.NoteID,
-		&i.CardID,
 		&i.UserID,
 		&i.Rating,
 		&i.IntervalBefore,
@@ -155,40 +269,122 @@ func (q *Queries) InsertReviewLog(ctx context.Context, arg InsertReviewLogParams
 		&i.ReviewedAt,
 		&i.Source,
 		&i.ExamAttemptID,
+		&i.CardID,
 	)
 	return i, err
 }
 
-const listCardsByNote = `-- name: ListCardsByNote :many
-SELECT id, note_id, user_id, type, front, back, line, deleted_at, created_at FROM cards
-WHERE note_id = $1 AND user_id = $2 AND deleted_at IS NULL
-ORDER BY line
+const listCards = `-- name: ListCards :many
+SELECT c.id, c.user_id, c.domain_id, c.type, c.front, c.back, c.deleted_at, c.created_at, c.updated_at,
+       COALESCE(
+           (SELECT array_agg(cc.category_id ORDER BY cc.category_id)
+              FROM card_categories cc
+             WHERE cc.card_id = c.id),
+           '{}'
+       )::uuid[] AS category_ids
+FROM cards c
+WHERE c.user_id = $1
+  AND c.deleted_at IS NULL
+  AND ($3::uuid IS NULL OR c.domain_id = $3)
+  AND ($4::uuid IS NULL OR EXISTS (
+          SELECT 1 FROM card_categories cc
+           WHERE cc.card_id = c.id AND cc.category_id = $4))
+  -- ILIKE, not full-text: D-031 defers ranked search to v0.2. cards_front_trgm_idx
+  -- is what keeps this from being a sequential scan.
+  AND ($5::text IS NULL
+       OR c.front ILIKE '%' || $5 || '%'
+       OR c.back  ILIKE '%' || $5 || '%')
+ORDER BY c.created_at DESC
+LIMIT $2
 `
 
-type ListCardsByNoteParams struct {
-	NoteID uuid.UUID `json:"note_id"`
-	UserID uuid.UUID `json:"user_id"`
+type ListCardsParams struct {
+	UserID     uuid.UUID  `json:"user_id"`
+	Limit      int32      `json:"limit"`
+	DomainID   *uuid.UUID `json:"domain_id"`
+	CategoryID *uuid.UUID `json:"category_id"`
+	Query      *string    `json:"query"`
 }
 
-// Live cards only. Sync (C3) compares against these by ID.
-func (q *Queries) ListCardsByNote(ctx context.Context, arg ListCardsByNoteParams) ([]Card, error) {
-	rows, err := q.db.Query(ctx, listCardsByNote, arg.NoteID, arg.UserID)
+type ListCardsRow struct {
+	ID          uuid.UUID   `json:"id"`
+	UserID      uuid.UUID   `json:"user_id"`
+	DomainID    *uuid.UUID  `json:"domain_id"`
+	Type        string      `json:"type"`
+	Front       string      `json:"front"`
+	Back        string      `json:"back"`
+	DeletedAt   *time.Time  `json:"deleted_at"`
+	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
+	CategoryIds []uuid.UUID `json:"category_ids"`
+}
+
+// The Cards page. Every filter is optional and independent; passing none lists
+// everything live, newest first.
+func (q *Queries) ListCards(ctx context.Context, arg ListCardsParams) ([]ListCardsRow, error) {
+	rows, err := q.db.Query(ctx, listCards,
+		arg.UserID,
+		arg.Limit,
+		arg.DomainID,
+		arg.CategoryID,
+		arg.Query,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Card{}
+	items := []ListCardsRow{}
 	for rows.Next() {
-		var i Card
+		var i ListCardsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.NoteID,
 			&i.UserID,
+			&i.DomainID,
 			&i.Type,
 			&i.Front,
 			&i.Back,
-			&i.Line,
 			&i.DeletedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CategoryIds,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCategoriesForCard = `-- name: ListCategoriesForCard :many
+SELECT cat.id, cat.user_id, cat.slug, cat.label, cat.archived_at, cat.created_at FROM categories cat
+JOIN card_categories cc ON cc.category_id = cat.id AND cc.user_id = cat.user_id
+WHERE cc.card_id = $1 AND cc.user_id = $2
+ORDER BY cat.label
+`
+
+type ListCategoriesForCardParams struct {
+	CardID uuid.UUID `json:"card_id"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+func (q *Queries) ListCategoriesForCard(ctx context.Context, arg ListCategoriesForCardParams) ([]Category, error) {
+	rows, err := q.db.Query(ctx, listCategoriesForCard, arg.CardID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Category{}
+	for rows.Next() {
+		var i Category
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Slug,
+			&i.Label,
+			&i.ArchivedAt,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -202,9 +398,9 @@ func (q *Queries) ListCardsByNote(ctx context.Context, arg ListCardsByNoteParams
 }
 
 const listDueCards = `-- name: ListDueCards :many
-SELECT c.note_id, c.id, c.type, c.front, s.next_review_date
+SELECT c.id, c.type, c.front, s.next_review_date
 FROM card_schedules s
-JOIN cards c ON c.note_id = s.note_id AND c.id = s.card_id
+JOIN cards c ON c.id = s.card_id AND c.user_id = s.user_id
 WHERE s.user_id = $1
   AND s.state = 'learning'
   AND s.next_review_date IS NOT NULL
@@ -221,15 +417,14 @@ type ListDueCardsParams struct {
 }
 
 type ListDueCardsRow struct {
-	NoteID         uuid.UUID  `json:"note_id"`
-	ID             string     `json:"id"`
+	ID             uuid.UUID  `json:"id"`
 	Type           string     `json:"type"`
 	Front          string     `json:"front"`
 	NextReviewDate *time.Time `json:"next_review_date"`
 }
 
-// Oldest-due first, capped by the caller (D-009). Excludes mastered cards and
-// soft-deleted ones. Returns the prompt side only — the answer is fetched
+// Oldest-due first, capped by the caller (D-009). Excludes mastered and
+// deleted cards. Returns the prompt side only — the answer is fetched
 // separately when the user chooses to reveal (D-003).
 func (q *Queries) ListDueCards(ctx context.Context, arg ListDueCardsParams) ([]ListDueCardsRow, error) {
 	rows, err := q.db.Query(ctx, listDueCards, arg.UserID, arg.Limit, arg.Today)
@@ -241,7 +436,6 @@ func (q *Queries) ListDueCards(ctx context.Context, arg ListDueCardsParams) ([]L
 	for rows.Next() {
 		var i ListDueCardsRow
 		if err := rows.Scan(
-			&i.NoteID,
 			&i.ID,
 			&i.Type,
 			&i.Front,
@@ -257,37 +451,106 @@ func (q *Queries) ListDueCards(ctx context.Context, arg ListDueCardsParams) ([]L
 	return items, nil
 }
 
-const softDeleteCard = `-- name: SoftDeleteCard :exec
+const restoreCard = `-- name: RestoreCard :execrows
 UPDATE cards
-SET deleted_at = now()
-WHERE note_id = $1 AND id = $2 AND user_id = $3
+SET deleted_at = NULL, updated_at = now()
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NOT NULL
 `
 
-type SoftDeleteCardParams struct {
-	NoteID uuid.UUID `json:"note_id"`
-	ID     string    `json:"id"`
+type RestoreCardParams struct {
+	ID     uuid.UUID `json:"id"`
 	UserID uuid.UUID `json:"user_id"`
 }
 
-// Never a hard delete: the card's review history outlives the markdown line.
-func (q *Queries) SoftDeleteCard(ctx context.Context, arg SoftDeleteCardParams) error {
-	_, err := q.db.Exec(ctx, softDeleteCard, arg.NoteID, arg.ID, arg.UserID)
-	return err
+// The undo. card_schedules was never touched, so the review history comes back
+// with the card.
+func (q *Queries) RestoreCard(ctx context.Context, arg RestoreCardParams) (int64, error) {
+	result, err := q.db.Exec(ctx, restoreCard, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const softDeleteCard = `-- name: SoftDeleteCard :execrows
+UPDATE cards
+SET deleted_at = now(), updated_at = now()
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
+`
+
+type SoftDeleteCardParams struct {
+	ID     uuid.UUID `json:"id"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+// Never a hard delete. A finished exam attempt renders its questions by
+// joining cards, so removing the row would blank out past results, and
+// deletion on a CRUD screen should be undoable.
+func (q *Queries) SoftDeleteCard(ctx context.Context, arg SoftDeleteCardParams) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteCard, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updateCard = `-- name: UpdateCard :one
+UPDATE cards
+SET domain_id  = $3,
+    front      = $4,
+    back       = $5,
+    updated_at = now()
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
+RETURNING id, user_id, domain_id, type, front, back, deleted_at, created_at, updated_at
+`
+
+type UpdateCardParams struct {
+	ID       uuid.UUID  `json:"id"`
+	UserID   uuid.UUID  `json:"user_id"`
+	DomainID *uuid.UUID `json:"domain_id"`
+	Front    string     `json:"front"`
+	Back     string     `json:"back"`
+}
+
+// No content matching anywhere: the uuid identifies the card and the text is
+// just a column. Rewriting front and back leaves card_schedules untouched, so
+// fixing a typo costs nothing — the property D-019's stable IDs existed to
+// protect, now free.
+func (q *Queries) UpdateCard(ctx context.Context, arg UpdateCardParams) (Card, error) {
+	row := q.db.QueryRow(ctx, updateCard,
+		arg.ID,
+		arg.UserID,
+		arg.DomainID,
+		arg.Front,
+		arg.Back,
+	)
+	var i Card
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.DomainID,
+		&i.Type,
+		&i.Front,
+		&i.Back,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const updateSchedule = `-- name: UpdateSchedule :one
 UPDATE card_schedules
-SET stage            = $4,
-    next_review_date = $5,
-    lapses           = $6,
-    state            = $7
-WHERE note_id = $1 AND card_id = $2 AND user_id = $3
-RETURNING note_id, card_id, user_id, stage, next_review_date, lapses, state
+SET stage            = $3,
+    next_review_date = $4,
+    lapses           = $5,
+    state            = $6
+WHERE card_id = $1 AND user_id = $2
+RETURNING card_id, user_id, stage, next_review_date, lapses, state
 `
 
 type UpdateScheduleParams struct {
-	NoteID         uuid.UUID  `json:"note_id"`
-	CardID         string     `json:"card_id"`
+	CardID         uuid.UUID  `json:"card_id"`
 	UserID         uuid.UUID  `json:"user_id"`
 	Stage          int32      `json:"stage"`
 	NextReviewDate *time.Time `json:"next_review_date"`
@@ -297,7 +560,6 @@ type UpdateScheduleParams struct {
 
 func (q *Queries) UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) (CardSchedule, error) {
 	row := q.db.QueryRow(ctx, updateSchedule,
-		arg.NoteID,
 		arg.CardID,
 		arg.UserID,
 		arg.Stage,
@@ -307,64 +569,12 @@ func (q *Queries) UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) 
 	)
 	var i CardSchedule
 	err := row.Scan(
-		&i.NoteID,
 		&i.CardID,
 		&i.UserID,
 		&i.Stage,
 		&i.NextReviewDate,
 		&i.Lapses,
 		&i.State,
-	)
-	return i, err
-}
-
-const upsertCard = `-- name: UpsertCard :one
-INSERT INTO cards (id, note_id, user_id, type, front, back, line)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-ON CONFLICT (note_id, id) DO UPDATE
-SET type       = EXCLUDED.type,
-    front      = EXCLUDED.front,
-    back       = EXCLUDED.back,
-    line       = EXCLUDED.line,
-    deleted_at = NULL
-RETURNING id, note_id, user_id, type, front, back, line, deleted_at, created_at
-`
-
-type UpsertCardParams struct {
-	ID     string    `json:"id"`
-	NoteID uuid.UUID `json:"note_id"`
-	UserID uuid.UUID `json:"user_id"`
-	Type   string    `json:"type"`
-	Front  string    `json:"front"`
-	Back   string    `json:"back"`
-	Line   int32     `json:"line"`
-}
-
-// Also un-deletes: re-adding a card with the same ID restores it, and because
-// card_schedules is keyed on (note_id, card_id) and untouched here, its review
-// history comes back with it. Undoing an accidental deletion must not cost the
-// user months of progress (D-019).
-func (q *Queries) UpsertCard(ctx context.Context, arg UpsertCardParams) (Card, error) {
-	row := q.db.QueryRow(ctx, upsertCard,
-		arg.ID,
-		arg.NoteID,
-		arg.UserID,
-		arg.Type,
-		arg.Front,
-		arg.Back,
-		arg.Line,
-	)
-	var i Card
-	err := row.Scan(
-		&i.ID,
-		&i.NoteID,
-		&i.UserID,
-		&i.Type,
-		&i.Front,
-		&i.Back,
-		&i.Line,
-		&i.DeletedAt,
-		&i.CreatedAt,
 	)
 	return i, err
 }

@@ -54,7 +54,7 @@ export default function ReviewPage() {
       <CardReview
         // Remounting per card resets the reveal state, which is what
         // guarantees the next prompt never arrives already answered.
-        key={`${cards[index].noteId}:${cards[index].id}`}
+        key={cards[index].id}
         card={cards[index]}
         onRated={() => setIndex((i) => i + 1)}
       />
@@ -64,11 +64,11 @@ export default function ReviewPage() {
 
 function CardReview({ card, onRated }: { card: DueCard; onRated: () => void }) {
   const [reveal, setReveal] = useState(false)
-  const answer = useAnswer(card.noteId, card.id, reveal)
+  const answer = useAnswer(card.id, reveal)
   const rate = useRate()
 
   function submit(rating: Rating) {
-    rate.mutate({ noteId: card.noteId, cardId: card.id, rating }, { onSuccess: onRated })
+    rate.mutate({ cardId: card.id, rating }, { onSuccess: onRated })
   }
 
   return (
@@ -126,9 +126,11 @@ function CardReview({ card, onRated }: { card: DueCard; onRated: () => void }) {
         </div>
       )}
 
-      {/* A card you could not answer leads back to where it came from. */}
+      {/* A card you could not answer leads to where it can be fixed. It used
+          to point at the note it was parsed out of; a card is its own thing
+          now, so it points at itself (D-055). */}
       <Button asChild variant="link" size="inline" className="self-start">
-        <Link to={`/notes/${card.noteId}`}>Lihat catatan asal</Link>
+        <Link to={`/cards/${card.id}`}>Ubah kartu ini</Link>
       </Button>
 
       {rate.isError && <Notice>{rate.error.message}</Notice>}

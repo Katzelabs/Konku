@@ -18,25 +18,39 @@ type AuthSession struct {
 }
 
 type Card struct {
-	ID        string     `json:"id"`
-	NoteID    uuid.UUID  `json:"note_id"`
+	ID        uuid.UUID  `json:"id"`
 	UserID    uuid.UUID  `json:"user_id"`
+	DomainID  *uuid.UUID `json:"domain_id"`
 	Type      string     `json:"type"`
 	Front     string     `json:"front"`
 	Back      string     `json:"back"`
-	Line      int32      `json:"line"`
 	DeletedAt *time.Time `json:"deleted_at"`
 	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
+type CardCategory struct {
+	UserID     uuid.UUID `json:"user_id"`
+	CardID     uuid.UUID `json:"card_id"`
+	CategoryID uuid.UUID `json:"category_id"`
 }
 
 type CardSchedule struct {
-	NoteID         uuid.UUID  `json:"note_id"`
-	CardID         string     `json:"card_id"`
+	CardID         uuid.UUID  `json:"card_id"`
 	UserID         uuid.UUID  `json:"user_id"`
 	Stage          int32      `json:"stage"`
 	NextReviewDate *time.Time `json:"next_review_date"`
 	Lapses         int32      `json:"lapses"`
 	State          string     `json:"state"`
+}
+
+type Category struct {
+	ID         uuid.UUID  `json:"id"`
+	UserID     uuid.UUID  `json:"user_id"`
+	Slug       string     `json:"slug"`
+	Label      string     `json:"label"`
+	ArchivedAt *time.Time `json:"archived_at"`
+	CreatedAt  time.Time  `json:"created_at"`
 }
 
 type Domain struct {
@@ -79,16 +93,14 @@ type ExamAttempt struct {
 type ExamAttemptCard struct {
 	AttemptID uuid.UUID `json:"attempt_id"`
 	UserID    uuid.UUID `json:"user_id"`
-	NoteID    uuid.UUID `json:"note_id"`
-	CardID    string    `json:"card_id"`
+	CardID    uuid.UUID `json:"card_id"`
 	Position  int32     `json:"position"`
 }
 
 type ExamCard struct {
 	ExamID   uuid.UUID `json:"exam_id"`
 	UserID   uuid.UUID `json:"user_id"`
-	NoteID   uuid.UUID `json:"note_id"`
-	CardID   string    `json:"card_id"`
+	CardID   uuid.UUID `json:"card_id"`
 	Position int32     `json:"position"`
 }
 
@@ -112,10 +124,14 @@ type Note struct {
 	DomainID  *uuid.UUID  `json:"domain_id"`
 }
 
+type NoteCategory struct {
+	UserID     uuid.UUID `json:"user_id"`
+	NoteID     uuid.UUID `json:"note_id"`
+	CategoryID uuid.UUID `json:"category_id"`
+}
+
 type ReviewLog struct {
 	ID             int64      `json:"id"`
-	NoteID         uuid.UUID  `json:"note_id"`
-	CardID         string     `json:"card_id"`
 	UserID         uuid.UUID  `json:"user_id"`
 	Rating         string     `json:"rating"`
 	IntervalBefore int32      `json:"interval_before"`
@@ -123,6 +139,7 @@ type ReviewLog struct {
 	ReviewedAt     time.Time  `json:"reviewed_at"`
 	Source         string     `json:"source"`
 	ExamAttemptID  *uuid.UUID `json:"exam_attempt_id"`
+	CardID         uuid.UUID  `json:"card_id"`
 }
 
 type User struct {

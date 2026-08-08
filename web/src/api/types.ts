@@ -20,25 +20,45 @@ export interface Domain {
   archivedAt: string | null
 }
 
+/**
+ * A label shared by notes and cards (D-055).
+ *
+ * Not a domain: a domain is one per item, drives the weekly rota and exam
+ * draws, and carries a colour. A category is many per item and means nothing
+ * to the scheduler. It has no colour on purpose — see CategoryChip.
+ */
+export interface Category {
+  id: string
+  slug: string
+  label: string
+  /** Archived categories leave the picker but keep labelling history (D-051). */
+  archivedAt: string | null
+  noteCount: number
+  cardCount: number
+}
+
 export interface Note {
   id: string
   title: string
   contentMd: string
   domainId: DomainId | null
+  categoryIds: string[]
   createdAt: string
   updatedAt: string
 }
 
 /**
  * The list shape. It carries no markdown on purpose — the list screen shows a
- * title, a date and a card count, and shipping every note's full text to
- * render that is pure waste.
+ * title, a date and its labels, and shipping every note's full text to render
+ * that is pure waste.
+ *
+ * `cardCount` is gone with D-055: a note no longer contains cards.
  */
 export interface NoteSummary {
   id: string
   title: string
   domainId: DomainId | null
-  cardCount: number
+  categoryIds: string[]
   updatedAt: string
 }
 
@@ -53,9 +73,44 @@ export type Rating = 'ingat' | 'lupa'
  */
 export interface DueCard {
   id: string
-  noteId: string
   type: CardType
   front: string
+}
+
+/**
+ * A card, in full. Cards are their own resource with their own CRUD (D-055);
+ * they used to exist only as `Q :: A` lines inside a note.
+ *
+ * Both sides are markdown and may span lines.
+ */
+export interface Card {
+  id: string
+  front: string
+  back: string
+  type: CardType
+  domainId: DomainId | null
+  categoryIds: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+/**
+ * The list shape, and the candidate list when pinning a fixed exam's
+ * questions.
+ *
+ * `back` is absent, and that is the D-003 guarantee held one level below the
+ * review screen: if every answer shipped with every list, recall-before-reveal
+ * would be one dev-tools glance from defeat on a page visited daily. The
+ * editor fetches a single card when it needs the answer.
+ */
+export interface CardSummary {
+  id: string
+  front: string
+  type: CardType
+  domainId: DomainId | null
+  categoryIds: string[]
+  createdAt: string
+  updatedAt: string
 }
 
 export interface DueList {
@@ -118,15 +173,10 @@ export interface Attempt {
   correctCount: number
 }
 
-/** A card in a fixed exam's pinned set, or a candidate for it. Prompt only. */
+/** A card in a fixed exam's pinned set. Prompt only. */
 export interface CardRef {
-  noteId: string
   cardId: string
   front: string
-}
-
-export interface PickableCard extends CardRef {
-  noteTitle: string
 }
 
 export interface ExamDetail extends Exam {
@@ -144,12 +194,11 @@ export interface ExamDetail extends Exam {
  */
 export interface AttemptQuestion {
   position: number
-  noteId: string
   cardId: string
   front: string
   /** Set once answered, which is what makes an attempt resumable (D-050). */
   rating: Rating | null
-  /** The card's note was deleted after the attempt began. It still counts. */
+  /** The card was deleted after the attempt began. It still counts. */
   missing: boolean
 }
 

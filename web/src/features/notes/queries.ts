@@ -4,7 +4,8 @@ import type { DomainId, Note, NoteSummary } from '../../api/types'
 
 export const noteKeys = {
   all: ['notes'] as const,
-  list: () => [...noteKeys.all, 'list'] as const,
+  list: (f: NoteFilters = {}) =>
+    [...noteKeys.all, 'list', f.domainId ?? null, f.categoryId ?? null] as const,
   detail: (id: string) => [...noteKeys.all, 'detail', id] as const,
 }
 
@@ -12,12 +13,24 @@ export interface NoteInput {
   title?: string
   contentMd?: string
   domainId?: DomainId | null
+  categoryIds?: string[]
 }
 
-export function useNotes() {
+export interface NoteFilters {
+  domainId?: string | null
+  categoryId?: string | null
+}
+
+export function useNotes(filters: NoteFilters = {}) {
   return useQuery({
-    queryKey: noteKeys.list(),
-    queryFn: () => api.get<NoteSummary[]>('/notes'),
+    queryKey: noteKeys.list(filters),
+    queryFn: () => {
+      const params = new URLSearchParams()
+      if (filters.domainId) params.set('domainId', filters.domainId)
+      if (filters.categoryId) params.set('categoryId', filters.categoryId)
+      const query = params.toString()
+      return api.get<NoteSummary[]>(query ? `/notes?${query}` : '/notes')
+    },
   })
 }
 
@@ -38,16 +51,18 @@ export function useCreateNote() {
     mutationFn: (input: NoteInput) => api.post<Note>('/notes', input),
     onSuccess: (note) => {
       qc.setQueryData(noteKeys.detail(note.id), note)
-      qc.invalidateQueries({ queryKey: noteKeys.list() })
+      qc.invalidateQueries({ queryKey: noteKeys.all })
     },
   })
 }
 
 /**
- * Saves a note. The response carries the *stored* markdown, which is not
- * always what was sent: the parser writes IDs into new cards. The editor
- * replaces its buffer with it, and the list is invalidated because the card
- * count and the updated date both just moved.
+ * Saves a note.
+ *
+ * The response used to carry markdown that differed from what was sent, since
+ * the parser wrote card IDs into it and the editor had to adopt the result.
+ * Nothing rewrites a note now (D-055), so the response is simply the stored
+ * row. The list is still invalidated — the updated date just moved.
  */
 export function useSaveNote(id: string) {
   const qc = useQueryClient()
@@ -55,7 +70,7 @@ export function useSaveNote(id: string) {
     mutationFn: (input: NoteInput) => api.patch<Note>(`/notes/${id}`, input),
     onSuccess: (note) => {
       qc.setQueryData(noteKeys.detail(note.id), note)
-      qc.invalidateQueries({ queryKey: noteKeys.list() })
+      qc.invalidateQueries({ queryKey: noteKeys.all })
     },
   })
 }

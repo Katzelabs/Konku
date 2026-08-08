@@ -11,7 +11,13 @@ import (
 )
 
 type Querier interface {
+	// ON CONFLICT DO NOTHING so re-sending the same set is idempotent rather than
+	// a 500.
+	AddCardCategory(ctx context.Context, arg AddCardCategoryParams) error
 	AddExamCard(ctx context.Context, arg AddExamCardParams) error
+	AddNoteCategory(ctx context.Context, arg AddNoteCategoryParams) error
+	// The normal way to retire one (D-051).
+	ArchiveCategory(ctx context.Context, arg ArchiveCategoryParams) (Category, error)
 	// Soft, and the default way to remove a domain (D-051). Notes and sessions
 	// keep their tag; the domain just leaves the picker.
 	ArchiveDomain(ctx context.Context, arg ArchiveDomainParams) (Domain, error)
@@ -20,13 +26,28 @@ type Querier interface {
 	// review_logs, which is the worst of both (D-051).
 	ArchiveExam(ctx context.Context, arg ArchiveExamParams) (Exam, error)
 	AttemptHasQuestion(ctx context.Context, arg AttemptHasQuestionParams) (bool, error)
+	// The card's categories.
+	ClearCardCategories(ctx context.Context, arg ClearCardCategoriesParams) error
 	ClearExamCards(ctx context.Context, arg ClearExamCardsParams) error
+	// The note's categories.
+	ClearNoteCategories(ctx context.Context, arg ClearNoteCategoriesParams) error
+	CountCards(ctx context.Context, userID uuid.UUID) (int64, error)
 	CountDueCards(ctx context.Context, arg CountDueCardsParams) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	// attempt_date is the client's LOCAL YYYY-MM-DD, passed in rather than derived
 	// from now(), for the same reason as focus_sessions.session_date: an attempt
 	// at 23:00 belongs to that day and the server may be in another timezone.
 	CreateAttempt(ctx context.Context, arg CreateAttemptParams) (ExamAttempt, error)
+	// Cards are their own feature (D-055): rows created and edited directly, not
+	// parsed out of a note body. There is no note_id, and no ID to keep stable
+	// across a text edit — UPDATE keeps the uuid, so editing a card's wording can
+	// no longer cost it its schedule.
+	//
+	// Every query here carries user_id in the WHERE clause. A row belonging to
+	// another user simply does not match, so the caller gets "no rows" and the API
+	// returns 404 — never 403, which would confirm the row exists (D-039).
+	CreateCard(ctx context.Context, arg CreateCardParams) (Card, error)
+	CreateCategory(ctx context.Context, arg CreateCategoryParams) (Category, error)
 	CreateDomain(ctx context.Context, arg CreateDomainParams) (Domain, error)
 	CreateExam(ctx context.Context, arg CreateExamParams) (Exam, error)
 	// Every query here carries user_id in the WHERE clause.
@@ -36,8 +57,9 @@ type Querier interface {
 	// That makes it impossible to use this API to discover whether another user's
 	// note exists (D-039).
 	CreateNote(ctx context.Context, arg CreateNoteParams) (Note, error)
-	// ON CONFLICT DO NOTHING is what preserves history across an edit: a card that
-	// already has a schedule keeps it, so fixing a typo never resets stage.
+	// Scheduling.
+	// ON CONFLICT DO NOTHING is what preserves history: a card that already has a
+	// schedule keeps it, so restoring a deleted card never resets its stage.
 	CreateSchedule(ctx context.Context, arg CreateScheduleParams) (CardSchedule, error)
 	// Auth sessions are server-side so logout actually revokes access (D-039).
 	// The table is auth_sessions, not sessions, because focus sessions and exam
@@ -48,6 +70,10 @@ type Querier interface {
 	// review_logs with exam_attempt_id set to NULL — retention evidence is not
 	// something a discarded practice run may erase (D-050).
 	DeleteAttempt(ctx context.Context, arg DeleteAttemptParams) (int64, error)
+	// Only succeeds when nothing references it: both join tables are ON DELETE NO
+	// ACTION, so a category still in use raises foreign_key_violation and the
+	// handler answers 409 rather than silently unlabelling a hundred cards.
+	DeleteCategory(ctx context.Context, arg DeleteCategoryParams) (int64, error)
 	// Only succeeds for a domain nothing references — every FK pointing here is
 	// ON DELETE NO ACTION (D-051). A referenced domain raises
 	// foreign_key_violation, which the handler maps to 409, never a 500.
@@ -68,7 +94,11 @@ type Querier interface {
 	// Eligible cards for a random draw: live, this user's, and inside the exam's
 	// domain when it has one. Mastered cards are included on purpose — an exam is
 	// not a review session, and "do I still know this" is the whole point (D-048).
-	DrawRandomCards(ctx context.Context, arg DrawRandomCardsParams) ([]DrawRandomCardsRow, error)
+	//
+	// The domain now comes from the card itself. It used to come from the note the
+	// card was parsed out of, which is exactly the join D-055 removed — and why
+	// cards.domain_id had to exist before note_id could go.
+	DrawRandomCards(ctx context.Context, arg DrawRandomCardsParams) ([]uuid.UUID, error)
 	// The counts are recomputed here rather than accepted from the client. total
 	// is how many questions the attempt drew, so an abandoned run scores against
 	// everything it was asked, not only what it answered.
@@ -77,7 +107,13 @@ type Querier interface {
 	// be treated as valid by a caller that forgot to check.
 	GetActiveSession(ctx context.Context, id string) (GetActiveSessionRow, error)
 	GetAttempt(ctx context.Context, arg GetAttemptParams) (ExamAttempt, error)
+	GetCard(ctx context.Context, arg GetCardParams) (Card, error)
 	GetCardWithSchedule(ctx context.Context, arg GetCardWithScheduleParams) (GetCardWithScheduleRow, error)
+	GetCategory(ctx context.Context, arg GetCategoryParams) (Category, error)
+	// Create-on-type resolves an existing category before making a new one, so a
+	// user typing a label they already have does not collide with the unique
+	// index.
+	GetCategoryBySlug(ctx context.Context, arg GetCategoryBySlugParams) (Category, error)
 	GetDomain(ctx context.Context, arg GetDomainParams) (Domain, error)
 	GetExam(ctx context.Context, arg GetExamParams) (Exam, error)
 	GetNote(ctx context.Context, arg GetNoteParams) (Note, error)
@@ -112,11 +148,19 @@ type Querier interface {
 	// question whose card is gone still occupies its position in the score.
 	ListAttemptQuestions(ctx context.Context, arg ListAttemptQuestionsParams) ([]ListAttemptQuestionsRow, error)
 	ListAttempts(ctx context.Context, arg ListAttemptsParams) ([]ExamAttempt, error)
-	// Live cards only. Sync (C3) compares against these by ID.
-	ListCardsByNote(ctx context.Context, arg ListCardsByNoteParams) ([]Card, error)
-	// The candidate cards when pinning a 'fixed' exam's question set. Prompt only:
-	// the picker shows what will be asked, never the answers.
-	ListCardsForPicking(ctx context.Context, arg ListCardsForPickingParams) ([]ListCardsForPickingRow, error)
+	// The Cards page. Every filter is optional and independent; passing none lists
+	// everything live, newest first.
+	ListCards(ctx context.Context, arg ListCardsParams) ([]ListCardsRow, error)
+	// Categories are one shared vocabulary across notes and cards (D-055).
+	//
+	// Not domains. A domain is exactly one per note or card, drives the weekly
+	// rota and exam draws, and carries a colour. A category is many per note or
+	// card, means nothing to the scheduler, and exists to organise.
+	// Archived categories are excluded unless asked for: they stay attached to
+	// everything they ever labelled, they just leave the picker.
+	ListCategories(ctx context.Context, arg ListCategoriesParams) ([]ListCategoriesRow, error)
+	ListCategoriesForCard(ctx context.Context, arg ListCategoriesForCardParams) ([]Category, error)
+	ListCategoriesForNote(ctx context.Context, arg ListCategoriesForNoteParams) ([]Category, error)
 	// Domains are per-user (D-046), so every query here carries user_id in the
 	// WHERE clause exactly like notes and cards. A domain belonging to another
 	// user does not match, so the caller gets "no rows" and the API returns 404
@@ -125,8 +169,8 @@ type Querier interface {
 	// slug is deliberately absent from UpdateDomain: it is the seed identity, it
 	// may appear in URLs, and renaming a domain is what `label` is for.
 	ListDomains(ctx context.Context, userID uuid.UUID) ([]Domain, error)
-	// Oldest-due first, capped by the caller (D-009). Excludes mastered cards and
-	// soft-deleted ones. Returns the prompt side only — the answer is fetched
+	// Oldest-due first, capped by the caller (D-009). Excludes mastered and
+	// deleted cards. Returns the prompt side only — the answer is fetched
 	// separately when the user chooses to reveal (D-003).
 	ListDueCards(ctx context.Context, arg ListDueCardsParams) ([]ListDueCardsRow, error)
 	// The pinned question set, selection = 'fixed' only.
@@ -138,21 +182,32 @@ type Querier interface {
 	// Every query carries user_id, and the composite foreign keys make a
 	// cross-tenant reference impossible even if one is forgotten (D-047).
 	ListExams(ctx context.Context, userID uuid.UUID) ([]ListExamsRow, error)
+	// The card count is gone with D-055: a note no longer contains cards, so
+	// counting them per note would be counting nothing.
 	ListNotes(ctx context.Context, arg ListNotesParams) ([]ListNotesRow, error)
 	ListRecentFocusSessions(ctx context.Context, arg ListRecentFocusSessionsParams) ([]FocusSession, error)
+	// The undo. card_schedules was never touched, so the review history comes back
+	// with the card.
+	RestoreCard(ctx context.Context, arg RestoreCardParams) (int64, error)
 	SnapshotAttemptCard(ctx context.Context, arg SnapshotAttemptCardParams) error
-	// Never a hard delete: the card's review history outlives the markdown line.
-	SoftDeleteCard(ctx context.Context, arg SoftDeleteCardParams) error
+	// Never a hard delete. A finished exam attempt renders its questions by
+	// joining cards, so removing the row would blank out past results, and
+	// deletion on a CRUD screen should be undoable.
+	SoftDeleteCard(ctx context.Context, arg SoftDeleteCardParams) (int64, error)
+	UnarchiveCategory(ctx context.Context, arg UnarchiveCategoryParams) (Category, error)
 	UnarchiveDomain(ctx context.Context, arg UnarchiveDomainParams) (Domain, error)
+	// No content matching anywhere: the uuid identifies the card and the text is
+	// just a column. Rewriting front and back leaves card_schedules untouched, so
+	// fixing a typo costs nothing — the property D-019's stable IDs existed to
+	// protect, now free.
+	UpdateCard(ctx context.Context, arg UpdateCardParams) (Card, error)
+	// Renaming is the whole reason categories are rows rather than strings on the
+	// note: every label already applied follows the rename.
+	UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (Category, error)
 	UpdateDomain(ctx context.Context, arg UpdateDomainParams) (Domain, error)
 	UpdateExam(ctx context.Context, arg UpdateExamParams) (Exam, error)
 	UpdateNote(ctx context.Context, arg UpdateNoteParams) (Note, error)
 	UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) (CardSchedule, error)
-	// Also un-deletes: re-adding a card with the same ID restores it, and because
-	// card_schedules is keyed on (note_id, card_id) and untouched here, its review
-	// history comes back with it. Undoing an accidental deletion must not cost the
-	// user months of progress (D-019).
-	UpsertCard(ctx context.Context, arg UpsertCardParams) (Card, error)
 }
 
 var _ Querier = (*Queries)(nil)

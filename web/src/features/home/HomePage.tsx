@@ -195,11 +195,6 @@ function RecentNotes() {
                     <span className="min-w-0 flex-1 truncate text-sm text-card-fg">
                       {n.title || 'Tanpa judul'}
                     </span>
-                    {n.cardCount > 0 && (
-                      <span className="shrink-0 text-xs text-subtle-fg">
-                        {n.cardCount} kartu
-                      </span>
-                    )}
                     <span className="shrink-0 text-xs text-subtle-fg">
                       {humanDay(n.updatedAt)}
                     </span>

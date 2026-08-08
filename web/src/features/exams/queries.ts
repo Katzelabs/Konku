@@ -7,7 +7,7 @@ import type {
   Exam,
   ExamDetail,
   ExamSelection,
-  PickableCard,
+  CardSummary,
   Rating,
 } from '../../api/types'
 
@@ -16,8 +16,8 @@ export const examKeys = {
   list: () => [...examKeys.all, 'list'] as const,
   detail: (id: string) => [...examKeys.all, 'detail', id] as const,
   attempt: (id: string) => ['attempts', id] as const,
-  answer: (attemptId: string, noteId: string, cardId: string) =>
-    ['attempts', attemptId, 'answer', noteId, cardId] as const,
+  answer: (attemptId: string, cardId: string) =>
+    ['attempts', attemptId, 'answer', cardId] as const,
 }
 
 export function useExams() {
@@ -105,13 +105,12 @@ export function useAttempt(id: string) {
  */
 export function useAttemptAnswer(
   attemptId: string,
-  noteId: string,
   cardId: string,
   reveal: boolean,
 ) {
   return useQuery({
-    queryKey: examKeys.answer(attemptId, noteId, cardId),
-    queryFn: () => api.get<CardAnswer>(`/attempts/${attemptId}/${noteId}/${cardId}/answer`),
+    queryKey: examKeys.answer(attemptId, cardId),
+    queryFn: () => api.get<CardAnswer>(`/attempts/${attemptId}/${cardId}/answer`),
     enabled: reveal,
     staleTime: Infinity,
     gcTime: 0,
@@ -125,10 +124,10 @@ export function useAttemptAnswer(
 export function useAnswerQuestion() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (v: { attemptId: string; noteId: string; cardId: string; rating: Rating }) =>
-      api.post<void>(`/attempts/${v.attemptId}/${v.noteId}/${v.cardId}`, { rating: v.rating }),
+    mutationFn: (v: { attemptId: string; cardId: string; rating: Rating }) =>
+      api.post<void>(`/attempts/${v.attemptId}/${v.cardId}`, { rating: v.rating }),
     onSuccess: (_r, v) => {
-      qc.removeQueries({ queryKey: examKeys.answer(v.attemptId, v.noteId, v.cardId) })
+      qc.removeQueries({ queryKey: examKeys.answer(v.attemptId, v.cardId) })
     },
   })
 }
@@ -149,14 +148,14 @@ export function usePickableCards(domainId: string | null) {
   return useQuery({
     queryKey: ['cards', 'pickable', domainId] as const,
     queryFn: () =>
-      api.get<PickableCard[]>(`/cards${domainId ? `?domainId=${domainId}` : ''}`),
+      api.get<CardSummary[]>(`/cards${domainId ? `?domainId=${domainId}` : ''}`),
   })
 }
 
 export function useSetExamCards() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (v: { examId: string; cards: { noteId: string; cardId: string }[] }) =>
+    mutationFn: (v: { examId: string; cards: { cardId: string }[] }) =>
       api.put<void>(`/exams/${v.examId}/cards`, { cards: v.cards }),
     onSuccess: (_r, v) => qc.invalidateQueries({ queryKey: examKeys.detail(v.examId) }),
   })

@@ -15,43 +15,54 @@ import (
 
 type dueBody struct {
 	Cards []struct {
-		ID     string `json:"id"`
-		NoteID string `json:"noteId"`
-		Type   string `json:"type"`
-		Front  string `json:"front"`
+		ID    string `json:"id"`
+		Type  string `json:"type"`
+		Front string `json:"front"`
 	} `json:"cards"`
 	Total int64 `json:"total"`
 }
 
 // makeDue backdates a card's schedule so it is due today. New cards are due
 // tomorrow, and a test that waited a day would not be a test.
-func makeDue(t *testing.T, c *testClient, noteID, cardID string, stage int32, lapses int32) {
+func makeDue(t *testing.T, c *testClient, cardID string, stage int32, lapses int32) {
 	t.Helper()
-	id, _ := uuid.Parse(noteID)
+	id, err := uuid.Parse(cardID)
+	if err != nil {
+		t.Fatalf("card id %q: %v", cardID, err)
+	}
 	due, err := store.ToTimePtr(srs.Today(time.Now()))
 	if err != nil {
 		t.Fatalf("date: %v", err)
 	}
 	if _, err := c.app.store.Q().UpdateSchedule(c.app.ctx, gen.UpdateScheduleParams{
-		NoteID: id, CardID: cardID, UserID: c.userID,
+		CardID: id, UserID: c.userID,
 		Stage: stage, NextReviewDate: due, Lapses: lapses, State: "learning",
 	}); err != nil {
 		t.Fatalf("backdating schedule: %v", err)
 	}
 }
 
-// oneDueCard is the common setup: a note with a single card, due today.
-func oneDueCard(t *testing.T, c *testClient, front, back string) (noteID, cardID string) {
+func scheduleOf(t *testing.T, c *testClient, cardID string) gen.CardSchedule {
 	t.Helper()
-	note := c.createNote(map[string]any{
-		"title": "n", "contentMd": front + " :: " + back + "\n",
-	})
-	cards := cardsOf(t, c, note.ID)
-	if len(cards) != 1 {
-		t.Fatalf("got %d cards, want 1", len(cards))
+	id, err := uuid.Parse(cardID)
+	if err != nil {
+		t.Fatalf("card id %q: %v", cardID, err)
 	}
-	makeDue(t, c, note.ID, cards[0].ID, 0, 0)
-	return note.ID, cards[0].ID
+	row, err := c.app.store.Q().GetCardWithSchedule(c.app.ctx, gen.GetCardWithScheduleParams{
+		ID: id, UserID: c.userID,
+	})
+	if err != nil {
+		t.Fatalf("reading schedule for %q: %v", cardID, err)
+	}
+	return row.CardSchedule
+}
+
+// oneDueCard is the common setup: a single card, due today.
+func oneDueCard(t *testing.T, c *testClient, front, back string) string {
+	t.Helper()
+	card := c.createCard(map[string]any{"front": front, "back": back})
+	makeDue(t, c, card.ID, 0, 0)
+	return card.ID
 }
 
 // TestDueListWithholdsTheAnswer is the D-003 guarantee at the wire level. If
@@ -62,7 +73,7 @@ func TestDueListWithholdsTheAnswer(t *testing.T) {
 	c := app.newClient(t)
 
 	const answer = "Keyakinan awal sebelum melihat data"
-	noteID, cardID := oneDueCard(t, c, "Apa itu prior?", answer)
+	cardID := oneDueCard(t, c, "Apa itu prior?", answer)
 
 	var due dueBody
 	raw := c.expect(c.do(http.MethodGet, "/review/due", nil), http.StatusOK, &due)
@@ -84,7 +95,7 @@ func TestDueListWithholdsTheAnswer(t *testing.T) {
 	var ans struct {
 		Back string `json:"back"`
 	}
-	c.expect(c.do(http.MethodGet, "/review/"+noteID+"/"+cardID+"/answer", nil), http.StatusOK, &ans)
+	c.expect(c.do(http.MethodGet, "/review/"+cardID+"/answer", nil), http.StatusOK, &ans)
 	if ans.Back != answer {
 		t.Errorf("back = %q, want %q", ans.Back, answer)
 	}
@@ -96,16 +107,15 @@ func TestRateLupa(t *testing.T) {
 	app := newApp(t)
 	c := app.newClient(t)
 
-	note := c.createNote(map[string]any{"title": "n", "contentMd": "q :: a\n"})
-	cardID := cardsOf(t, c, note.ID)[0].ID
-	makeDue(t, c, note.ID, cardID, 4, 1)
+	cardID := c.createCard(map[string]any{"front": "q", "back": "a"}).ID
+	makeDue(t, c, cardID, 4, 1)
 
 	var rated struct {
 		Stage          int32   `json:"stage"`
 		State          string  `json:"state"`
 		NextReviewDate *string `json:"nextReviewDate"`
 	}
-	c.expect(c.do(http.MethodPost, "/review/"+note.ID+"/"+cardID, map[string]any{
+	c.expect(c.do(http.MethodPost, "/review/"+cardID, map[string]any{
 		"rating": "lupa",
 	}), http.StatusOK, &rated)
 
@@ -117,7 +127,7 @@ func TestRateLupa(t *testing.T) {
 		t.Errorf("nextReviewDate = %v, want %q", rated.NextReviewDate, tomorrow)
 	}
 
-	sched := scheduleOf(t, c, note.ID, cardID)
+	sched := scheduleOf(t, c, cardID)
 	if sched.Stage != 0 {
 		t.Errorf("stored stage = %d, want 0", sched.Stage)
 	}
@@ -134,8 +144,8 @@ func TestRateLupa(t *testing.T) {
 	var before, after int32
 	if err := c.app.store.Pool().QueryRow(c.app.ctx,
 		`SELECT rating, interval_before, interval_after FROM review_logs
-		  WHERE note_id = $1 AND card_id = $2 AND user_id = $3`,
-		note.ID, cardID, c.userID).Scan(&rating, &before, &after); err != nil {
+		  WHERE card_id = $1 AND user_id = $2`,
+		cardID, c.userID).Scan(&rating, &before, &after); err != nil {
 		t.Fatalf("no review log was written: %v", err)
 	}
 	if rating != "lupa" {
@@ -153,16 +163,15 @@ func TestRateIngatAdvances(t *testing.T) {
 	app := newApp(t)
 	c := app.newClient(t)
 
-	note := c.createNote(map[string]any{"title": "n", "contentMd": "q :: a\n"})
-	cardID := cardsOf(t, c, note.ID)[0].ID
-	makeDue(t, c, note.ID, cardID, 0, 0)
+	cardID := c.createCard(map[string]any{"front": "q", "back": "a"}).ID
+	makeDue(t, c, cardID, 0, 0)
 
 	var rated struct {
 		Stage          int32   `json:"stage"`
 		State          string  `json:"state"`
 		NextReviewDate *string `json:"nextReviewDate"`
 	}
-	c.expect(c.do(http.MethodPost, "/review/"+note.ID+"/"+cardID, map[string]any{
+	c.expect(c.do(http.MethodPost, "/review/"+cardID, map[string]any{
 		"rating": "ingat",
 	}), http.StatusOK, &rated)
 
@@ -190,15 +199,14 @@ func TestMasteringClearsTheDueDate(t *testing.T) {
 	app := newApp(t)
 	c := app.newClient(t)
 
-	note := c.createNote(map[string]any{"title": "n", "contentMd": "q :: a\n"})
-	cardID := cardsOf(t, c, note.ID)[0].ID
-	makeDue(t, c, note.ID, cardID, int32(len(srs.Intervals)-1), 0)
+	cardID := c.createCard(map[string]any{"front": "q", "back": "a"}).ID
+	makeDue(t, c, cardID, int32(len(srs.Intervals)-1), 0)
 
 	var rated struct {
 		State          string  `json:"state"`
 		NextReviewDate *string `json:"nextReviewDate"`
 	}
-	c.expect(c.do(http.MethodPost, "/review/"+note.ID+"/"+cardID, map[string]any{
+	c.expect(c.do(http.MethodPost, "/review/"+cardID, map[string]any{
 		"rating": "ingat",
 	}), http.StatusOK, &rated)
 
@@ -208,7 +216,7 @@ func TestMasteringClearsTheDueDate(t *testing.T) {
 	if rated.NextReviewDate != nil {
 		t.Errorf("nextReviewDate = %v, want null — a mastered card is not scheduled", *rated.NextReviewDate)
 	}
-	if s := scheduleOf(t, c, note.ID, cardID); s.NextReviewDate != nil {
+	if s := scheduleOf(t, c, cardID); s.NextReviewDate != nil {
 		t.Error("the stored next_review_date is not null for a mastered card")
 	}
 }
@@ -219,13 +227,11 @@ func TestDueTotalReportsWhatTheCapDeferred(t *testing.T) {
 	app := newApp(t)
 	c := app.newClient(t)
 
-	var md strings.Builder
 	for i := 0; i < 5; i++ {
-		md.WriteString("q" + string(rune('a'+i)) + " :: jawaban\n")
-	}
-	note := c.createNote(map[string]any{"title": "n", "contentMd": md.String()})
-	for _, card := range cardsOf(t, c, note.ID) {
-		makeDue(t, c, note.ID, card.ID, 0, 0)
+		card := c.createCard(map[string]any{
+			"front": "q" + string(rune('a'+i)), "back": "jawaban",
+		})
+		makeDue(t, c, card.ID, 0, 0)
 	}
 
 	var due dueBody
@@ -244,22 +250,22 @@ func TestReviewOwnershipAndValidation(t *testing.T) {
 	alice := app.newClient(t)
 	bob := app.newClient(t)
 
-	noteID, cardID := oneDueCard(t, alice, "rahasia", "jawaban rahasia")
+	cardID := oneDueCard(t, alice, "rahasia", "jawaban rahasia")
 
 	t.Run("another user cannot read the answer", func(t *testing.T) {
-		res := bob.do(http.MethodGet, "/review/"+noteID+"/"+cardID+"/answer", nil)
+		res := bob.do(http.MethodGet, "/review/"+cardID+"/answer", nil)
 		if res.StatusCode != http.StatusNotFound {
 			t.Fatalf("status = %d, want 404", res.StatusCode)
 		}
 	})
 
 	t.Run("another user cannot rate the card", func(t *testing.T) {
-		res := bob.do(http.MethodPost, "/review/"+noteID+"/"+cardID, map[string]any{"rating": "ingat"})
+		res := bob.do(http.MethodPost, "/review/"+cardID, map[string]any{"rating": "ingat"})
 		if res.StatusCode != http.StatusNotFound {
 			t.Fatalf("status = %d, want 404", res.StatusCode)
 		}
 		// And alice's schedule is untouched.
-		if s := scheduleOf(t, alice, noteID, cardID); s.Stage != 0 {
+		if s := scheduleOf(t, alice, cardID); s.Stage != 0 {
 			t.Errorf("stage = %d, want 0 — a rejected rating moved the schedule", s.Stage)
 		}
 	})
@@ -273,14 +279,14 @@ func TestReviewOwnershipAndValidation(t *testing.T) {
 	})
 
 	t.Run("an unknown rating is a 400", func(t *testing.T) {
-		res := alice.do(http.MethodPost, "/review/"+noteID+"/"+cardID, map[string]any{"rating": "mungkin"})
+		res := alice.do(http.MethodPost, "/review/"+cardID, map[string]any{"rating": "mungkin"})
 		if res.StatusCode != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400", res.StatusCode)
 		}
 	})
 
 	t.Run("a card that does not exist is a 404", func(t *testing.T) {
-		res := alice.do(http.MethodGet, "/review/"+noteID+"/zzzz/answer", nil)
+		res := alice.do(http.MethodGet, "/review/"+uuid.NewString()+"/answer", nil)
 		if res.StatusCode != http.StatusNotFound {
 			t.Fatalf("status = %d, want 404", res.StatusCode)
 		}

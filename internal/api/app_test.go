@@ -164,17 +164,57 @@ func (c *testClient) domainID(slug string) string {
 }
 
 type noteBody struct {
-	ID        string  `json:"id"`
-	Title     string  `json:"title"`
-	ContentMd string  `json:"contentMd"`
-	DomainID  *string `json:"domainId"`
-	UpdatedAt string  `json:"updatedAt"`
+	ID          string   `json:"id"`
+	Title       string   `json:"title"`
+	ContentMd   string   `json:"contentMd"`
+	DomainID    *string  `json:"domainId"`
+	CategoryIDs []string `json:"categoryIds"`
+	UpdatedAt   string   `json:"updatedAt"`
 }
 
-// createNote is the common setup: a note, its cards synced, ready to assert on.
 func (c *testClient) createNote(body any) noteBody {
 	c.t.Helper()
 	var note noteBody
 	c.expect(c.do(http.MethodPost, "/notes", body), http.StatusCreated, &note)
 	return note
+}
+
+type cardBody struct {
+	ID          string   `json:"id"`
+	Front       string   `json:"front"`
+	Back        string   `json:"back"`
+	Type        string   `json:"type"`
+	DomainID    *string  `json:"domainId"`
+	CategoryIDs []string `json:"categoryIds"`
+}
+
+// createCard is the common setup now that a card is its own resource (D-055).
+// It used to be a side effect of saving a note whose markdown held `Q :: A`.
+func (c *testClient) createCard(body any) cardBody {
+	c.t.Helper()
+	var card cardBody
+	c.expect(c.do(http.MethodPost, "/cards", body), http.StatusCreated, &card)
+	return card
+}
+
+type categoryBody struct {
+	ID         string  `json:"id"`
+	Slug       string  `json:"slug"`
+	Label      string  `json:"label"`
+	ArchivedAt *string `json:"archivedAt"`
+	NoteCount  int64   `json:"noteCount"`
+	CardCount  int64   `json:"cardCount"`
+}
+
+// createCategory posts a label. The endpoint is create-on-type and therefore
+// idempotent, so it answers 201 for a new slug and 200 for one that exists.
+func (c *testClient) createCategory(label string) categoryBody {
+	c.t.Helper()
+	res := c.do(http.MethodPost, "/categories", map[string]any{"label": label})
+	if res.StatusCode != http.StatusCreated && res.StatusCode != http.StatusOK {
+		c.t.Fatalf("creating category %q: status %d", label, res.StatusCode)
+	}
+	var out categoryBody
+	c.expect(res, res.StatusCode, &out)
+	return out
 }

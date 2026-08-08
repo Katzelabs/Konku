@@ -86,7 +86,7 @@ function Sitting({ attempt }: { attempt: AttemptDetail }) {
       <Question
         // Remounting per question resets the reveal state, so the next prompt
         // can never arrive already showing its answer.
-        key={`${question.noteId}:${question.cardId}`}
+        key={question.cardId}
         attemptId={attempt.id}
         question={question}
         onAnswered={() => setIndex((i) => i + 1)}
@@ -105,18 +105,18 @@ function Question({
   onAnswered: () => void
 }) {
   const [reveal, setReveal] = useState(false)
-  const answer = useAttemptAnswer(attemptId, question.noteId, question.cardId, reveal)
+  const answer = useAttemptAnswer(attemptId, question.cardId, reveal)
   const submit = useAnswerQuestion()
 
   function rate(rating: Rating) {
     submit.mutate(
-      { attemptId, noteId: question.noteId, cardId: question.cardId, rating },
+      { attemptId, cardId: question.cardId, rating },
       { onSuccess: onAnswered },
     )
   }
 
-  // A card whose note was deleted after the draw still holds its place in the
-  // score, but there is nothing left to ask.
+  // A card deleted after the draw still holds its place in the score, but
+  // there is nothing left to ask.
   if (question.missing) {
     return (
       <div className="flex flex-col gap-5">
@@ -213,9 +213,9 @@ function Result({ attempt }: { attempt: AttemptDetail }) {
           <Card>
             <ul className="divide-y divide-border">
               {missed.map((q) => (
-                <li key={`${q.noteId}:${q.cardId}`}>
+                <li key={q.cardId}>
                   <Link
-                    to={`/notes/${q.noteId}`}
+                    to={`/cards/${q.cardId}`}
                     className="block px-4 py-3 text-sm text-secondary-fg transition-colors hover:bg-muted"
                   >
                     {q.front || 'Kartu ini sudah tidak ada.'}

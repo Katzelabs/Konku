@@ -368,6 +368,38 @@ Recorded here rather than fixed silently because a mockup outlives a conversatio
 
 ---
 
+## Cards leave the note
+
+### D-055 — Notes and cards are two features, not one *(supersedes D-005; retires D-019; overturns D-054's card clause)*
+
+Cards are their own resource with their own table, their own uuid, and their own CRUD screens. A note is markdown and nothing else. The two relate through shared categories and a shared domain vocabulary, not through containment.
+
+**This reverses D-005, which was recorded as "explicitly confirmed by the user".** It was reversed the same way — proposed, argued against, and confirmed again. Recording that here because a reversal without its reasoning reads like drift, and the next person to find D-005 needs to know it was retired on purpose rather than forgotten.
+
+**The argument against, which was made and overruled:** three models mean three capture flows and three places for knowledge to live half-updated, which is the standard failure mode for this category. D-005 collapsed them precisely to protect capture cost (hard rule 7).
+
+**The argument for, which won:** the two have genuinely different use cases. A note is a place to think; a card is a memorisation instrument. Requiring a note before a card taxes the card — the thing the product's core loop actually runs on (D-001) — to protect a coupling that only ever existed to save a capture flow. A card-first screen is now the shortest path to a card there has ever been, so capture cost went *down* for the artefact that matters most.
+
+**What was given up, honestly:**
+
+- The `Q :: A` syntax, the parser, `internal/card`, and its TypeScript mirror. About 900 lines deleted.
+- "Fix the card by fixing the note" — a card no longer has a source note to return to. The review screen now links to the card itself.
+- The git vault export (D-026, v0.2) gets a second thing to export. Notes are still markdown files; cards will need their own representation.
+
+**What survives, restated rather than dropped:**
+
+- **Editing a card must never reset its schedule.** That was hard rule 2's entire purpose and the most damaging silent bug this codebase had available. Stable IDs are gone, but the property is now structural: the uuid is the primary key and an edit is an `UPDATE`, so there is no content matching left to get wrong. Guarded by `TestScheduleSurvivesCardEdit`, which was kept and rewritten rather than deleted with the parser.
+- **Soft delete**, for a new reason: a finished exam attempt renders its questions by joining `cards`, so a hard delete would blank out past results. It also makes deletion undoable.
+- **Recall before reveal (D-003)**, held one level lower than before. The card *list* withholds `back` too, not just the review screen — an index visited daily that ships every answer would leave the mechanism one dev-tools glance from defeat.
+
+**Consequences worth knowing:**
+
+- `cards.domain_id` had to exist before `note_id` could go. Cards inherited their domain by joining notes, so every exam draw and the card filter would otherwise have silently returned nothing rather than erroring.
+- Migration `00004` is destructive and was only free because the app had not shipped. `review_logs` cannot be reconstructed (D-029); this was the last moment that was true without cost.
+- **Cloze and feynman stay deferred (D-031).** Standalone card CRUD makes a type picker trivial to add, which is exactly why it is worth saying no here explicitly.
+
+---
+
 ## Open questions
 
 None blocking. Deferred details, intentionally left until the feature is being built:

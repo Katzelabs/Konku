@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react'
 import { LogOut, Moon, Plus, Settings, Sun, Trash2 } from 'lucide-react'
 import { Avatar } from '../components/ui/avatar'
 import { Badge, DomainBadge, DomainDot } from '../components/ui/badge'
+import { CategoryChip } from '../components/ui/category'
+import { DetailsField } from '../components/ui/details-drawer'
+import { Markdown } from '../components/ui/markdown'
+import { ViewToggle, type ViewMode } from '../components/ui/view-toggle'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -51,6 +55,7 @@ import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group'
 export default function StyleGuide() {
   const [dark, setDark] = useState(false)
   const [duration, setDuration] = useState(20)
+  const [view, setView] = useState<ViewMode>('list')
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark)
@@ -278,6 +283,47 @@ export default function StyleGuide() {
           </p>
         </Section>
 
+        <Section
+          title="Category"
+          hint="Shared by notes and cards. Neutral on purpose — domain colour is the only colour signal in a row."
+        >
+          <Row label="chip">
+            <CategoryChip label="Probabilitas" />
+            <CategoryChip label="Aljabar linear" />
+            <CategoryChip label="math/statistik" />
+          </Row>
+          <Row label="removable">
+            <CategoryChip label="Bisa dihapus" onRemove={() => {}} />
+          </Row>
+        </Section>
+
+        <Section
+          title="View toggle"
+          hint="Grid or list, for the notes and cards indexes. State lives in ?view=."
+        >
+          <Row label="toggle">
+            <ViewToggle mode={view} onChange={setView} />
+          </Row>
+        </Section>
+
+        <Section
+          title="Details field"
+          hint="One labelled row inside the details drawer. The drawer itself is a column at lg+ and a dialog below."
+        >
+          <div className="max-w-xs rounded-lg border border-border bg-card p-4">
+            <DetailsField label="Domain">
+              <DomainBadge color="#4F7CAC" label="Matematika" />
+            </DetailsField>
+          </div>
+        </Section>
+
+        <Section
+          title="Markdown"
+          hint="react-markdown, mapped element by element to tokens. Never innerHTML."
+        >
+          <Markdown>{MARKDOWN_SAMPLE}</Markdown>
+        </Section>
+
         <Section title="States" hint="Loading, empty, and messages.">
           <div className="flex flex-col gap-4">
             <Loading />
@@ -428,6 +474,25 @@ const SURFACES = [
   { name: 'border', cls: 'bg-border', note: 'lines' },
   { name: 'destructive', cls: 'bg-destructive', note: 'delete only' },
 ]
+
+const MARKDOWN_SAMPLE = `## Teorema Bayes
+
+Prior adalah **keyakinan awal** sebelum melihat data.
+
+- poin pertama
+- poin kedua dengan \`kode inline\`
+
+> Kutipan tenang, bukan peringatan.
+
+| Istilah | Arti |
+|---|---|
+| prior | keyakinan awal |
+| posterior | setelah data |
+
+\`\`\`python
+posterior = prior * likelihood / evidence
+\`\`\`
+`
 
 const RADII = [
   { cls: 'rounded-sm' },

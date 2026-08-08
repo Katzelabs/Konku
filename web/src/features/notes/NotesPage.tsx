@@ -1,77 +1,61 @@
 import { useMemo } from 'react'
 import { Plus, Search } from 'lucide-react'
-import {
-  NavLink,
-  Outlet,
-  useMatch,
-  useNavigate,
-  useSearchParams,
-} from 'react-router-dom'
-import type { Domain, NoteSummary } from '../../api/types'
-import { Button } from '../../components/ui/button'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import type { Category, Domain, NoteSummary } from '../../api/types'
 import { DomainDot } from '../../components/ui/badge'
+import { Button } from '../../components/ui/button'
+import { Card } from '../../components/ui/card'
+import { CategoryChips } from '../../components/ui/category'
 import { EmptyState } from '../../components/ui/empty-state'
 import { Input } from '../../components/ui/input'
 import { Notice } from '../../components/ui/notice'
+import { PageHeader } from '../../components/ui/page-header'
 import { Loading } from '../../components/ui/spinner'
+import { ToggleGroup, ToggleGroupItem } from '../../components/ui/toggle-group'
+import { useViewMode, ViewToggle } from '../../components/ui/view-toggle'
 import { humanDay } from '../../lib/date'
 import { cn } from '../../lib/utils'
+import { useAllCategories } from '../categories/queries'
 import { useDomains } from '../domains/queries'
 import { useCreateNote, useNotes } from './queries'
 
 /**
- * List and editor side by side, from the mockup.
+ * The note index.
  *
- * On phones only one pane shows at a time — the list at /notes, the editor at
- * /notes/:id — so the back link in the editor is a real navigation rather than
- * decoration.
+ * It used to be a two-pane layout with the editor mounted in an `<Outlet>`.
+ * The editor is its own full-width route now, which is what lets it show write
+ * and preview side by side instead of as a mode — the pane was the constraint,
+ * not the design.
  */
 export default function NotesPage() {
-  const selected = useMatch('/notes/:id')
-
-  return (
-    <div className="flex flex-col gap-6">
-      <div className={cn('md:block', selected && 'hidden')}>
-        <h1 className="text-2xl font-bold tracking-tight text-surface-fg">
-          Catatan
-        </h1>
-        <p className="mt-1 text-sm text-muted-fg">
-          Tulis dulu, rapikan nanti. Kartu ditulis langsung di dalam catatan.
-        </p>
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-[20rem_1fr] lg:grid-cols-[22rem_1fr]">
-        <div className={cn('md:block', selected && 'hidden')}>
-          <NoteListPane />
-        </div>
-        <div className={cn('min-w-0 md:block', !selected && 'hidden')}>
-          <Outlet />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function NoteListPane() {
-  const { data: notes, isPending, error } = useNotes()
-  const { data: domains } = useDomains()
-  const create = useCreateNote()
   const navigate = useNavigate()
+  const [view, setView] = useViewMode('konku:notes-view')
 
-  // The query lives in the URL so the top bar's search box and this one are the
-  // same filter rather than two that disagree.
+  // The query lives in the URL so the top bar's search box and this one are
+  // the same filter rather than two that disagree.
   const [params, setParams] = useSearchParams()
   const query = params.get('q') ?? ''
-  const setQuery = (q: string) =>
-    setParams(q ? { q } : {}, { replace: true, preventScrollReset: true })
+  const categoryId = params.get('categoryId')
+
+  function setParam(key: string, value: string | null) {
+    const next = new URLSearchParams(params)
+    if (value) next.set(key, value)
+    else next.delete(key)
+    setParams(next, { replace: true, preventScrollReset: true })
+  }
+
+  const { data: notes, isPending, error } = useNotes({ categoryId })
+  const { data: domains } = useDomains()
+  const { data: categories } = useAllCategories()
+  const create = useCreateNote()
 
   function newNote() {
     create.mutate({ contentMd: '' }, { onSuccess: (n) => navigate(`/notes/${n.id}`) })
   }
 
-  // A client-side filter over the list already in memory, not search. Full-text
-  // search stays deferred to v0.2 (D-031) — the placeholder says "judul" so it
-  // does not promise more than it does.
+  // A client-side filter over the list already in memory, not search. Ranked
+  // full-text search stays deferred to v0.2 (D-031), so the placeholder says
+  // "judul" and does not promise more than it does.
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return notes ?? []
@@ -79,21 +63,52 @@ function NoteListPane() {
   }, [notes, query])
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-2">
-        <div className="relative">
-          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle-fg" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Cari judul…"
-            className="pl-9"
-          />
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Catatan"
+        description="Tulis dulu, rapikan nanti."
+        meta={!isPending && <span>{notes?.length ?? 0} catatan</span>}
+        actions={
+          <Button variant="primary" onClick={newNote} disabled={create.isPending}>
+            <Plus />
+            {create.isPending ? 'Sebentar…' : 'Catatan baru'}
+          </Button>
+        }
+      />
+
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle-fg" />
+            <Input
+              value={query}
+              onChange={(e) => setParam('q', e.target.value)}
+              placeholder="Cari judul…"
+              className="pl-9"
+            />
+          </div>
+          <ViewToggle mode={view} onChange={setView} />
         </div>
-        <Button variant="primary" onClick={newNote} disabled={create.isPending}>
-          <Plus />
-          {create.isPending ? 'Sebentar…' : 'Catatan baru'}
-        </Button>
+
+        {categories && categories.length > 0 && (
+          <ToggleGroup>
+            <ToggleGroupItem
+              selected={categoryId === null}
+              onClick={() => setParam('categoryId', null)}
+            >
+              Semua
+            </ToggleGroupItem>
+            {categories.map((c) => (
+              <ToggleGroupItem
+                key={c.id}
+                selected={categoryId === c.id}
+                onClick={() => setParam('categoryId', c.id)}
+              >
+                {c.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        )}
       </div>
 
       {isPending && <Loading />}
@@ -118,74 +133,114 @@ function NoteListPane() {
         </p>
       )}
 
-      {filtered.length > 0 && (
-        <ul className="flex flex-col gap-2">
-          {filtered.map((note) => (
-            <li key={note.id}>
-              <NoteRow note={note} domains={domains} />
-            </li>
-          ))}
-        </ul>
-      )}
+      {filtered.length > 0 &&
+        (view === 'grid' ? (
+          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {filtered.map((note) => (
+              <li key={note.id}>
+                <NoteTile note={note} domains={domains} categories={categories} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <Card>
+            <ul className="divide-y divide-border">
+              {filtered.map((note) => (
+                <li key={note.id}>
+                  <NoteRow note={note} domains={domains} categories={categories} />
+                </li>
+              ))}
+            </ul>
+          </Card>
+        ))}
     </div>
   )
+}
+
+function useNoteMeta(note: NoteSummary, domains: Domain[] | undefined) {
+  return domains?.find((d) => d.id === note.domainId)
 }
 
 function NoteRow({
   note,
   domains,
+  categories,
 }: {
   note: NoteSummary
   domains: Domain[] | undefined
+  categories: Category[] | undefined
 }) {
-  const domain = domains?.find((d) => d.id === note.domainId)
+  const domain = useNoteMeta(note, domains)
 
   return (
-    <NavLink
+    <Link
       to={`/notes/${note.id}`}
-      className={({ isActive }) =>
-        cn(
-          'flex flex-col gap-1.5 rounded-lg border px-4 py-3 transition-colors duration-(--animate-duration-quick) ease-(--ease-quiet)',
-          isActive
-            ? 'border-primary bg-accent'
-            : 'border-border bg-card hover:bg-muted',
-        )
-      }
+      className="flex flex-col gap-1.5 px-4 py-3 transition-colors duration-(--animate-duration-quick) ease-(--ease-quiet) hover:bg-muted"
     >
-      {({ isActive }) => (
-        <>
-          <div className="flex items-baseline justify-between gap-3">
-            {domain ? (
-              <span className="flex min-w-0 items-center gap-1.5">
-                <DomainDot color={domain.color} />
-                <span className="truncate text-xs text-muted-fg">
-                  {domain.label}
-                </span>
-              </span>
-            ) : (
-              <span />
-            )}
-            <span className="shrink-0 text-xs text-subtle-fg">
-              {humanDay(note.updatedAt)}
-            </span>
-          </div>
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="truncate text-sm font-medium text-card-fg">
+          {note.title || 'Tanpa judul'}
+        </span>
+        <span className="shrink-0 text-xs text-subtle-fg">
+          {humanDay(note.updatedAt)}
+        </span>
+      </div>
 
-          <span
-            className={cn(
-              'truncate text-sm font-medium',
-              isActive ? 'text-accent-fg' : 'text-card-fg',
-            )}
-          >
-            {note.title || 'Tanpa judul'}
+      <div className="flex flex-wrap items-center gap-2">
+        {domain && (
+          <span className="flex min-w-0 items-center gap-1.5">
+            <DomainDot color={domain.color} />
+            <span className="truncate text-xs text-muted-fg">{domain.label}</span>
           </span>
+        )}
+        <CategoryChips ids={note.categoryIds} categories={categories} />
+      </div>
+    </Link>
+  )
+}
 
-          {note.cardCount > 0 && (
-            <span className="text-xs text-subtle-fg">
-              {note.cardCount} kartu
-            </span>
-          )}
-        </>
+function NoteTile({
+  note,
+  domains,
+  categories,
+}: {
+  note: NoteSummary
+  domains: Domain[] | undefined
+  categories: Category[] | undefined
+}) {
+  const domain = useNoteMeta(note, domains)
+
+  return (
+    <Link
+      to={`/notes/${note.id}`}
+      className={cn(
+        'flex h-full flex-col gap-2 rounded-lg border border-border bg-card px-4 py-3',
+        'transition-colors duration-(--animate-duration-quick) ease-(--ease-quiet) hover:bg-muted',
       )}
-    </NavLink>
+    >
+      <div className="flex items-baseline justify-between gap-2">
+        {domain ? (
+          <span className="flex min-w-0 items-center gap-1.5">
+            <DomainDot color={domain.color} />
+            <span className="truncate text-xs text-muted-fg">{domain.label}</span>
+          </span>
+        ) : (
+          <span />
+        )}
+        <span className="shrink-0 text-xs text-subtle-fg">
+          {humanDay(note.updatedAt)}
+        </span>
+      </div>
+
+      <span className="line-clamp-2 text-sm font-medium text-card-fg">
+        {note.title || 'Tanpa judul'}
+      </span>
+
+      <CategoryChips
+        ids={note.categoryIds}
+        categories={categories}
+        className="mt-auto pt-1"
+      />
+    </Link>
   )
 }

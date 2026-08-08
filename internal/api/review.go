@@ -14,10 +14,9 @@ import (
 	"github.com/Katzelabs/Konku/internal/store/gen"
 )
 
-// A card is addressed by note and ID together. Card IDs are only unique within
-// their note — the primary key is (note_id, id) and card.NewID checks for
-// collisions against the note, not the account — so {cardID} alone cannot name
-// a card.
+// A card is addressed by its own uuid. It used to take a note and an ID
+// together, because card IDs were only unique within the note they were parsed
+// out of; D-055 gave cards their own identity and the note half went with it.
 
 // dueCard is the prompt side of a card, and nothing else.
 //
@@ -26,10 +25,9 @@ import (
 // answer alongside the prompt would let a glance at dev-tools defeat it, and
 // the user would not even have to intend to cheat.
 type dueCard struct {
-	ID     string `json:"id"`
-	NoteID string `json:"noteId"`
-	Type   string `json:"type"`
-	Front  string `json:"front"`
+	ID    string `json:"id"`
+	Type  string `json:"type"`
+	Front string `json:"front"`
 }
 
 type dueResponse struct {
@@ -88,10 +86,9 @@ func (s *Server) handleDueCards(w http.ResponseWriter, r *http.Request) {
 	cards := make([]dueCard, 0, len(rows))
 	for _, row := range rows {
 		cards = append(cards, dueCard{
-			ID:     row.ID,
-			NoteID: row.NoteID.String(),
-			Type:   row.Type,
-			Front:  row.Front,
+			ID:    row.ID.String(),
+			Type:  row.Type,
+			Front: row.Front,
 		})
 	}
 
@@ -103,13 +100,13 @@ func (s *Server) handleDueCards(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCardAnswer(w http.ResponseWriter, r *http.Request) {
 	user, _ := UserFrom(r.Context())
 
-	noteID, cardID, ok := cardParams(w, r)
+	cardID, ok := cardParam(w, r)
 	if !ok {
 		return
 	}
 
 	row, err := s.store.Q().GetCardWithSchedule(r.Context(), gen.GetCardWithScheduleParams{
-		NoteID: noteID, ID: cardID, UserID: user.ID,
+		ID: cardID, UserID: user.ID,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeNotFound(w)
@@ -132,7 +129,7 @@ func (s *Server) handleCardAnswer(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRate(w http.ResponseWriter, r *http.Request) {
 	user, _ := UserFrom(r.Context())
 
-	noteID, cardID, ok := cardParams(w, r)
+	cardID, ok := cardParam(w, r)
 	if !ok {
 		return
 	}
@@ -154,14 +151,14 @@ func (s *Server) handleRate(w http.ResponseWriter, r *http.Request) {
 	var next srs.Schedule
 	err := s.store.WithTx(r.Context(), func(q *gen.Queries) error {
 		row, err := q.GetCardWithSchedule(r.Context(), gen.GetCardWithScheduleParams{
-			NoteID: noteID, ID: cardID, UserID: user.ID,
+			ID: cardID, UserID: user.ID,
 		})
 		if err != nil {
 			return err
 		}
 
 		current := srs.Schedule{
-			CardID:     row.Card.ID,
+			CardID:     row.Card.ID.String(),
 			Stage:      int(row.CardSchedule.Stage),
 			NextReview: store.FromTimePtr(row.CardSchedule.NextReviewDate),
 			Lapses:     int(row.CardSchedule.Lapses),
@@ -174,7 +171,6 @@ func (s *Server) handleRate(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		if _, err := q.UpdateSchedule(r.Context(), gen.UpdateScheduleParams{
-			NoteID:         noteID,
 			CardID:         cardID,
 			UserID:         user.ID,
 			Stage:          int32(next.Stage),
@@ -186,7 +182,6 @@ func (s *Server) handleRate(w http.ResponseWriter, r *http.Request) {
 		}
 
 		_, err = q.InsertReviewLog(r.Context(), gen.InsertReviewLogParams{
-			NoteID:         noteID,
 			CardID:         cardID,
 			UserID:         user.ID,
 			Rating:         string(rating),
@@ -224,16 +219,14 @@ func intervalDays(s srs.Schedule) int32 {
 	return int32(srs.Intervals[s.Stage])
 }
 
-func cardParams(w http.ResponseWriter, r *http.Request) (uuid.UUID, string, bool) {
-	noteID, err := uuid.Parse(chi.URLParam(r, "noteID"))
+// cardParam reads {cardID} from the path. An unparseable id is answered 404
+// rather than 400: it names nothing, and saying "malformed" would distinguish
+// a bad id from someone else's card (D-039).
+func cardParam(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	cardID, err := uuid.Parse(chi.URLParam(r, "cardID"))
 	if err != nil {
 		writeNotFound(w)
-		return uuid.UUID{}, "", false
+		return uuid.UUID{}, false
 	}
-	cardID := chi.URLParam(r, "cardID")
-	if cardID == "" {
-		writeNotFound(w)
-		return uuid.UUID{}, "", false
-	}
-	return noteID, cardID, true
+	return cardID, true
 }

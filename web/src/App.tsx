@@ -5,6 +5,7 @@ import { Notice } from './components/ui/notice'
 import LoginPage from './features/auth/LoginPage'
 import { useMe } from './features/auth/useAuth'
 import CardsPage from './features/cards/CardsPage'
+import CardEditorPage from './features/cards/CardEditorPage'
 import DomainsPage from './features/domains/DomainsPage'
 import ExamPage from './features/exams/ExamPage'
 import ExamsPage from './features/exams/ExamsPage'
@@ -12,7 +13,6 @@ import SitExamPage from './features/exams/SitExamPage'
 import HomePage from './features/home/HomePage'
 import NoteEditorPage from './features/notes/NoteEditorPage'
 import NotesPage from './features/notes/NotesPage'
-import NoNoteSelected from './features/notes/NoNoteSelected'
 import ReviewPage from './features/review/ReviewPage'
 import SettingsPage from './features/settings/SettingsPage'
 import { TimerProvider } from './features/timer/TimerProvider'
@@ -47,16 +47,17 @@ export default function App() {
           <Route path="/home" element={<HomePage />} />
 
           {/*
-            The list and the editor share a route so the two-pane layout keeps
-            the list mounted while you move between notes. On phones NotesPage
-            shows one pane at a time.
+            Index and editor are siblings, not a two-pane layout. The editor
+            gets the full width, which is what lets it show write and preview
+            side by side rather than as a mode.
           */}
-          <Route path="/notes" element={<NotesPage />}>
-            <Route index element={<NoNoteSelected />} />
-            <Route path=":id" element={<NoteEditorPage />} />
-          </Route>
+          <Route path="/notes" element={<NotesPage />} />
+          <Route path="/notes/:id" element={<NoteEditorPage />} />
 
+          {/* Cards are a peer feature with the same two shapes (D-055). */}
           <Route path="/cards" element={<CardsPage />} />
+          <Route path="/cards/new" element={<CardEditorPage />} />
+          <Route path="/cards/:id" element={<CardEditorPage />} />
           <Route path="/review" element={<ReviewPage />} />
           <Route path="/timer" element={<TimerPage />} />
           <Route path="/exams" element={<ExamsPage />} />

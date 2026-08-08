@@ -20,7 +20,6 @@ type examBody struct {
 
 type questionBody struct {
 	Position int32   `json:"position"`
-	NoteID   string  `json:"noteId"`
 	CardID   string  `json:"cardId"`
 	Front    string  `json:"front"`
 	Rating   *string `json:"rating"`
@@ -39,19 +38,24 @@ type attemptBody struct {
 
 func today() string { return string(srs.Today(time.Now())) }
 
-// seedCards writes one note carrying n cards and returns it.
-func (c *testClient) seedCards(n int, domainID *string) noteBody {
+// seedCards creates n standalone cards and returns them. They used to be
+// `Q :: A` lines inside one note; a card is its own row now (D-055), and the
+// domain is the card's own rather than one it inherited from a note.
+func (c *testClient) seedCards(n int, domainID *string) []cardBody {
 	c.t.Helper()
 
-	md := ""
+	out := make([]cardBody, 0, n)
 	for i := range n {
-		md += string(rune('A'+i)) + " :: jawaban " + string(rune('A'+i)) + "\n\n"
+		body := map[string]any{
+			"front": string(rune('A' + i)),
+			"back":  "jawaban " + string(rune('A'+i)),
+		}
+		if domainID != nil {
+			body["domainId"] = *domainID
+		}
+		out = append(out, c.createCard(body))
 	}
-	body := map[string]any{"title": "bank", "contentMd": md}
-	if domainID != nil {
-		body["domainId"] = *domainID
-	}
-	return c.createNote(body)
+	return out
 }
 
 func (c *testClient) createExam(body map[string]any) examBody {
@@ -77,7 +81,7 @@ func TestExamAnswerDoesNotMoveTheSchedule(t *testing.T) {
 	app := newApp(t)
 	c := app.newClient(t)
 
-	note := c.seedCards(2, nil)
+	c.seedCards(2, nil)
 	exam := c.createExam(map[string]any{
 		"title": "Latihan", "selection": "random", "questionCount": 2,
 	})
@@ -88,12 +92,12 @@ func TestExamAnswerDoesNotMoveTheSchedule(t *testing.T) {
 		lapses int32
 		due    *string
 	}
-	read := func(noteID, cardID string) schedule {
+	read := func(cardID string) schedule {
 		t.Helper()
 		var s schedule
 		if err := c.app.store.Pool().QueryRow(c.app.ctx,
 			`SELECT stage, lapses, next_review_date::text FROM card_schedules
-			  WHERE note_id = $1 AND card_id = $2`, noteID, cardID).
+			  WHERE card_id = $1`, cardID).
 			Scan(&s.stage, &s.lapses, &s.due); err != nil {
 			t.Fatalf("reading schedule: %v", err)
 		}
@@ -102,18 +106,18 @@ func TestExamAnswerDoesNotMoveTheSchedule(t *testing.T) {
 
 	before := make(map[string]schedule, len(attempt.Questions))
 	for _, q := range attempt.Questions {
-		before[q.CardID] = read(q.NoteID, q.CardID)
+		before[q.CardID] = read(q.CardID)
 	}
 
 	// Answer everything wrong — the harshest case for the schedule.
 	for _, q := range attempt.Questions {
 		c.expect(c.do(http.MethodPost,
-			"/attempts/"+attempt.ID+"/"+q.NoteID+"/"+q.CardID,
+			"/attempts/"+attempt.ID+"/"+q.CardID,
 			map[string]any{"rating": "lupa"}), http.StatusNoContent, nil)
 	}
 
 	for _, q := range attempt.Questions {
-		got, want := read(q.NoteID, q.CardID), before[q.CardID]
+		got, want := read(q.CardID), before[q.CardID]
 		if got.stage != want.stage || got.lapses != want.lapses {
 			t.Errorf("card %s: schedule moved to stage=%d lapses=%d, want stage=%d lapses=%d — an exam answer must not touch the ladder (D-049)",
 				q.CardID, got.stage, got.lapses, want.stage, want.lapses)
@@ -125,7 +129,7 @@ func TestExamAnswerDoesNotMoveTheSchedule(t *testing.T) {
 	if err := c.app.store.Pool().QueryRow(c.app.ctx,
 		`SELECT count(*) FILTER (WHERE source = 'exam'),
 		        count(*) FILTER (WHERE source = 'review')
-		   FROM review_logs WHERE note_id = $1`, note.ID).Scan(&exams, &reviews); err != nil {
+		   FROM review_logs WHERE user_id = $1`, c.userID).Scan(&exams, &reviews); err != nil {
 		t.Fatalf("reading review_logs: %v", err)
 	}
 	if exams != 2 {
@@ -155,7 +159,7 @@ func TestAttemptResumesWithTheSameQuestions(t *testing.T) {
 
 	// Answer one, then "close the tab" and start again.
 	q := first.Questions[0]
-	c.expect(c.do(http.MethodPost, "/attempts/"+first.ID+"/"+q.NoteID+"/"+q.CardID,
+	c.expect(c.do(http.MethodPost, "/attempts/"+first.ID+"/"+q.CardID,
 		map[string]any{"rating": "ingat"}), http.StatusNoContent, nil)
 
 	// 200, not 201: this is the same attempt carried on, not a new one.
@@ -205,7 +209,7 @@ func TestExamQuestionsHideTheAnswer(t *testing.T) {
 	var answer struct {
 		Back string `json:"back"`
 	}
-	c.expect(c.do(http.MethodGet, "/attempts/"+attempt.ID+"/"+q.NoteID+"/"+q.CardID+"/answer", nil),
+	c.expect(c.do(http.MethodGet, "/attempts/"+attempt.ID+"/"+q.CardID+"/answer", nil),
 		http.StatusOK, &answer)
 	if !contains(answer.Back, "jawaban") {
 		t.Errorf("back = %q, want the stored answer", answer.Back)
@@ -229,7 +233,7 @@ func TestFinishScoresTheAttempt(t *testing.T) {
 		if i < 3 {
 			rating = "ingat"
 		}
-		c.expect(c.do(http.MethodPost, "/attempts/"+attempt.ID+"/"+q.NoteID+"/"+q.CardID,
+		c.expect(c.do(http.MethodPost, "/attempts/"+attempt.ID+"/"+q.CardID,
 			map[string]any{"rating": rating}), http.StatusNoContent, nil)
 	}
 
@@ -247,7 +251,7 @@ func TestFinishScoresTheAttempt(t *testing.T) {
 
 	// And a finished attempt takes no more answers.
 	q := attempt.Questions[0]
-	res := c.do(http.MethodPost, "/attempts/"+attempt.ID+"/"+q.NoteID+"/"+q.CardID,
+	res := c.do(http.MethodPost, "/attempts/"+attempt.ID+"/"+q.CardID,
 		map[string]any{"rating": "ingat"})
 	if res.StatusCode != http.StatusConflict {
 		t.Errorf("status = %d, want 409 answering a finished attempt", res.StatusCode)
@@ -268,7 +272,7 @@ func TestAnsweringTwiceIsIdempotent(t *testing.T) {
 
 	q := attempt.Questions[0]
 	for range 3 {
-		c.expect(c.do(http.MethodPost, "/attempts/"+attempt.ID+"/"+q.NoteID+"/"+q.CardID,
+		c.expect(c.do(http.MethodPost, "/attempts/"+attempt.ID+"/"+q.CardID,
 			map[string]any{"rating": "ingat"}), http.StatusNoContent, nil)
 	}
 
@@ -297,6 +301,11 @@ func TestRandomDrawRespectsTheDomain(t *testing.T) {
 	inDomain := c.seedCards(3, &math)
 	c.seedCards(3, nil) // untagged, must never be drawn
 
+	inDomainIDs := make(map[string]bool, len(inDomain))
+	for _, card := range inDomain {
+		inDomainIDs[card.ID] = true
+	}
+
 	exam := c.createExam(map[string]any{
 		"title": "Matematika", "selection": "random", "questionCount": 10, "domainId": math,
 	})
@@ -306,8 +315,8 @@ func TestRandomDrawRespectsTheDomain(t *testing.T) {
 		t.Fatalf("drew %d questions, want 3 — the draw escaped the domain", len(attempt.Questions))
 	}
 	for _, q := range attempt.Questions {
-		if q.NoteID != inDomain.ID {
-			t.Errorf("drew a card from note %s, want only %s", q.NoteID, inDomain.ID)
+		if !inDomainIDs[q.CardID] {
+			t.Errorf("drew card %s from outside the domain", q.CardID)
 		}
 	}
 }
@@ -317,23 +326,23 @@ func TestDiscardingAnAttemptKeepsTheAnswers(t *testing.T) {
 	app := newApp(t)
 	c := app.newClient(t)
 
-	note := c.seedCards(2, nil)
+	c.seedCards(2, nil)
 	exam := c.createExam(map[string]any{
 		"title": "Latihan", "selection": "random", "questionCount": 2,
 	})
 	attempt := c.startAttempt(exam.ID, http.StatusCreated)
 
 	q := attempt.Questions[0]
-	c.expect(c.do(http.MethodPost, "/attempts/"+attempt.ID+"/"+q.NoteID+"/"+q.CardID,
+	c.expect(c.do(http.MethodPost, "/attempts/"+attempt.ID+"/"+q.CardID,
 		map[string]any{"rating": "ingat"}), http.StatusNoContent, nil)
 
 	c.expect(c.do(http.MethodDelete, "/attempts/"+attempt.ID, nil), http.StatusNoContent, nil)
 
 	var kept, snapshot int
 	if err := c.app.store.Pool().QueryRow(c.app.ctx,
-		`SELECT (SELECT count(*) FROM review_logs WHERE note_id = $1 AND source = 'exam'),
+		`SELECT (SELECT count(*) FROM review_logs WHERE user_id = $1 AND source = 'exam'),
 		        (SELECT count(*) FROM exam_attempt_cards WHERE attempt_id = $2)`,
-		note.ID, attempt.ID).Scan(&kept, &snapshot); err != nil {
+		c.userID, attempt.ID).Scan(&kept, &snapshot); err != nil {
 		t.Fatalf("reading state: %v", err)
 	}
 	if kept != 1 {
@@ -449,14 +458,12 @@ func TestFixedExamAsksThePinnedSet(t *testing.T) {
 	app := newApp(t)
 	c := app.newClient(t)
 
-	note := c.seedCards(5, nil)
+	c.seedCards(5, nil)
 
 	// The picker's candidate list carries prompts, never answers.
 	var pickable []struct {
-		NoteID    string `json:"noteId"`
-		CardID    string `json:"cardId"`
-		Front     string `json:"front"`
-		NoteTitle string `json:"noteTitle"`
+		CardID string `json:"id"`
+		Front  string `json:"front"`
 	}
 	raw := c.expect(c.do(http.MethodGet, "/cards", nil), http.StatusOK, &pickable)
 	if len(pickable) != 5 {
@@ -470,8 +477,8 @@ func TestFixedExamAsksThePinnedSet(t *testing.T) {
 
 	// Pin two of the five, in a deliberate order.
 	pinned := []map[string]any{
-		{"noteId": pickable[2].NoteID, "cardId": pickable[2].CardID},
-		{"noteId": pickable[0].NoteID, "cardId": pickable[0].CardID},
+		{"cardId": pickable[2].CardID},
+		{"cardId": pickable[0].CardID},
 	}
 	c.expect(c.do(http.MethodPut, "/exams/"+exam.ID+"/cards",
 		map[string]any{"cards": pinned}), http.StatusNoContent, nil)
@@ -490,7 +497,7 @@ func TestFixedExamAsksThePinnedSet(t *testing.T) {
 	// Two sittings ask the identical questions in the identical order.
 	first := c.startAttempt(exam.ID, http.StatusCreated)
 	for _, q := range first.Questions {
-		c.expect(c.do(http.MethodPost, "/attempts/"+first.ID+"/"+q.NoteID+"/"+q.CardID,
+		c.expect(c.do(http.MethodPost, "/attempts/"+first.ID+"/"+q.CardID,
 			map[string]any{"rating": "ingat"}), http.StatusNoContent, nil)
 	}
 	c.expect(c.do(http.MethodPost, "/attempts/"+first.ID+"/finish", nil), http.StatusOK, nil)
@@ -508,7 +515,6 @@ func TestFixedExamAsksThePinnedSet(t *testing.T) {
 	if first.Questions[0].CardID != pickable[2].CardID {
 		t.Errorf("first question = %s, want the pinned order to be respected", first.Questions[0].CardID)
 	}
-	_ = note
 }
 
 // Replacing the set is one request, and it really replaces rather than appends.
@@ -518,8 +524,7 @@ func TestSettingExamCardsReplaces(t *testing.T) {
 
 	c.seedCards(4, nil)
 	var pickable []struct {
-		NoteID string `json:"noteId"`
-		CardID string `json:"cardId"`
+		CardID string `json:"id"`
 	}
 	c.expect(c.do(http.MethodGet, "/cards", nil), http.StatusOK, &pickable)
 
@@ -527,7 +532,7 @@ func TestSettingExamCardsReplaces(t *testing.T) {
 	set := func(n int) {
 		cards := make([]map[string]any, 0, n)
 		for _, p := range pickable[:n] {
-			cards = append(cards, map[string]any{"noteId": p.NoteID, "cardId": p.CardID})
+			cards = append(cards, map[string]any{"cardId": p.CardID})
 		}
 		c.expect(c.do(http.MethodPut, "/exams/"+exam.ID+"/cards",
 			map[string]any{"cards": cards}), http.StatusNoContent, nil)
@@ -549,13 +554,12 @@ func TestSettingExamCardsReplaces(t *testing.T) {
 	other := app.newClient(t)
 	other.seedCards(1, nil)
 	var theirs []struct {
-		NoteID string `json:"noteId"`
-		CardID string `json:"cardId"`
+		CardID string `json:"id"`
 	}
 	other.expect(other.do(http.MethodGet, "/cards", nil), http.StatusOK, &theirs)
 
 	res := c.do(http.MethodPut, "/exams/"+exam.ID+"/cards", map[string]any{
-		"cards": []map[string]any{{"noteId": theirs[0].NoteID, "cardId": theirs[0].CardID}},
+		"cards": []map[string]any{{"cardId": theirs[0].CardID}},
 	})
 	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 pinning another user's card", res.StatusCode)

@@ -166,9 +166,7 @@ function CardPicker({
   const { data: candidates, isPending } = usePickableCards(domainId)
   const save = useSetExamCards()
 
-  const [chosen, setChosen] = useState<string[]>(() =>
-    pinned.map((c) => `${c.noteId}:${c.cardId}`),
-  )
+  const [chosen, setChosen] = useState<string[]>(() => pinned.map((c) => c.cardId))
 
   function toggle(key: string) {
     setChosen((prev) =>
@@ -180,10 +178,7 @@ function CardPicker({
     save.mutate({
       examId,
       // Selection order is the order they will be asked in.
-      cards: chosen.map((k) => {
-        const [noteId, ...rest] = k.split(':')
-        return { noteId, cardId: rest.join(':') }
-      }),
+      cards: chosen.map((cardId) => ({ cardId })),
     })
   }
 
@@ -202,14 +197,14 @@ function CardPicker({
 
       {cards.length === 0 ? (
         <p className="text-sm text-subtle-fg">
-          Belum ada kartu yang bisa dipilih. Tulis beberapa kartu di catatan dulu.
+          Belum ada kartu yang bisa dipilih. Buat beberapa kartu dulu.
         </p>
       ) : (
         <>
           <Card className="max-h-80 overflow-y-auto p-2">
             <ul className="flex flex-col gap-0.5">
               {cards.map((c) => {
-                const key = `${c.noteId}:${c.cardId}`
+                const key = c.id
                 return (
                   <li key={key}>
                     <label className="flex cursor-pointer items-start gap-2.5 rounded-md px-2 py-2 text-sm text-secondary-fg hover:bg-muted">
@@ -219,12 +214,7 @@ function CardPicker({
                         onChange={() => toggle(key)}
                         className="mt-1 accent-primary"
                       />
-                      <span className="flex-1">
-                        {c.front}
-                        <span className="ml-2 text-xs text-subtle-fg">
-                          {c.noteTitle}
-                        </span>
-                      </span>
+                      <span className="flex-1">{c.front}</span>
                     </label>
                   </li>
                 )

@@ -54,9 +54,9 @@ WHERE id = $1 AND user_id = $2;
 -- The pinned question set, selection = 'fixed' only.
 
 -- name: ListExamCards :many
-SELECT ec.note_id, ec.card_id, ec.position, c.front
+SELECT ec.card_id, ec.position, c.front
 FROM exam_cards ec
-JOIN cards c ON c.user_id = ec.user_id AND c.note_id = ec.note_id AND c.id = ec.card_id
+JOIN cards c ON c.user_id = ec.user_id AND c.id = ec.card_id
 WHERE ec.exam_id = $1 AND ec.user_id = $2 AND c.deleted_at IS NULL
 ORDER BY ec.position;
 
@@ -65,8 +65,8 @@ DELETE FROM exam_cards
 WHERE exam_id = $1 AND user_id = $2;
 
 -- name: AddExamCard :exec
-INSERT INTO exam_cards (exam_id, user_id, note_id, card_id, position)
-VALUES ($1, $2, $3, $4, $5);
+INSERT INTO exam_cards (exam_id, user_id, card_id, position)
+VALUES ($1, $2, $3, $4);
 
 -- Attempts.
 
@@ -119,18 +119,21 @@ WHERE id = $1 AND user_id = $2;
 -- Eligible cards for a random draw: live, this user's, and inside the exam's
 -- domain when it has one. Mastered cards are included on purpose — an exam is
 -- not a review session, and "do I still know this" is the whole point (D-048).
-SELECT c.note_id, c.id AS card_id
+--
+-- The domain now comes from the card itself. It used to come from the note the
+-- card was parsed out of, which is exactly the join D-055 removed — and why
+-- cards.domain_id had to exist before note_id could go.
+SELECT c.id AS card_id
 FROM cards c
-JOIN notes n ON n.id = c.note_id AND n.user_id = c.user_id
 WHERE c.user_id = $1
   AND c.deleted_at IS NULL
-  AND (sqlc.narg(domain_id)::uuid IS NULL OR n.domain_id = sqlc.narg(domain_id))
+  AND (sqlc.narg(domain_id)::uuid IS NULL OR c.domain_id = sqlc.narg(domain_id))
 ORDER BY random()
 LIMIT $2;
 
 -- name: SnapshotAttemptCard :exec
-INSERT INTO exam_attempt_cards (attempt_id, user_id, note_id, card_id, position)
-VALUES ($1, $2, $3, $4, $5);
+INSERT INTO exam_attempt_cards (attempt_id, user_id, card_id, position)
+VALUES ($1, $2, $3, $4);
 
 -- name: ListAttemptQuestions :many
 -- The attempt's question set in presentation order, each with the answer
@@ -140,15 +143,14 @@ VALUES ($1, $2, $3, $4, $5);
 -- The join to cards is LEFT: the snapshot deliberately has no foreign key to
 -- cards so that deleting a note cannot erase a finished attempt's history. A
 -- question whose card is gone still occupies its position in the score.
-SELECT ac.position, ac.note_id, ac.card_id,
+SELECT ac.position, ac.card_id,
        c.front, c.back, c.deleted_at,
        rl.rating
 FROM exam_attempt_cards ac
 LEFT JOIN cards c
-       ON c.user_id = ac.user_id AND c.note_id = ac.note_id AND c.id = ac.card_id
+       ON c.user_id = ac.user_id AND c.id = ac.card_id
 LEFT JOIN review_logs rl
        ON rl.exam_attempt_id = ac.attempt_id
-      AND rl.note_id = ac.note_id
       AND rl.card_id = ac.card_id
 WHERE ac.attempt_id = $1 AND ac.user_id = $2
 ORDER BY ac.position;
@@ -156,7 +158,7 @@ ORDER BY ac.position;
 -- name: AttemptHasQuestion :one
 SELECT EXISTS (
     SELECT 1 FROM exam_attempt_cards
-    WHERE attempt_id = $1 AND user_id = $2 AND note_id = $3 AND card_id = $4
+    WHERE attempt_id = $1 AND user_id = $2 AND card_id = $3
 );
 
 -- name: InsertExamAnswer :exec
@@ -164,23 +166,11 @@ SELECT EXISTS (
 -- interval_before and interval_after are written equal — the ladder did not
 -- advance. ON CONFLICT DO NOTHING against the partial unique index makes a
 -- double-submitted rating idempotent instead of a corrupt score.
-INSERT INTO review_logs (note_id, card_id, user_id, rating,
+INSERT INTO review_logs (card_id, user_id, rating,
                          interval_before, interval_after,
                          source, exam_attempt_id)
-VALUES ($1, $2, $3, $4, sqlc.arg(interval_days), sqlc.arg(interval_days),
-        'exam', $5)
-ON CONFLICT (exam_attempt_id, note_id, card_id)
+VALUES ($1, $2, $3, sqlc.arg(interval_days), sqlc.arg(interval_days),
+        'exam', $4)
+ON CONFLICT (exam_attempt_id, card_id)
     WHERE exam_attempt_id IS NOT NULL
     DO NOTHING;
-
--- name: ListCardsForPicking :many
--- The candidate cards when pinning a 'fixed' exam's question set. Prompt only:
--- the picker shows what will be asked, never the answers.
-SELECT c.note_id, c.id AS card_id, c.front, n.title AS note_title
-FROM cards c
-JOIN notes n ON n.id = c.note_id AND n.user_id = c.user_id
-WHERE c.user_id = $1
-  AND c.deleted_at IS NULL
-  AND (sqlc.narg(domain_id)::uuid IS NULL OR n.domain_id = sqlc.narg(domain_id))
-ORDER BY n.title, c.line
-LIMIT $2;

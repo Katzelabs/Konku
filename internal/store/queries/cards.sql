@@ -1,60 +1,129 @@
--- name: ListCardsByNote :many
--- Live cards only. Sync (C3) compares against these by ID.
-SELECT * FROM cards
-WHERE note_id = $1 AND user_id = $2 AND deleted_at IS NULL
-ORDER BY line;
+-- Cards are their own feature (D-055): rows created and edited directly, not
+-- parsed out of a note body. There is no note_id, and no ID to keep stable
+-- across a text edit — UPDATE keeps the uuid, so editing a card's wording can
+-- no longer cost it its schedule.
+--
+-- Every query here carries user_id in the WHERE clause. A row belonging to
+-- another user simply does not match, so the caller gets "no rows" and the API
+-- returns 404 — never 403, which would confirm the row exists (D-039).
 
--- name: UpsertCard :one
--- Also un-deletes: re-adding a card with the same ID restores it, and because
--- card_schedules is keyed on (note_id, card_id) and untouched here, its review
--- history comes back with it. Undoing an accidental deletion must not cost the
--- user months of progress (D-019).
-INSERT INTO cards (id, note_id, user_id, type, front, back, line)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-ON CONFLICT (note_id, id) DO UPDATE
-SET type       = EXCLUDED.type,
-    front      = EXCLUDED.front,
-    back       = EXCLUDED.back,
-    line       = EXCLUDED.line,
-    deleted_at = NULL
+-- name: CreateCard :one
+INSERT INTO cards (user_id, domain_id, type, front, back)
+VALUES ($1, $2, $3, $4, $5)
 RETURNING *;
 
--- name: SoftDeleteCard :exec
--- Never a hard delete: the card's review history outlives the markdown line.
-UPDATE cards
-SET deleted_at = now()
-WHERE note_id = $1 AND id = $2 AND user_id = $3;
+-- name: GetCard :one
+SELECT * FROM cards
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL;
 
--- name: GetCardWithSchedule :one
-SELECT sqlc.embed(c), sqlc.embed(s)
+-- name: UpdateCard :one
+-- No content matching anywhere: the uuid identifies the card and the text is
+-- just a column. Rewriting front and back leaves card_schedules untouched, so
+-- fixing a typo costs nothing — the property D-019's stable IDs existed to
+-- protect, now free.
+UPDATE cards
+SET domain_id  = $3,
+    front      = $4,
+    back       = $5,
+    updated_at = now()
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
+RETURNING *;
+
+-- name: SoftDeleteCard :execrows
+-- Never a hard delete. A finished exam attempt renders its questions by
+-- joining cards, so removing the row would blank out past results, and
+-- deletion on a CRUD screen should be undoable.
+UPDATE cards
+SET deleted_at = now(), updated_at = now()
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL;
+
+-- name: RestoreCard :execrows
+-- The undo. card_schedules was never touched, so the review history comes back
+-- with the card.
+UPDATE cards
+SET deleted_at = NULL, updated_at = now()
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NOT NULL;
+
+-- name: ListCards :many
+-- The Cards page. Every filter is optional and independent; passing none lists
+-- everything live, newest first.
+SELECT c.*,
+       COALESCE(
+           (SELECT array_agg(cc.category_id ORDER BY cc.category_id)
+              FROM card_categories cc
+             WHERE cc.card_id = c.id),
+           '{}'
+       )::uuid[] AS category_ids
 FROM cards c
-JOIN card_schedules s ON s.note_id = c.note_id AND s.card_id = c.id
-WHERE c.note_id = $1 AND c.id = $2 AND c.user_id = $3 AND c.deleted_at IS NULL;
+WHERE c.user_id = $1
+  AND c.deleted_at IS NULL
+  AND (sqlc.narg(domain_id)::uuid IS NULL OR c.domain_id = sqlc.narg(domain_id))
+  AND (sqlc.narg(category_id)::uuid IS NULL OR EXISTS (
+          SELECT 1 FROM card_categories cc
+           WHERE cc.card_id = c.id AND cc.category_id = sqlc.narg(category_id)))
+  -- ILIKE, not full-text: D-031 defers ranked search to v0.2. cards_front_trgm_idx
+  -- is what keeps this from being a sequential scan.
+  AND (sqlc.narg(query)::text IS NULL
+       OR c.front ILIKE '%' || sqlc.narg(query) || '%'
+       OR c.back  ILIKE '%' || sqlc.narg(query) || '%')
+ORDER BY c.created_at DESC
+LIMIT $2;
+
+-- name: CountCards :one
+SELECT count(*) FROM cards
+WHERE user_id = $1 AND deleted_at IS NULL;
+
+-- The card's categories.
+
+-- name: ClearCardCategories :exec
+DELETE FROM card_categories
+WHERE card_id = $1 AND user_id = $2;
+
+-- name: AddCardCategory :exec
+-- ON CONFLICT DO NOTHING so re-sending the same set is idempotent rather than
+-- a 500.
+INSERT INTO card_categories (user_id, card_id, category_id)
+VALUES ($1, $2, $3)
+ON CONFLICT DO NOTHING;
+
+-- name: ListCategoriesForCard :many
+SELECT cat.* FROM categories cat
+JOIN card_categories cc ON cc.category_id = cat.id AND cc.user_id = cat.user_id
+WHERE cc.card_id = $1 AND cc.user_id = $2
+ORDER BY cat.label;
+
+-- Scheduling.
 
 -- name: CreateSchedule :one
--- ON CONFLICT DO NOTHING is what preserves history across an edit: a card that
--- already has a schedule keeps it, so fixing a typo never resets stage.
-INSERT INTO card_schedules (note_id, card_id, user_id, stage, next_review_date, state)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (note_id, card_id) DO NOTHING
+-- ON CONFLICT DO NOTHING is what preserves history: a card that already has a
+-- schedule keeps it, so restoring a deleted card never resets its stage.
+INSERT INTO card_schedules (card_id, user_id, stage, next_review_date, state)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (card_id) DO NOTHING
 RETURNING *;
 
 -- name: UpdateSchedule :one
 UPDATE card_schedules
-SET stage            = $4,
-    next_review_date = $5,
-    lapses           = $6,
-    state            = $7
-WHERE note_id = $1 AND card_id = $2 AND user_id = $3
+SET stage            = $3,
+    next_review_date = $4,
+    lapses           = $5,
+    state            = $6
+WHERE card_id = $1 AND user_id = $2
 RETURNING *;
 
+-- name: GetCardWithSchedule :one
+SELECT sqlc.embed(c), sqlc.embed(s)
+FROM cards c
+JOIN card_schedules s ON s.card_id = c.id AND s.user_id = c.user_id
+WHERE c.id = $1 AND c.user_id = $2 AND c.deleted_at IS NULL;
+
 -- name: ListDueCards :many
--- Oldest-due first, capped by the caller (D-009). Excludes mastered cards and
--- soft-deleted ones. Returns the prompt side only — the answer is fetched
+-- Oldest-due first, capped by the caller (D-009). Excludes mastered and
+-- deleted cards. Returns the prompt side only — the answer is fetched
 -- separately when the user chooses to reveal (D-003).
-SELECT c.note_id, c.id, c.type, c.front, s.next_review_date
+SELECT c.id, c.type, c.front, s.next_review_date
 FROM card_schedules s
-JOIN cards c ON c.note_id = s.note_id AND c.id = s.card_id
+JOIN cards c ON c.id = s.card_id AND c.user_id = s.user_id
 WHERE s.user_id = $1
   AND s.state = 'learning'
   AND s.next_review_date IS NOT NULL
@@ -65,7 +134,7 @@ LIMIT $2;
 
 -- name: CountDueCards :one
 SELECT count(*) FROM card_schedules s
-JOIN cards c ON c.note_id = s.note_id AND c.id = s.card_id
+JOIN cards c ON c.id = s.card_id AND c.user_id = s.user_id
 WHERE s.user_id = $1
   AND s.state = 'learning'
   AND s.next_review_date IS NOT NULL
@@ -76,6 +145,6 @@ WHERE s.user_id = $1
 -- Written on every single review. The retention metric cannot be
 -- reconstructed retroactively, which is why this exists before the feature
 -- that reads it (D-029).
-INSERT INTO review_logs (note_id, card_id, user_id, rating, interval_before, interval_after)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO review_logs (card_id, user_id, rating, interval_before, interval_after)
+VALUES ($1, $2, $3, $4, $5)
 RETURNING *;

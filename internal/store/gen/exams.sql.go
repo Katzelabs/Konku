@@ -13,15 +13,14 @@ import (
 )
 
 const addExamCard = `-- name: AddExamCard :exec
-INSERT INTO exam_cards (exam_id, user_id, note_id, card_id, position)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO exam_cards (exam_id, user_id, card_id, position)
+VALUES ($1, $2, $3, $4)
 `
 
 type AddExamCardParams struct {
 	ExamID   uuid.UUID `json:"exam_id"`
 	UserID   uuid.UUID `json:"user_id"`
-	NoteID   uuid.UUID `json:"note_id"`
-	CardID   string    `json:"card_id"`
+	CardID   uuid.UUID `json:"card_id"`
 	Position int32     `json:"position"`
 }
 
@@ -29,7 +28,6 @@ func (q *Queries) AddExamCard(ctx context.Context, arg AddExamCardParams) error 
 	_, err := q.db.Exec(ctx, addExamCard,
 		arg.ExamID,
 		arg.UserID,
-		arg.NoteID,
 		arg.CardID,
 		arg.Position,
 	)
@@ -73,24 +71,18 @@ func (q *Queries) ArchiveExam(ctx context.Context, arg ArchiveExamParams) (Exam,
 const attemptHasQuestion = `-- name: AttemptHasQuestion :one
 SELECT EXISTS (
     SELECT 1 FROM exam_attempt_cards
-    WHERE attempt_id = $1 AND user_id = $2 AND note_id = $3 AND card_id = $4
+    WHERE attempt_id = $1 AND user_id = $2 AND card_id = $3
 )
 `
 
 type AttemptHasQuestionParams struct {
 	AttemptID uuid.UUID `json:"attempt_id"`
 	UserID    uuid.UUID `json:"user_id"`
-	NoteID    uuid.UUID `json:"note_id"`
-	CardID    string    `json:"card_id"`
+	CardID    uuid.UUID `json:"card_id"`
 }
 
 func (q *Queries) AttemptHasQuestion(ctx context.Context, arg AttemptHasQuestionParams) (bool, error) {
-	row := q.db.QueryRow(ctx, attemptHasQuestion,
-		arg.AttemptID,
-		arg.UserID,
-		arg.NoteID,
-		arg.CardID,
-	)
+	row := q.db.QueryRow(ctx, attemptHasQuestion, arg.AttemptID, arg.UserID, arg.CardID)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
@@ -230,12 +222,11 @@ func (q *Queries) DeleteExam(ctx context.Context, arg DeleteExamParams) (int64, 
 
 const drawRandomCards = `-- name: DrawRandomCards :many
 
-SELECT c.note_id, c.id AS card_id
+SELECT c.id AS card_id
 FROM cards c
-JOIN notes n ON n.id = c.note_id AND n.user_id = c.user_id
 WHERE c.user_id = $1
   AND c.deleted_at IS NULL
-  AND ($3::uuid IS NULL OR n.domain_id = $3)
+  AND ($3::uuid IS NULL OR c.domain_id = $3)
 ORDER BY random()
 LIMIT $2
 `
@@ -246,28 +237,27 @@ type DrawRandomCardsParams struct {
 	DomainID *uuid.UUID `json:"domain_id"`
 }
 
-type DrawRandomCardsRow struct {
-	NoteID uuid.UUID `json:"note_id"`
-	CardID string    `json:"card_id"`
-}
-
 // The draw, and the questions.
 // Eligible cards for a random draw: live, this user's, and inside the exam's
 // domain when it has one. Mastered cards are included on purpose — an exam is
 // not a review session, and "do I still know this" is the whole point (D-048).
-func (q *Queries) DrawRandomCards(ctx context.Context, arg DrawRandomCardsParams) ([]DrawRandomCardsRow, error) {
+//
+// The domain now comes from the card itself. It used to come from the note the
+// card was parsed out of, which is exactly the join D-055 removed — and why
+// cards.domain_id had to exist before note_id could go.
+func (q *Queries) DrawRandomCards(ctx context.Context, arg DrawRandomCardsParams) ([]uuid.UUID, error) {
 	rows, err := q.db.Query(ctx, drawRandomCards, arg.UserID, arg.Limit, arg.DomainID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []DrawRandomCardsRow{}
+	items := []uuid.UUID{}
 	for rows.Next() {
-		var i DrawRandomCardsRow
-		if err := rows.Scan(&i.NoteID, &i.CardID); err != nil {
+		var card_id uuid.UUID
+		if err := rows.Scan(&card_id); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, card_id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -395,19 +385,18 @@ func (q *Queries) GetOpenAttempt(ctx context.Context, arg GetOpenAttemptParams) 
 }
 
 const insertExamAnswer = `-- name: InsertExamAnswer :exec
-INSERT INTO review_logs (note_id, card_id, user_id, rating,
+INSERT INTO review_logs (card_id, user_id, rating,
                          interval_before, interval_after,
                          source, exam_attempt_id)
-VALUES ($1, $2, $3, $4, $6, $6,
-        'exam', $5)
-ON CONFLICT (exam_attempt_id, note_id, card_id)
+VALUES ($1, $2, $3, $5, $5,
+        'exam', $4)
+ON CONFLICT (exam_attempt_id, card_id)
     WHERE exam_attempt_id IS NOT NULL
     DO NOTHING
 `
 
 type InsertExamAnswerParams struct {
-	NoteID        uuid.UUID  `json:"note_id"`
-	CardID        string     `json:"card_id"`
+	CardID        uuid.UUID  `json:"card_id"`
 	UserID        uuid.UUID  `json:"user_id"`
 	Rating        string     `json:"rating"`
 	ExamAttemptID *uuid.UUID `json:"exam_attempt_id"`
@@ -420,7 +409,6 @@ type InsertExamAnswerParams struct {
 // double-submitted rating idempotent instead of a corrupt score.
 func (q *Queries) InsertExamAnswer(ctx context.Context, arg InsertExamAnswerParams) error {
 	_, err := q.db.Exec(ctx, insertExamAnswer,
-		arg.NoteID,
 		arg.CardID,
 		arg.UserID,
 		arg.Rating,
@@ -431,15 +419,14 @@ func (q *Queries) InsertExamAnswer(ctx context.Context, arg InsertExamAnswerPara
 }
 
 const listAttemptQuestions = `-- name: ListAttemptQuestions :many
-SELECT ac.position, ac.note_id, ac.card_id,
+SELECT ac.position, ac.card_id,
        c.front, c.back, c.deleted_at,
        rl.rating
 FROM exam_attempt_cards ac
 LEFT JOIN cards c
-       ON c.user_id = ac.user_id AND c.note_id = ac.note_id AND c.id = ac.card_id
+       ON c.user_id = ac.user_id AND c.id = ac.card_id
 LEFT JOIN review_logs rl
        ON rl.exam_attempt_id = ac.attempt_id
-      AND rl.note_id = ac.note_id
       AND rl.card_id = ac.card_id
 WHERE ac.attempt_id = $1 AND ac.user_id = $2
 ORDER BY ac.position
@@ -452,8 +439,7 @@ type ListAttemptQuestionsParams struct {
 
 type ListAttemptQuestionsRow struct {
 	Position  int32      `json:"position"`
-	NoteID    uuid.UUID  `json:"note_id"`
-	CardID    string     `json:"card_id"`
+	CardID    uuid.UUID  `json:"card_id"`
 	Front     *string    `json:"front"`
 	Back      *string    `json:"back"`
 	DeletedAt *time.Time `json:"deleted_at"`
@@ -478,7 +464,6 @@ func (q *Queries) ListAttemptQuestions(ctx context.Context, arg ListAttemptQuest
 		var i ListAttemptQuestionsRow
 		if err := rows.Scan(
 			&i.Position,
-			&i.NoteID,
 			&i.CardID,
 			&i.Front,
 			&i.Back,
@@ -537,62 +522,11 @@ func (q *Queries) ListAttempts(ctx context.Context, arg ListAttemptsParams) ([]E
 	return items, nil
 }
 
-const listCardsForPicking = `-- name: ListCardsForPicking :many
-SELECT c.note_id, c.id AS card_id, c.front, n.title AS note_title
-FROM cards c
-JOIN notes n ON n.id = c.note_id AND n.user_id = c.user_id
-WHERE c.user_id = $1
-  AND c.deleted_at IS NULL
-  AND ($3::uuid IS NULL OR n.domain_id = $3)
-ORDER BY n.title, c.line
-LIMIT $2
-`
-
-type ListCardsForPickingParams struct {
-	UserID   uuid.UUID  `json:"user_id"`
-	Limit    int32      `json:"limit"`
-	DomainID *uuid.UUID `json:"domain_id"`
-}
-
-type ListCardsForPickingRow struct {
-	NoteID    uuid.UUID `json:"note_id"`
-	CardID    string    `json:"card_id"`
-	Front     string    `json:"front"`
-	NoteTitle string    `json:"note_title"`
-}
-
-// The candidate cards when pinning a 'fixed' exam's question set. Prompt only:
-// the picker shows what will be asked, never the answers.
-func (q *Queries) ListCardsForPicking(ctx context.Context, arg ListCardsForPickingParams) ([]ListCardsForPickingRow, error) {
-	rows, err := q.db.Query(ctx, listCardsForPicking, arg.UserID, arg.Limit, arg.DomainID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListCardsForPickingRow{}
-	for rows.Next() {
-		var i ListCardsForPickingRow
-		if err := rows.Scan(
-			&i.NoteID,
-			&i.CardID,
-			&i.Front,
-			&i.NoteTitle,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listExamCards = `-- name: ListExamCards :many
 
-SELECT ec.note_id, ec.card_id, ec.position, c.front
+SELECT ec.card_id, ec.position, c.front
 FROM exam_cards ec
-JOIN cards c ON c.user_id = ec.user_id AND c.note_id = ec.note_id AND c.id = ec.card_id
+JOIN cards c ON c.user_id = ec.user_id AND c.id = ec.card_id
 WHERE ec.exam_id = $1 AND ec.user_id = $2 AND c.deleted_at IS NULL
 ORDER BY ec.position
 `
@@ -603,8 +537,7 @@ type ListExamCardsParams struct {
 }
 
 type ListExamCardsRow struct {
-	NoteID   uuid.UUID `json:"note_id"`
-	CardID   string    `json:"card_id"`
+	CardID   uuid.UUID `json:"card_id"`
 	Position int32     `json:"position"`
 	Front    string    `json:"front"`
 }
@@ -619,12 +552,7 @@ func (q *Queries) ListExamCards(ctx context.Context, arg ListExamCardsParams) ([
 	items := []ListExamCardsRow{}
 	for rows.Next() {
 		var i ListExamCardsRow
-		if err := rows.Scan(
-			&i.NoteID,
-			&i.CardID,
-			&i.Position,
-			&i.Front,
-		); err != nil {
+		if err := rows.Scan(&i.CardID, &i.Position, &i.Front); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -700,15 +628,14 @@ func (q *Queries) ListExams(ctx context.Context, userID uuid.UUID) ([]ListExamsR
 }
 
 const snapshotAttemptCard = `-- name: SnapshotAttemptCard :exec
-INSERT INTO exam_attempt_cards (attempt_id, user_id, note_id, card_id, position)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO exam_attempt_cards (attempt_id, user_id, card_id, position)
+VALUES ($1, $2, $3, $4)
 `
 
 type SnapshotAttemptCardParams struct {
 	AttemptID uuid.UUID `json:"attempt_id"`
 	UserID    uuid.UUID `json:"user_id"`
-	NoteID    uuid.UUID `json:"note_id"`
-	CardID    string    `json:"card_id"`
+	CardID    uuid.UUID `json:"card_id"`
 	Position  int32     `json:"position"`
 }
 
@@ -716,7 +643,6 @@ func (q *Queries) SnapshotAttemptCard(ctx context.Context, arg SnapshotAttemptCa
 	_, err := q.db.Exec(ctx, snapshotAttemptCard,
 		arg.AttemptID,
 		arg.UserID,
-		arg.NoteID,
 		arg.CardID,
 		arg.Position,
 	)

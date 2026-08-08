@@ -181,6 +181,8 @@
   --animate-fade-in: fade-in var(--animate-duration-calm) var(--ease-quiet);
   --animate-fade-out: fade-out var(--animate-duration-quick) var(--ease-quiet);
   --animate-scale-in: scale-in var(--animate-duration-calm) var(--ease-quiet);
+  --animate-slide-in-right: slide-in-right var(--animate-duration-calm)
+    var(--ease-quiet);
   --animate-spin-quiet: spin 900ms linear infinite;
 
   @keyframes fade-in {
@@ -199,6 +201,15 @@
     from {
       opacity: 0;
       transform: translate(-50%, -50%) scale(0.97);
+    }
+  }
+
+  /* The details drawer on narrow screens. It slides from the edge it is
+     anchored to, so the motion says where the panel came from — the same rule
+     the easing token is named for. */
+  @keyframes slide-in-right {
+    from {
+      transform: translateX(100%);
     }
   }
 

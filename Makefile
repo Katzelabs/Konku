@@ -56,13 +56,17 @@ lint: ## Vet Go code and typecheck the frontend
 	go vet ./...
 	cd web && npm run typecheck
 
-# The one architectural rule, enforced (D-032). The pure packages carry the
-# product's value and must stay trivially testable; if either reaches for the
-# database, the design went wrong.
-check-pure: ## Assert card/ and srs/ import nothing from internal/
-	@! grep -rn "konku/internal/" internal/card internal/srs --include="*.go" \
-		|| (echo "IMPURE: card/ or srs/ imports internal/" && exit 1)
-	@echo "card/ and srs/ are pure"
+# The one architectural rule, enforced (D-032). srs carries the product's value
+# and must stay trivially testable; if it reaches for the database, the design
+# went wrong.
+#
+# It used to guard internal/card too. D-055 deleted that package along with the
+# markdown parser — narrowed rather than dropped, because the rule is the
+# reason the scheduler is still testable without a database.
+check-pure: ## Assert srs/ imports nothing from internal/
+	@! grep -rn "konku/internal/" internal/srs --include="*.go" \
+		|| (echo "IMPURE: srs/ imports internal/" && exit 1)
+	@echo "srs/ is pure"
 
 # sqlc-generated code must match the SQL it came from, or the two drift and
 # the mismatch only shows up at runtime.

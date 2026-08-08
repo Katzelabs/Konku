@@ -47,10 +47,9 @@ konku/
 │   ├── main.go
 │   └── seed_user.go            # `konku seed-user` — no public signup
 ├── internal/
-│   ├── card/                   # ★ PURE — parse, stable IDs, render
 │   ├── srs/                    # ★ PURE — intervals, scheduling
 │   ├── auth/                   # argon2id, sessions, middleware
-│   ├── store/                  # queries/ · gen/ · notes.go (card-sync tx)
+│   ├── store/                  # queries/ · gen/ · notes.go · cards.go
 │   ├── api/                    # chi routes, handlers, one error shape, SPA
 │   ├── config/
 │   └── web/
@@ -103,8 +102,13 @@ domains          -- id, user_id, slug, label, color, weekly_quota,
 notes            -- id, user_id, title, content_md, domain_id,
                  -- created_at, updated_at, tsv (generated), embedding (v0.3)
 
-cards            -- id (stable, embedded in the note markdown), user_id, note_id,
-                 -- type ('basic'|'cloze'|'feynman'), front, back, source_span
+cards            -- id (uuid), user_id, domain_id?, type ('basic'|'cloze'|'feynman'),
+                 -- front, back (both markdown), deleted_at,
+                 -- created_at, updated_at        (standalone, D-055)
+
+categories       -- id, user_id, slug, label, archived_at   (shared, D-055)
+note_categories  -- user_id, note_id, category_id
+card_categories  -- user_id, card_id, category_id
 
 card_schedules   -- card_id, user_id, stage, next_review_date, lapses, state
                  -- state: 'learning' | 'mastered'
@@ -118,11 +122,11 @@ focus_sessions   -- id, user_id, domain_id, duration_minutes,
 
 exams            -- id, user_id, domain_id?, title, selection ('fixed'|'random'),
                  -- question_count, time_limit_minutes, archived_at   (D-048)
-exam_cards       -- exam_id, user_id, note_id, card_id, position
+exam_cards       -- exam_id, user_id, card_id, position
                  -- the pinned set, selection = 'fixed' only
 exam_attempts    -- id, exam_id, user_id, started_at, finished_at,
                  -- attempt_date, total_count, correct_count
-exam_attempt_cards -- attempt_id, user_id, note_id, card_id, position
+exam_attempt_cards -- attempt_id, user_id, card_id, position
                  -- the draw, snapshotted at start so attempts resume  (D-050)
 ```
 
@@ -132,50 +136,37 @@ There is no `exam_answers` table: an exam answer is a `review_logs` row with `so
 
 **Ownership is enforced in the `WHERE` clause, never fetch-then-check.** `SELECT ... WHERE id = $1 AND user_id = $2` — a wrong owner returns "not found," so the API cannot leak whether another user's note exists. Every store method takes a `userID` parameter; none of them are callable without one.
 
-**Writes are guarded by composite foreign keys, not by handler discipline** (D-047). The `WHERE` clause protects reads; it does nothing for a request body carrying someone else's `domainId`. Every owned reference therefore carries the owner — `FOREIGN KEY (user_id, domain_id) REFERENCES domains (user_id, id)` — so a cross-tenant write is rejected by Postgres. History tables (`review_logs`, `exam_attempt_cards`) are the deliberate exception: no FK to `cards`, so deleting a note cannot erase retention evidence (D-050).
+**Writes are guarded by composite foreign keys, not by handler discipline** (D-047). The `WHERE` clause protects reads; it does nothing for a request body carrying someone else's `domainId`. Every owned reference therefore carries the owner — `FOREIGN KEY (user_id, domain_id) REFERENCES domains (user_id, id)` — so a cross-tenant write is rejected by Postgres. History tables (`review_logs`, `exam_attempt_cards`) are the deliberate exception: no FK to `cards`, so deleting a card cannot erase retention evidence (D-050).
 
-**Domains and exams archive; they do not delete** (D-051). Every reference is `ON DELETE NO ACTION`, so a referenced row cannot be removed and an unreferenced one still can. Handlers map `foreign_key_violation` to a 409, never a 500.
+**Domains, exams and categories archive; they do not delete** (D-051). Every reference is `ON DELETE NO ACTION`, so a referenced row cannot be removed and an unreferenced one still can. Handlers map `foreign_key_violation` to a 409, never a 500.
 
 **`review_logs` is non-negotiable and must exist from day one.** It is what makes the retention metric computable, and it cannot be reconstructed retroactively. Log every single review.
 
 **Derived, never stored:** streak, due/upcoming split, retention rate, all stats. Single source of truth.
 
-**Markdown storage:** `TEXT` column. Size is a non-issue — 10,000 notes is tens of megabytes. Benefits: transactional writes alongside card sync, free FTS via a generated `tsvector`, pgvector later without a storage migration.
+**Markdown storage:** `TEXT` column, for note bodies and for both sides of a card. Size is a non-issue — 10,000 notes is tens of megabytes. Benefits: free FTS via a generated `tsvector`, pgvector later without a storage migration.
 
 ---
 
-## 4. Card syntax and the parser
+## 4. Cards
 
-Cards are written inline in the note's markdown:
+A card is a row: a uuid, a markdown front, a markdown back, an optional domain, and any number of categories. It is created and edited on its own screens (`/cards`, `/cards/:id`) and belongs to no note.
 
-```markdown
-# Teorema Bayes
+**It did not always work this way.** Cards used to be written inline in note markdown as `Apa itu prior? :: Keyakinan awal`, with a stable ID (`<!-- c:k3n8 -->`) that a parser assigned and wrote back into the document, and a sync that diffed the `cards` table by ID on every save. D-055 removed all of it — the syntax, `internal/card`, its TypeScript mirror, and the sync transaction.
 
-P(A|B) = P(B|A)·P(A) / P(B)
+### What the stable IDs were protecting, and why it still holds
 
-Apa itu prior? :: Keyakinan awal sebelum melihat data <!-- c:k3n8 -->
+The parser existed for one reason worth restating: **if cards are matched by content, fixing a typo destroys that card's review history and resets its schedule.** Silent, and unrecoverable.
 
-Rumus Bayes adalah {{P(B|A)·P(A) / P(B)}} <!-- c:m2p1 -->
+That requirement did not go away; the mechanism did. A card is now identified by a uuid primary key and an edit is an `UPDATE`, so the schedule is not on the path of a text change at all. `TestScheduleSurvivesCardEdit` was kept and rewritten rather than deleted with the parser, because the property is what matters and the test is the only thing that notices if it stops being true.
 
-> [!feynman] Jelaskan kenapa Bayes berguna untuk update keyakinan <!-- c:x9f4 -->
-```
+### Deletion
 
-### The stable-ID requirement
+Soft delete, always. `deleted_at` is set and the schedule and review history stay untouched, so restoring is a real undo. Two reasons: a finished exam attempt renders its questions by joining `cards`, so a hard delete would blank out past results; and a destructive button should be recoverable.
 
-On every note save, the parser re-reads the markdown and syncs the `cards` table.
+### Recall before reveal reaches the list
 
-**If cards are matched by content, fixing a typo destroys that card's review history and resets its schedule.** So:
-
-- Every card carries a stable ID embedded in the note as an HTML comment (`<!-- c:k3n8 -->`).
-- The parser assigns IDs to new cards and **writes them back into the note body**.
-- Sync matches by ID only, never by content.
-- A card whose ID disappears from the markdown is soft-deleted, not hard-deleted — accidental deletion should not vaporize months of review history.
-
-This is ~150 lines of Go plus a thorough test file, and it is the difference between a system you trust and one that silently eats your progress. Obsidian's SR plugin solves the same problem the same way with block refs.
-
-### Transactionality
-
-Note update and card sync **commit together**. A note saved with cards half-synced is a corrupt state with no obvious repair path.
+`GET /cards` returns prompts only — no `back` — exactly like the review and exam question lists. This is not caution about the management screen; it is that an index visited daily which ships every answer leaves D-003 one dev-tools glance from being defeated. The editor fetches a single card when it needs the answer.
 
 ---
 

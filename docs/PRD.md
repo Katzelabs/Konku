@@ -67,19 +67,19 @@ Why it matters:
 
 - **Capture cost collapses.** Adding a card is typing `::` in a note you're already writing — no separate flow, no context switch. Capture cost is the single biggest risk to this product working at all.
 - **Cards keep their context.** Fail a review, open the source note, re-read the thing you actually forgot.
-- **Agent access becomes trivial.** "Generate flashcards from this note" is just *edit the note's markdown*.
+- **Agent access stays simple.** "Generate flashcards on this topic" is a handful of card writes, not a document rewrite.
 
-This is where Anki is weak: its cards are divorced from source material, so authoring is a chore, so the deck stays empty. The reference shape here is Obsidian + a spaced-repetition plugin, minus the jank, plus a server and an agent interface.
+> **Superseded by D-055.** Cards were embedded in note markdown when this was written, and the paragraphs above argue for that. They are their own feature now: their own rows, their own screens, no containment. Notes and cards relate through shared categories and domains. The reasoning for the reversal — including what it cost — is in `DECISIONS.md` D-055; the section is left standing because the argument it makes is the one that was weighed against.
 
 ### Card types
 
-| Type | Syntax in markdown | Grading |
+| Type | Shape | Grading |
 |---|---|---|
-| `basic` | `Question :: Answer` | self |
+| `basic` | a markdown front and back | self |
 | `cloze` | `text with {{a blank}}` | self |
-| `feynman` | `> [!feynman] Explain X` | LLM-graded (M2), self before that |
+| `feynman` | an explain-it prompt | LLM-graded (M2), self before that |
 
-Every card carries a stable ID embedded in the note as an HTML comment so review history survives edits. See `TECH.md` §4.
+Only `basic` ships; cloze and feynman stay deferred to v0.2 (D-031). Editing a card never resets its schedule — see `TECH.md` §4.
 
 ---
 
@@ -191,7 +191,7 @@ Detailed technical breakdown in `TECH.md` §8.
 
 The retention loop, the focus timer that feeds it, and real auth. Itemized in `backlog.csv` (22 tasks).
 
-**Retention loop (~38 h):** repo + dev compose + migrations · parser (`Q :: A` only) with stable IDs · card sync · scheduler · API (notes CRUD, review due, review rate) · React screens (note list, editor, review) · VPS deploy with off-site backups.
+**Retention loop (~38 h):** repo + dev compose + migrations · cards as their own resource (D-055) · scheduler · API (notes CRUD, cards CRUD, categories, review due, review rate) · React screens (note list, editor, card list, card editor, review) · VPS deploy with off-site backups.
 
 **Focus timer (~11 h):** durations 15–45 min default 20 · start/pause/reset · session logged on completion · **capture-at-session-end** — "Apa yang kamu pelajari?", one skippable field.
 

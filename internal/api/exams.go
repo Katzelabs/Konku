@@ -138,7 +138,7 @@ func (s *Server) handleGetExam(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, c := range pinned {
 			out.Cards = append(out.Cards, pinnedCard{
-				NoteID: c.NoteID.String(), CardID: c.CardID, Front: c.Front,
+				CardID: c.CardID.String(), Front: c.Front,
 			})
 		}
 	}
@@ -147,50 +147,8 @@ func (s *Server) handleGetExam(w http.ResponseWriter, r *http.Request) {
 }
 
 type pinnedCard struct {
-	NoteID string `json:"noteId"`
 	CardID string `json:"cardId"`
 	Front  string `json:"front"`
-}
-
-// handleListCards is the candidate list when pinning a fixed exam's questions.
-// Prompts only — the picker shows what will be asked, never the answers.
-func (s *Server) handleListCards(w http.ResponseWriter, r *http.Request) {
-	user, _ := UserFrom(r.Context())
-
-	var domainID *uuid.UUID
-	if raw := r.URL.Query().Get("domainId"); raw != "" {
-		parsed, ok := s.parseDomain(w, r, &raw)
-		if !ok {
-			return
-		}
-		domainID = parsed
-	}
-
-	rows, err := s.store.Q().ListCardsForPicking(r.Context(), gen.ListCardsForPickingParams{
-		UserID:   user.ID,
-		DomainID: domainID,
-		Limit:    int32(intParam(r, "limit", 200, 1, 500)),
-	})
-	if err != nil {
-		writeInternal(w, err)
-		return
-	}
-
-	out := make([]struct {
-		pinnedCard
-		NoteTitle string `json:"noteTitle"`
-	}, 0, len(rows))
-	for _, c := range rows {
-		out = append(out, struct {
-			pinnedCard
-			NoteTitle string `json:"noteTitle"`
-		}{
-			pinnedCard: pinnedCard{NoteID: c.NoteID.String(), CardID: c.CardID, Front: c.Front},
-			NoteTitle:  c.NoteTitle,
-		})
-	}
-
-	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleCreateExam(w http.ResponseWriter, r *http.Request) {
@@ -348,7 +306,6 @@ func (s *Server) handleDeleteExam(w http.ResponseWriter, r *http.Request) {
 }
 
 type examCardRef struct {
-	NoteID string `json:"noteId"`
 	CardID string `json:"cardId"`
 }
 
@@ -387,15 +344,14 @@ func (s *Server) handleSetExamCards(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		for i, c := range req.Cards {
-			noteID, err := uuid.Parse(c.NoteID)
+			cardID, err := uuid.Parse(c.CardID)
 			if err != nil {
 				return errBadCardRef
 			}
 			if err := q.AddExamCard(r.Context(), gen.AddExamCardParams{
 				ExamID:   exam.ID,
 				UserID:   user.ID,
-				NoteID:   noteID,
-				CardID:   c.CardID,
+				CardID:   cardID,
 				Position: int32(i + 1),
 			}); err != nil {
 				return err
@@ -516,12 +472,11 @@ func toAttemptResponse(a gen.ExamAttempt) attemptResponse {
 // separate request the user has to make, after attempting recall (D-003).
 type questionResponse struct {
 	Position int32   `json:"position"`
-	NoteID   string  `json:"noteId"`
 	CardID   string  `json:"cardId"`
 	Front    string  `json:"front"`
 	Rating   *string `json:"rating"`
-	// Missing reports a card whose note was deleted after the attempt began.
-	// It still occupies its position in the score.
+	// Missing reports a card deleted after the attempt began. It still
+	// occupies its position in the score.
 	Missing bool `json:"missing"`
 }
 
@@ -620,8 +575,7 @@ func (s *Server) attemptDetailFor(w http.ResponseWriter, r *http.Request, a gen.
 	for _, row := range rows {
 		q := questionResponse{
 			Position: row.Position,
-			NoteID:   row.NoteID.String(),
-			CardID:   row.CardID,
+			CardID:   row.CardID.String(),
 			Rating:   row.Rating,
 		}
 		if row.Front != nil && row.DeletedAt == nil {
@@ -643,7 +597,7 @@ func (s *Server) handleAttemptAnswer(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	noteID, cardID, ok := cardParams(w, r)
+	cardID, ok := cardParam(w, r)
 	if !ok {
 		return
 	}
@@ -656,7 +610,7 @@ func (s *Server) handleAttemptAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, row := range rows {
-		if row.NoteID == noteID && row.CardID == cardID {
+		if row.CardID == cardID {
 			if row.Back == nil || row.DeletedAt != nil {
 				writeNotFound(w)
 				return
@@ -684,7 +638,7 @@ func (s *Server) handleAnswerQuestion(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, CodeConflict, "Ujian ini sudah selesai.")
 		return
 	}
-	noteID, cardID, ok := cardParams(w, r)
+	cardID, ok := cardParam(w, r)
 	if !ok {
 		return
 	}
@@ -700,7 +654,7 @@ func (s *Server) handleAnswerQuestion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	belongs, err := s.store.Q().AttemptHasQuestion(r.Context(), gen.AttemptHasQuestionParams{
-		AttemptID: attempt.ID, UserID: user.ID, NoteID: noteID, CardID: cardID,
+		AttemptID: attempt.ID, UserID: user.ID, CardID: cardID,
 	})
 	if err != nil {
 		writeInternal(w, err)
@@ -712,11 +666,11 @@ func (s *Server) handleAnswerQuestion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The card's current interval, recorded on both sides of the log because
-	// the schedule did not move. A card whose note has since been deleted has
-	// no schedule to read; zero is the honest answer there.
+	// the schedule did not move. A card deleted since the attempt began has no
+	// schedule to read; zero is the honest answer there.
 	var interval int32
 	row, err := s.store.Q().GetCardWithSchedule(r.Context(), gen.GetCardWithScheduleParams{
-		NoteID: noteID, ID: cardID, UserID: user.ID,
+		ID: cardID, UserID: user.ID,
 	})
 	if err == nil {
 		interval = intervalDays(srs.Schedule{
@@ -730,7 +684,6 @@ func (s *Server) handleAnswerQuestion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.store.Q().InsertExamAnswer(r.Context(), gen.InsertExamAnswerParams{
-		NoteID:        noteID,
 		CardID:        cardID,
 		UserID:        user.ID,
 		Rating:        string(rating),

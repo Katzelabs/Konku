@@ -148,6 +148,10 @@ and `Switch`. Everything else is markup.
 | `Notice` | Replaces the repeated `bg-slate-100` message box. `neutral` by default. |
 | `EmptyState` | See below. |
 | `PageHeader` | `title`, `description`, `meta`, `actions`. Only one action may be `primary`. |
+| `Markdown` `MarkdownInline` | `react-markdown` + `remark-gfm`, every element mapped to tokens by hand. **Never `innerHTML`, never `rehype-raw`** — an agent writes notes via MCP in v0.3, so embedded HTML would be a standing XSS (D-018). No typography plugin: it ships its own colour and spacing scale, which is a second source of truth. |
+| `CategoryChip` `CategoryChips` `CategoryPicker` | Shared labels for notes and cards (D-055). **No colour** — domain colour is the one colour signal in a row, and a second palette competing with it turns a list into confetti. The picker creates on type, because being sent elsewhere to define a label first is the friction that stops things being captured (hard rule 7). |
+| `ViewToggle` + `useViewMode` | Grid or list for the notes and cards indexes. State lives in `?view=` beside `?q=`, with `localStorage` only as a fallback, so a filtered grid is a link you can reload into. |
+| `DetailsDrawer` `DetailsDrawerTrigger` `DetailsField` | Metadata beside a note or card. A static column at `lg`+ and a real Radix dialog below it — **not one component styled two ways**: rendering both and hiding one would put every field in the DOM twice and break label association. The caller passes `docked` from `useMediaQuery`. |
 
 ### Adding one
 

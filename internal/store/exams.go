@@ -88,12 +88,11 @@ func (s *Store) StartAttempt(
 			return fmt.Errorf("store: creating attempt: %w", err)
 		}
 
-		for i, question := range questions {
+		for i, cardID := range questions {
 			if err := q.SnapshotAttemptCard(ctx, gen.SnapshotAttemptCardParams{
 				AttemptID: attempt.ID,
 				UserID:    userID,
-				NoteID:    question.NoteID,
-				CardID:    question.CardID,
+				CardID:    cardID,
 				Position:  int32(i + 1),
 			}); err != nil {
 				return fmt.Errorf("store: snapshotting question %d: %w", i+1, err)
@@ -109,18 +108,12 @@ func (s *Store) StartAttempt(
 	return out, nil
 }
 
-// question is one drawn card, before it is written into the snapshot.
-type question struct {
-	NoteID uuid.UUID
-	CardID string
-}
-
-// drawQuestions picks the card set for one sitting.
+// drawQuestions picks the card set for one sitting, in presentation order.
 //
 // 'fixed' reads the pinned set, so two attempts at the same exam compare like
 // for like. 'random' draws afresh, which is better practice and makes scores
 // non-comparable — the trade-off is the user's to make per exam (D-048).
-func drawQuestions(ctx context.Context, q *gen.Queries, userID uuid.UUID, exam gen.Exam) ([]question, error) {
+func drawQuestions(ctx context.Context, q *gen.Queries, userID uuid.UUID, exam gen.Exam) ([]uuid.UUID, error) {
 	if exam.Selection == "fixed" {
 		rows, err := q.ListExamCards(ctx, gen.ListExamCardsParams{
 			ExamID: exam.ID, UserID: userID,
@@ -128,9 +121,9 @@ func drawQuestions(ctx context.Context, q *gen.Queries, userID uuid.UUID, exam g
 		if err != nil {
 			return nil, fmt.Errorf("store: reading pinned cards: %w", err)
 		}
-		out := make([]question, 0, len(rows))
+		out := make([]uuid.UUID, 0, len(rows))
 		for _, row := range rows {
-			out = append(out, question{NoteID: row.NoteID, CardID: row.CardID})
+			out = append(out, row.CardID)
 		}
 		return out, nil
 	}
@@ -147,17 +140,13 @@ func drawQuestions(ctx context.Context, q *gen.Queries, userID uuid.UUID, exam g
 		return nil, ErrExamHasNoCards
 	}
 
-	rows, err := q.DrawRandomCards(ctx, gen.DrawRandomCardsParams{
+	out, err := q.DrawRandomCards(ctx, gen.DrawRandomCardsParams{
 		UserID:   userID,
 		DomainID: exam.DomainID,
 		Limit:    limit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("store: drawing cards: %w", err)
-	}
-	out := make([]question, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, question{NoteID: row.NoteID, CardID: row.CardID})
 	}
 	return out, nil
 }

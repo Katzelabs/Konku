@@ -65,12 +65,37 @@ func (s *Server) Routes() http.Handler {
 				r.Patch("/{id}", s.handleUpdateNote)
 			})
 
-			// A card is addressed by note and ID together: card IDs are only
-			// unique within their note, so {cardID} alone cannot name one.
+			// Cards are their own resource with their own CRUD (D-055). This
+			// list also serves the picker for a fixed exam's questions —
+			// filters make one endpoint enough for both.
+			r.Route("/cards", func(r chi.Router) {
+				r.Get("/", s.handleListCards)
+				r.Post("/", s.handleCreateCard)
+				r.Get("/{id}", s.handleGetCard)
+				r.Patch("/{id}", s.handleUpdateCard)
+				r.Delete("/{id}", s.handleDeleteCard)
+				r.Post("/{id}/restore", s.handleRestoreCard)
+			})
+
+			// One shared vocabulary across notes and cards. Deletion only
+			// succeeds for a category nothing references; archiving is the
+			// normal path (D-051).
+			r.Route("/categories", func(r chi.Router) {
+				r.Get("/", s.handleListCategories)
+				r.Post("/", s.handleCreateCategory)
+				r.Patch("/{id}", s.handleUpdateCategory)
+				r.Delete("/{id}", s.handleDeleteCategory)
+				r.Post("/{id}/archive", s.handleArchiveCategory)
+				r.Post("/{id}/unarchive", s.handleUnarchiveCategory)
+			})
+
+			// A card is addressed by its own uuid. It used to take a note and
+			// an ID together, because card IDs were unique only within the
+			// note they were parsed out of (D-055).
 			r.Route("/review", func(r chi.Router) {
 				r.Get("/due", s.handleDueCards)
-				r.Get("/{noteID}/{cardID}/answer", s.handleCardAnswer)
-				r.Post("/{noteID}/{cardID}", s.handleRate)
+				r.Get("/{cardID}/answer", s.handleCardAnswer)
+				r.Post("/{cardID}", s.handleRate)
 			})
 
 			r.Get("/sessions", s.handleListSessions)
@@ -81,8 +106,7 @@ func (s *Server) Routes() http.Handler {
 			// normal path (D-051).
 			// Exams are practice tests over existing cards (D-048). Attempts
 			// hang off /attempts rather than nesting under the exam: an
-			// attempt is addressed on its own once it has started, and the
-			// answer path already carries a note and a card.
+			// attempt is addressed on its own once it has started.
 			r.Route("/exams", func(r chi.Router) {
 				r.Get("/", s.handleListExams)
 				r.Post("/", s.handleCreateExam)
@@ -94,15 +118,12 @@ func (s *Server) Routes() http.Handler {
 				r.Post("/{id}/attempts", s.handleStartAttempt)
 			})
 
-			// The candidate list for pinning a fixed exam's questions.
-			r.Get("/cards", s.handleListCards)
-
 			r.Route("/attempts/{attemptID}", func(r chi.Router) {
 				r.Get("/", s.handleGetAttempt)
 				r.Delete("/", s.handleDeleteAttempt)
 				r.Post("/finish", s.handleFinishAttempt)
-				r.Get("/{noteID}/{cardID}/answer", s.handleAttemptAnswer)
-				r.Post("/{noteID}/{cardID}", s.handleAnswerQuestion)
+				r.Get("/{cardID}/answer", s.handleAttemptAnswer)
+				r.Post("/{cardID}", s.handleAnswerQuestion)
 			})
 
 			r.Route("/domains", func(r chi.Router) {

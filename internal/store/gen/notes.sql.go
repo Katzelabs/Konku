@@ -12,6 +12,40 @@ import (
 	"github.com/google/uuid"
 )
 
+const addNoteCategory = `-- name: AddNoteCategory :exec
+INSERT INTO note_categories (user_id, note_id, category_id)
+VALUES ($1, $2, $3)
+ON CONFLICT DO NOTHING
+`
+
+type AddNoteCategoryParams struct {
+	UserID     uuid.UUID `json:"user_id"`
+	NoteID     uuid.UUID `json:"note_id"`
+	CategoryID uuid.UUID `json:"category_id"`
+}
+
+func (q *Queries) AddNoteCategory(ctx context.Context, arg AddNoteCategoryParams) error {
+	_, err := q.db.Exec(ctx, addNoteCategory, arg.UserID, arg.NoteID, arg.CategoryID)
+	return err
+}
+
+const clearNoteCategories = `-- name: ClearNoteCategories :exec
+
+DELETE FROM note_categories
+WHERE note_id = $1 AND user_id = $2
+`
+
+type ClearNoteCategoriesParams struct {
+	NoteID uuid.UUID `json:"note_id"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+// The note's categories.
+func (q *Queries) ClearNoteCategories(ctx context.Context, arg ClearNoteCategoriesParams) error {
+	_, err := q.db.Exec(ctx, clearNoteCategories, arg.NoteID, arg.UserID)
+	return err
+}
+
 const createNote = `-- name: CreateNote :one
 
 INSERT INTO notes (user_id, title, content_md, domain_id)
@@ -97,36 +131,93 @@ func (q *Queries) GetNote(ctx context.Context, arg GetNoteParams) (Note, error) 
 	return i, err
 }
 
+const listCategoriesForNote = `-- name: ListCategoriesForNote :many
+SELECT cat.id, cat.user_id, cat.slug, cat.label, cat.archived_at, cat.created_at FROM categories cat
+JOIN note_categories nc ON nc.category_id = cat.id AND nc.user_id = cat.user_id
+WHERE nc.note_id = $1 AND nc.user_id = $2
+ORDER BY cat.label
+`
+
+type ListCategoriesForNoteParams struct {
+	NoteID uuid.UUID `json:"note_id"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+func (q *Queries) ListCategoriesForNote(ctx context.Context, arg ListCategoriesForNoteParams) ([]Category, error) {
+	rows, err := q.db.Query(ctx, listCategoriesForNote, arg.NoteID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Category{}
+	for rows.Next() {
+		var i Category
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Slug,
+			&i.Label,
+			&i.ArchivedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listNotes = `-- name: ListNotes :many
 SELECT n.id, n.user_id, n.title, n.content_md, n.created_at, n.updated_at, n.tsv, n.domain_id,
-       (SELECT count(*) FROM cards c
-         WHERE c.note_id = n.id AND c.deleted_at IS NULL) AS card_count
+       COALESCE(
+           (SELECT array_agg(nc.category_id ORDER BY nc.category_id)
+              FROM note_categories nc
+             WHERE nc.note_id = n.id),
+           '{}'
+       )::uuid[] AS category_ids
 FROM notes n
 WHERE n.user_id = $1
+  AND ($4::uuid IS NULL OR n.domain_id = $4)
+  AND ($5::uuid IS NULL OR EXISTS (
+          SELECT 1 FROM note_categories nc
+           WHERE nc.note_id = n.id AND nc.category_id = $5))
 ORDER BY n.updated_at DESC
 LIMIT $2 OFFSET $3
 `
 
 type ListNotesParams struct {
-	UserID uuid.UUID `json:"user_id"`
-	Limit  int32     `json:"limit"`
-	Offset int32     `json:"offset"`
+	UserID     uuid.UUID  `json:"user_id"`
+	Limit      int32      `json:"limit"`
+	Offset     int32      `json:"offset"`
+	DomainID   *uuid.UUID `json:"domain_id"`
+	CategoryID *uuid.UUID `json:"category_id"`
 }
 
 type ListNotesRow struct {
-	ID        uuid.UUID   `json:"id"`
-	UserID    uuid.UUID   `json:"user_id"`
-	Title     string      `json:"title"`
-	ContentMd string      `json:"content_md"`
-	CreatedAt time.Time   `json:"created_at"`
-	UpdatedAt time.Time   `json:"updated_at"`
-	Tsv       interface{} `json:"tsv"`
-	DomainID  *uuid.UUID  `json:"domain_id"`
-	CardCount int64       `json:"card_count"`
+	ID          uuid.UUID   `json:"id"`
+	UserID      uuid.UUID   `json:"user_id"`
+	Title       string      `json:"title"`
+	ContentMd   string      `json:"content_md"`
+	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
+	Tsv         interface{} `json:"tsv"`
+	DomainID    *uuid.UUID  `json:"domain_id"`
+	CategoryIds []uuid.UUID `json:"category_ids"`
 }
 
+// The card count is gone with D-055: a note no longer contains cards, so
+// counting them per note would be counting nothing.
 func (q *Queries) ListNotes(ctx context.Context, arg ListNotesParams) ([]ListNotesRow, error) {
-	rows, err := q.db.Query(ctx, listNotes, arg.UserID, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, listNotes,
+		arg.UserID,
+		arg.Limit,
+		arg.Offset,
+		arg.DomainID,
+		arg.CategoryID,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +234,7 @@ func (q *Queries) ListNotes(ctx context.Context, arg ListNotesParams) ([]ListNot
 			&i.UpdatedAt,
 			&i.Tsv,
 			&i.DomainID,
-			&i.CardCount,
+			&i.CategoryIds,
 		); err != nil {
 			return nil, err
 		}

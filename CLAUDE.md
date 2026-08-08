@@ -4,7 +4,7 @@
 
 Personal learning system. Self-hosted, multi-tenant but never social. One job: **nothing you learn disappears silently.**
 
-Notes (markdown) with flashcards embedded inline, a spaced-repetition scheduler over those cards, a focus timer, and MCP access so Claude can read and write the knowledge base directly.
+Notes (markdown), flashcards as their own feature, a spaced-repetition scheduler over those cards, a focus timer, and MCP access so Claude can read and write the knowledge base directly. Notes and cards share categories and domains; neither contains the other (D-055).
 
 Module: `github.com/Katzelabs/Konku` · Go 1.25 · remote `Katzelabs/Konku`
 
@@ -12,15 +12,15 @@ Module: `github.com/Katzelabs/Konku` · Go 1.25 · remote `Katzelabs/Konku`
 
 **Building the MVP.** `01-foundation` is complete: pgx pool, embedded goose migrations, sqlc, the store layer with per-user scoping, argon2id auth with server-side sessions, and a login screen. `internal/srs` (the scheduler) is done and tested.
 
-`02-card-engine` is complete: `card.Parse` / `card.Insert` (basic `Q :: A`, stable IDs written back into the markdown, a fixed point on re-parse) and `store.CreateNoteWithCards` / `store.UpdateNoteWithCards` — the note update and the card diff-by-ID in one transaction.
+`02-card-engine` is **superseded**. `card.Parse` / `card.Insert` and the card-sync transaction were deleted by D-055; the file stays for the history of why stable IDs existed.
 
 `03-app` is complete: notes, review, session and domain endpoints, and the React app — note list, editor with autosave and preview, review screen, focus timer, capture-at-session-end. The loop runs end to end.
 
-**In progress: schema v2** — migration `00002_domains_and_exams.sql` makes domains per-user and adds exams (D-046 → D-052). The migration is written and tested; the store layer, queries, handlers and UI are not. `docs/tasks/04-ship.md` follows.
+**In progress: `docs/tasks/05-cards-and-categories.md`** — cards split out of note markdown into their own feature, plus categories shared by both (D-055). K1–K7 are done: migration `00004`, the store and query rewrite, the cards/categories API, the markdown renderer, and the notes/cards screens. K8 (docs) is finishing. `docs/tasks/04-ship.md` follows.
 
-Note: a card is addressed by note *and* ID (`/api/review/{noteID}/{cardID}`). Card IDs are unique within their note, never within the account.
+Note: a card is addressed by its own uuid (`/api/review/{cardID}`). It used to take a note *and* an ID, because card IDs were unique only within the note they were parsed out of.
 
-Scope is the **MVP** in `PRD.md` §8 **plus schema v2**. Cloze/feynman card types, full-text search, public signup and password reset stay deferred to v0.2 (D-031, D-038, D-039). **Do not reintroduce them.** Domains UI is no longer deferred — per-user domains require it (D-046).
+Scope is the **MVP** in `PRD.md` §8, **plus schema v2, plus 05**. Cloze/feynman card types, full-text search, public signup and password reset stay deferred to v0.2 (D-031, D-038, D-039). **Do not reintroduce them** — standalone card CRUD makes a type picker easy, which is exactly why the deferral is restated in D-055. Domains UI is no longer deferred — per-user domains require it (D-046).
 
 ## Read these first
 
@@ -47,9 +47,9 @@ go run ./cmd/konku seed-user -email you@example.com
 
 ## Hard rules
 
-1. **`internal/card` and `internal/srs` import nothing from `internal/`.** They carry the product's value and stay trivially testable. `make check-pure` enforces it.
-2. **Cards match by stable ID, never by content.** Matching by content means fixing a typo destroys that card's review history. Silent and unrecoverable (D-019).
-3. **Note update + card sync commit in one transaction.**
+1. **`internal/srs` imports nothing from `internal/`.** It carries the product's value and stays trivially testable. `make check-pure` enforces it. (It guarded `internal/card` too, until D-055 deleted that package.)
+2. **Editing a card's text never resets its schedule.** Fixing a typo must not destroy review history — silent and unrecoverable. Stable IDs used to provide this; the uuid primary key provides it now, and `TestScheduleSurvivesCardEdit` guards it either way (D-019 → D-055).
+3. **A note or card and its category links commit in one transaction.**
 4. **Every query is scoped by `user_id` in the `WHERE` clause**, never fetch-then-check. A wrong owner gets *not found*, never *forbidden* — otherwise the API can be used to probe for other users' data (D-039).
 5. **Dates are local `YYYY-MM-DD`.** An 11pm session belongs to that day.
 6. **Never punitive.** No guilt copy, no shaming empty states, no aggressive red, no losable streaks, no gamification. A missed day is normal and the UI treats it as normal. Hard constraint from `GOALS.md`, not a preference.
@@ -76,7 +76,7 @@ go run ./cmd/konku seed-user -email you@example.com
 
 Go + **chi** (single binary, monolith) · Postgres 17 + pgvector via **pgx + sqlc** · **goose** migrations, embedded and run at startup · stdlib `log/slog` · React + TS + Vite + **Tailwind v4** + **TanStack Query**, embedded via `go:embed` · Caddy · Docker Compose.
 
-`go.mod` at repo root, React in `web/` (D-032). Vite writes straight into `internal/web/dist` — no copy step. Non-stdlib backend deps are exactly **chi, pgx, goose, x/crypto, x/term, google/uuid** — keep the list short (D-045). Frontend runtime deps beyond React/Router/Query are **clsx, tailwind-merge, cva, lucide-react** and three Radix packages (dialog, slot, switch) — same discipline (D-053). No ORM (D-043), no Gin/Echo/Fiber (D-042), no Redis (D-023), no MongoDB (D-027), no Node process in production (D-041).
+`go.mod` at repo root, React in `web/` (D-032). Vite writes straight into `internal/web/dist` — no copy step. Non-stdlib backend deps are exactly **chi, pgx, goose, x/crypto, x/term, google/uuid** — keep the list short (D-045). Frontend runtime deps beyond React/Router/Query are **clsx, tailwind-merge, cva, lucide-react, react-markdown, remark-gfm** and three Radix packages (dialog, slot, switch) — same discipline (D-053). The markdown pair replaced a hand-written renderer and must keep its property: **React elements, never `innerHTML`, and no `rehype-raw`** (D-018). No ORM (D-043), no Gin/Echo/Fiber (D-042), no Redis (D-023), no MongoDB (D-027), no Node process in production (D-041).
 
 Prod runs on a self-hosted VPS against a **shared** Postgres (own database + own role), so the pgx pool is capped at 10 connections — an uncapped pool can starve every other project on the box (D-028). Dev compose ships its own Postgres on 5433.
 
