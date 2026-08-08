@@ -42,7 +42,7 @@ export function TopBar({
   onToggleSidebar: () => void
 }) {
   return (
-    <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-card px-1 py-2.5 md:px-gutter">
+    <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-card px-4 py-2.5">
       <BrandMark />
       <button
         onClick={onToggleSidebar}
