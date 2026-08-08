@@ -141,11 +141,13 @@ and `Switch`. Everything else is markup.
 | `ToggleGroup` / `ToggleGroupItem` | Pick one from a short, always-visible set: editor mode, timer duration, domain. |
 | `Badge` `DomainDot` `DomainBadge` | |
 | `Dialog` + parts | Radix. `DialogTitle` is required for a11y. |
+| `DropdownMenu` + parts | Radix. Roving focus, typeahead, Escape. |
+| `Avatar` | Initials from the email — there is no name or photo in the data model. |
 | `Switch` `Separator` | |
 | `Loading` | Always paired with text. |
 | `Notice` | Replaces the repeated `bg-slate-100` message box. `neutral` by default. |
 | `EmptyState` | See below. |
-| `PageHeader` | Title, one line of purpose, at most one action. |
+| `PageHeader` | `title`, `description`, `meta`, `actions`. Only one action may be `primary`. |
 
 ### Adding one
 
@@ -184,20 +186,44 @@ adding the token.
 
 ---
 
-## 6. Dark mode
+## 6. Page shape
 
-Both palettes are authored. `.dark` on `<html>` switches them; the class-based
-`@custom-variant` means a future toggle beats the OS preference rather than
-fighting it.
+Every authenticated screen sits inside the same shell:
 
-**Nothing switches it yet** — there is no settings surface to put the control on
-(see the open question in `DECISIONS.md` about per-user settings). The style
-guide toggles it locally so the dark values stay honest. Any new component must
-look right in both; `/design` is where you check.
+- **Sidebar** (desktop, 260px) — the six destinations, plus Pengaturan below a
+  divider. **Bottom nav** on phones; Pengaturan is not there, it lives in the
+  account menu.
+- **Top bar** — breadcrumb (`Konku / <page>`), note search, the focus pill when
+  a session is running, the account menu. It is on every screen, which is why
+  `PageHeader` carries no breadcrumb of its own.
+- **`PageHeader`** — the first thing in the page body, always.
+
+**Width.** Browse and settings screens are **left-aligned** at their own measure
+(`max-w-3xl`, `max-w-4xl`) and the container never centres them, so the left
+edge does not jump as you navigate. The two focus flows — reviewing and sitting
+an exam — are the deliberate exception and *are* centred (`mx-auto max-w-2xl`),
+because there is one thing to look at.
 
 ---
 
-## 7. Copy
+## 7. Dark mode
+
+Both palettes are authored. `.dark` on `<html>` switches them; the class-based
+`@custom-variant` means the toggle beats the OS preference rather than fighting
+it.
+
+The control is in **Pengaturan → Tampilan**: terang, gelap, or follow the
+system. It is stored in `localStorage`, not on the account — there is still no
+per-user settings table (the open question in `DECISIONS.md`), and a theme was
+the wrong reason to add one. Storing it client-side also means the choice
+applies before first paint, which a server round-trip could not do.
+
+Any new component must look right in both. `/design` has its own local toggle,
+which is where you check.
+
+---
+
+## 8. Copy
 
 Hard rule 8: **user-facing copy is Bahasa Indonesia**, code and comments are
 English. That includes `aria-label`s and placeholder text — they are read by

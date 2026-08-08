@@ -8,7 +8,6 @@ import { EmptyState } from '../../components/ui/empty-state'
 import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
 import { Notice } from '../../components/ui/notice'
-import { PageHeader } from '../../components/ui/page-header'
 import { Loading } from '../../components/ui/spinner'
 import { cn } from '../../lib/utils'
 import {
@@ -22,7 +21,14 @@ import {
 /** A muted starting palette. The user can type any #RRGGBB they like. */
 const PALETTE = ['#4F7CAC', '#6A8D73', '#B08968', '#8E7DBE', '#5C6B73', '#AA6C6C']
 
-export default function DomainsPage() {
+/**
+ * Domain management, rendered as a section of Pengaturan.
+ *
+ * Per-user domains made a UI for them non-optional (D-046, D-053) but they are
+ * settings-shaped, not somewhere you go daily — so they live here rather than
+ * taking a slot in the nav.
+ */
+export default function DomainSettings() {
   const { data, isPending, error } = useAllDomains()
   const [adding, setAdding] = useState(false)
 
@@ -33,19 +39,19 @@ export default function DomainsPage() {
   const archived = (data ?? []).filter((d) => d.archivedAt !== null)
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6">
-      <PageHeader
-        title="Domain"
-        description="Target mingguan cuma penanda arah, bukan setoran. Nol berarti domain ini tetap bisa dipakai tapi tidak ikut rotasi mingguan."
-        action={
-          !adding && (
-            <Button variant="primary" onClick={() => setAdding(true)}>
-              <Plus />
-              Tambah domain
-            </Button>
-          )
-        }
-      />
+    <div className="flex flex-col gap-4">
+      <div className="flex items-start justify-between gap-4">
+        <p className="max-w-prose text-sm text-muted-fg">
+          Target mingguan cuma penanda arah, bukan setoran. Nol berarti domain ini
+          tetap bisa dipakai tapi tidak ikut rotasi mingguan.
+        </p>
+        {!adding && (
+          <Button variant="secondary" size="sm" onClick={() => setAdding(true)}>
+            <Plus />
+            Tambah
+          </Button>
+        )}
+      </div>
 
       {adding && <NewDomainForm onDone={() => setAdding(false)} />}
 
@@ -65,14 +71,14 @@ export default function DomainsPage() {
       )}
 
       {archived.length > 0 && (
-        <section className="flex flex-col gap-2">
-          <h2 className="text-sm font-medium text-muted-fg">Diarsipkan</h2>
+        <div className="flex flex-col gap-2">
+          <h3 className="text-sm font-medium text-muted-fg">Diarsipkan</h3>
           <ul className="flex flex-col gap-2">
             {archived.map((d) => (
               <DomainRow key={d.id} domain={d} />
             ))}
           </ul>
-        </section>
+        </div>
       )}
     </div>
   )
@@ -91,8 +97,8 @@ function NewDomainForm({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <Card>
-      <form onSubmit={submit} className="flex flex-col gap-4 p-5">
+    <Card className="border-primary">
+      <form onSubmit={submit} className="flex flex-col gap-4 p-4">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="new-domain">Nama domain</Label>
           <Input
@@ -113,11 +119,12 @@ function NewDomainForm({ onDone }: { onDone: () => void }) {
           <Button
             type="submit"
             variant="primary"
+            size="sm"
             disabled={create.isPending || !label.trim()}
           >
             Simpan
           </Button>
-          <Button type="button" variant="secondary" onClick={onDone}>
+          <Button type="button" variant="secondary" size="sm" onClick={onDone}>
             Batal
           </Button>
         </div>
@@ -215,10 +222,10 @@ function EditDomainForm({ domain, onDone }: { domain: Domain; onDone: () => void
           {update.isError && <Notice>{update.error.message}</Notice>}
 
           <div className="flex gap-2">
-            <Button type="submit" variant="primary" disabled={update.isPending}>
+            <Button type="submit" variant="primary" size="sm" disabled={update.isPending}>
               Simpan
             </Button>
-            <Button type="button" variant="secondary" onClick={onDone}>
+            <Button type="button" variant="secondary" size="sm" onClick={onDone}>
               Batal
             </Button>
           </div>

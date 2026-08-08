@@ -1,18 +1,10 @@
-import { GraduationCap, LogOut } from 'lucide-react'
+import { GraduationCap } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import { cn } from '../../lib/utils'
 import { Separator } from '../ui/separator'
 import { PRIMARY_NAV, SECONDARY_NAV, type NavItem } from './Nav'
 
-export function Sidebar({
-  due,
-  email,
-  onLogout,
-}: {
-  due: number
-  email: string
-  onLogout: () => void
-}) {
+export function Sidebar({ due }: { due: number }) {
   return (
     <aside className="hidden w-sidebar shrink-0 flex-col justify-between border-r border-border bg-card p-6 md:flex">
       <div className="flex flex-col gap-8">
@@ -31,29 +23,12 @@ export function Sidebar({
       </div>
 
       <div className="flex flex-col gap-4">
+        <Separator />
         <nav className="flex flex-col gap-1">
           {SECONDARY_NAV.map((item) => (
             <SidebarLink key={item.to} item={item} due={due} />
           ))}
         </nav>
-
-        <Separator />
-
-        <div className="flex items-center gap-3">
-          <div className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate text-sm font-medium text-card-fg">
-              {email}
-            </span>
-          </div>
-          <button
-            onClick={onLogout}
-            aria-label="Keluar"
-            title="Keluar"
-            className="rounded-md p-1.5 text-subtle-fg transition-colors hover:bg-muted hover:text-surface-fg"
-          >
-            <LogOut className="size-4" />
-          </button>
-        </div>
       </div>
     </aside>
   )
@@ -64,6 +39,7 @@ function SidebarLink({ item, due }: { item: NavItem; due: number }) {
   return (
     <NavLink
       to={item.to}
+      end={item.end}
       className={({ isActive }) =>
         cn(
           'flex items-center gap-3 rounded-md px-4 py-2.5 text-sm transition-colors duration-(--animate-duration-quick) ease-(--ease-quiet)',

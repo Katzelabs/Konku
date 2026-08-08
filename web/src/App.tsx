@@ -4,14 +4,16 @@ import { Loading } from './components/ui/spinner'
 import { Notice } from './components/ui/notice'
 import LoginPage from './features/auth/LoginPage'
 import { useMe } from './features/auth/useAuth'
-import DomainsPage from './features/domains/DomainsPage'
+import CardsPage from './features/cards/CardsPage'
 import ExamPage from './features/exams/ExamPage'
 import ExamsPage from './features/exams/ExamsPage'
 import SitExamPage from './features/exams/SitExamPage'
+import HomePage from './features/home/HomePage'
 import NoteEditorPage from './features/notes/NoteEditorPage'
 import NotesPage from './features/notes/NotesPage'
 import NoNoteSelected from './features/notes/NoNoteSelected'
 import ReviewPage from './features/review/ReviewPage'
+import SettingsPage from './features/settings/SettingsPage'
 import { TimerProvider } from './features/timer/TimerProvider'
 import TimerPage from './features/timer/TimerPage'
 
@@ -40,7 +42,8 @@ export default function App() {
     <TimerProvider>
       <AppShell email={user.email}>
         <Routes>
-          <Route path="/" element={<Navigate to="/notes" replace />} />
+          <Route path="/" element={<Navigate to="/home" replace />} />
+          <Route path="/home" element={<HomePage />} />
 
           {/*
             The list and the editor share a route so the two-pane layout keeps
@@ -52,13 +55,18 @@ export default function App() {
             <Route path=":id" element={<NoteEditorPage />} />
           </Route>
 
+          <Route path="/cards" element={<CardsPage />} />
           <Route path="/review" element={<ReviewPage />} />
           <Route path="/timer" element={<TimerPage />} />
           <Route path="/exams" element={<ExamsPage />} />
           <Route path="/exams/:id" element={<ExamPage />} />
           <Route path="/attempts/:id" element={<SitExamPage />} />
-          <Route path="/domains" element={<DomainsPage />} />
-          <Route path="*" element={<Navigate to="/notes" replace />} />
+          <Route path="/settings" element={<SettingsPage />} />
+
+          {/* Domains moved into Pengaturan; old links still land somewhere sane. */}
+          <Route path="/domains" element={<Navigate to="/settings" replace />} />
+
+          <Route path="*" element={<Navigate to="/home" replace />} />
         </Routes>
       </AppShell>
     </TimerProvider>

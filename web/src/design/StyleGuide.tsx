@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react'
-import { Moon, Plus, Sun, Trash2 } from 'lucide-react'
+import { LogOut, Moon, Plus, Settings, Sun, Trash2 } from 'lucide-react'
+import { Avatar } from '../components/ui/avatar'
 import { Badge, DomainBadge, DomainDot } from '../components/ui/badge'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu'
 import { Button } from '../components/ui/button'
 import {
   Card,
@@ -54,7 +63,7 @@ export default function StyleGuide() {
         <PageHeader
           title="Konku design system"
           description="Tokens dan komponen. Semua warna di app harus berasal dari halaman ini."
-          action={
+          actions={
             <Button variant="secondary" onClick={() => setDark((d) => !d)}>
               {dark ? <Sun /> : <Moon />}
               {dark ? 'Light' : 'Dark'}
@@ -318,6 +327,32 @@ export default function StyleGuide() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+        </Section>
+
+        <Section title="Account" hint="Initials, not a photo — there is no name field.">
+          <Row label="avatar">
+            <Avatar email="zidan.hafiz@contoh.com" />
+            <Avatar email="konku@contoh.com" />
+          </Row>
+          <Row label="menu">
+            <DropdownMenu>
+              <DropdownMenuTrigger className="rounded-full">
+                <Avatar email="zidan.hafiz@contoh.com" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuLabel>zidan.hafiz@contoh.com</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem>
+                  <Settings />
+                  Pengaturan
+                </DropdownMenuItem>
+                <DropdownMenuItem>
+                  <LogOut />
+                  Keluar
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </Row>
         </Section>
 
         <Section

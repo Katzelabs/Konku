@@ -1,6 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { Plus, Search } from 'lucide-react'
-import { NavLink, Outlet, useMatch, useNavigate } from 'react-router-dom'
+import {
+  NavLink,
+  Outlet,
+  useMatch,
+  useNavigate,
+  useSearchParams,
+} from 'react-router-dom'
 import type { Domain, NoteSummary } from '../../api/types'
 import { Button } from '../../components/ui/button'
 import { DomainDot } from '../../components/ui/badge'
@@ -51,7 +57,13 @@ function NoteListPane() {
   const { data: domains } = useDomains()
   const create = useCreateNote()
   const navigate = useNavigate()
-  const [query, setQuery] = useState('')
+
+  // The query lives in the URL so the top bar's search box and this one are the
+  // same filter rather than two that disagree.
+  const [params, setParams] = useSearchParams()
+  const query = params.get('q') ?? ''
+  const setQuery = (q: string) =>
+    setParams(q ? { q } : {}, { replace: true, preventScrollReset: true })
 
   function newNote() {
     create.mutate({ contentMd: '' }, { onSuccess: (n) => navigate(`/notes/${n.id}`) })

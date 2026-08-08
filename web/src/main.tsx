@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import App from './App'
+import { ThemeProvider } from './features/settings/useTheme'
 import './index.css'
 
 // The living style guide at /design. Declared inside the DEV check so that
@@ -27,6 +28,8 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
+      {/* Outside the router so the theme applies to the login screen too. */}
+      <ThemeProvider>
       {/* Real paths, not hashes: the Go server serves the SPA shell for every
           non-/api route, so a deep link like /notes/<id> loads directly. */}
       <BrowserRouter>
@@ -45,6 +48,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="*" element={<App />} />
         </Routes>
       </BrowserRouter>
+      </ThemeProvider>
     </QueryClientProvider>
   </StrictMode>,
 )
