@@ -1,6 +1,10 @@
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
 import LoginPage from './features/auth/LoginPage'
 import { useLogout, useMe } from './features/auth/useAuth'
+import DomainsPage from './features/domains/DomainsPage'
+import ExamPage from './features/exams/ExamPage'
+import ExamsPage from './features/exams/ExamsPage'
+import SitExamPage from './features/exams/SitExamPage'
 import NoteEditorPage from './features/notes/NoteEditorPage'
 import NoteListPage from './features/notes/NoteListPage'
 import ReviewPage from './features/review/ReviewPage'
@@ -40,6 +44,10 @@ export default function App() {
           <Route path="/notes/:id" element={<NoteEditorPage />} />
           <Route path="/review" element={<ReviewPage />} />
           <Route path="/timer" element={<TimerPage />} />
+          <Route path="/exams" element={<ExamsPage />} />
+          <Route path="/exams/:id" element={<ExamPage />} />
+          <Route path="/attempts/:id" element={<SitExamPage />} />
+          <Route path="/domains" element={<DomainsPage />} />
           <Route path="*" element={<Navigate to="/notes" replace />} />
         </Routes>
       </main>
@@ -69,14 +77,24 @@ function Nav() {
           )}
         </Tab>
         <Tab to="/timer">Fokus</Tab>
+        <Tab to="/exams">Ujian</Tab>
       </nav>
 
-      <button
-        onClick={() => logout.mutate()}
-        className="text-sm text-slate-400 underline underline-offset-4"
-      >
-        Keluar
-      </button>
+      <div className="flex items-center gap-3">
+        {/*
+          Domain management is a settings-shaped thing, not a fifth place to
+          go every day. It sits beside "Keluar" rather than in the tab row.
+        */}
+        <NavLink to="/domains" className="text-sm text-slate-400 underline underline-offset-4">
+          Domain
+        </NavLink>
+        <button
+          onClick={() => logout.mutate()}
+          className="text-sm text-slate-400 underline underline-offset-4"
+        >
+          Keluar
+        </button>
+      </div>
     </header>
   )
 }

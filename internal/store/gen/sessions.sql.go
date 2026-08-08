@@ -15,14 +15,14 @@ import (
 const insertFocusSession = `-- name: InsertFocusSession :one
 INSERT INTO focus_sessions (user_id, domain_id, duration_minutes, session_date)
 VALUES ($1, $2, $3, $4::date)
-RETURNING id, user_id, domain_id, duration_minutes, session_date, completed_at
+RETURNING id, user_id, duration_minutes, session_date, completed_at, domain_id
 `
 
 type InsertFocusSessionParams struct {
-	UserID          uuid.UUID `json:"user_id"`
-	DomainID        *string   `json:"domain_id"`
-	DurationMinutes int32     `json:"duration_minutes"`
-	SessionDate     time.Time `json:"session_date"`
+	UserID          uuid.UUID  `json:"user_id"`
+	DomainID        *uuid.UUID `json:"domain_id"`
+	DurationMinutes int32      `json:"duration_minutes"`
+	SessionDate     time.Time  `json:"session_date"`
 }
 
 // session_date is the client's LOCAL YYYY-MM-DD, passed in rather than derived
@@ -39,16 +39,16 @@ func (q *Queries) InsertFocusSession(ctx context.Context, arg InsertFocusSession
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
-		&i.DomainID,
 		&i.DurationMinutes,
 		&i.SessionDate,
 		&i.CompletedAt,
+		&i.DomainID,
 	)
 	return i, err
 }
 
 const listRecentFocusSessions = `-- name: ListRecentFocusSessions :many
-SELECT id, user_id, domain_id, duration_minutes, session_date, completed_at FROM focus_sessions
+SELECT id, user_id, duration_minutes, session_date, completed_at, domain_id FROM focus_sessions
 WHERE user_id = $1
 ORDER BY session_date DESC, completed_at DESC
 LIMIT $2
@@ -71,10 +71,10 @@ func (q *Queries) ListRecentFocusSessions(ctx context.Context, arg ListRecentFoc
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
-			&i.DomainID,
 			&i.DurationMinutes,
 			&i.SessionDate,
 			&i.CompletedAt,
+			&i.DomainID,
 		); err != nil {
 			return nil, err
 		}

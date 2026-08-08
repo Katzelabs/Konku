@@ -19,10 +19,14 @@ import (
 var ErrNoteNotFound = errors.New("store: note not found")
 
 // NoteInput is one note save.
+//
+// DomainID is nil for an untagged note. Domains are per-user (D-046), so a
+// domain belonging to someone else is rejected by the composite foreign key on
+// notes rather than by anything here (D-047).
 type NoteInput struct {
 	Title     string
 	ContentMd string
-	DomainID  *string
+	DomainID  *uuid.UUID
 }
 
 // SavedNote is a note after its cards have been synced.

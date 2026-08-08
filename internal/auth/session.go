@@ -120,17 +120,29 @@ func (s *Service) PurgeExpired(ctx context.Context) error {
 
 // CreateUser hashes the password and inserts the account. Used by the
 // seed-user command, and by signup once ALLOW_SIGNUP exists in v0.2.
+//
+// The account and its starter domains commit together (D-046). Domains are
+// per-user, so an account created without them would open onto an empty domain
+// picker with nothing to repair it.
 func (s *Service) CreateUser(ctx context.Context, email, password string) (gen.User, error) {
 	hash, err := Hash(password)
 	if err != nil {
 		return gen.User{}, err
 	}
-	user, err := s.store.Q().CreateUser(ctx, gen.CreateUserParams{
-		Email:        normalizeEmail(email),
-		PasswordHash: hash,
+
+	var user gen.User
+	err = s.store.WithTx(ctx, func(q *gen.Queries) error {
+		user, err = q.CreateUser(ctx, gen.CreateUserParams{
+			Email:        normalizeEmail(email),
+			PasswordHash: hash,
+		})
+		if err != nil {
+			return fmt.Errorf("auth: creating user: %w", err)
+		}
+		return store.SeedDefaultDomains(ctx, q, user.ID)
 	})
 	if err != nil {
-		return gen.User{}, fmt.Errorf("auth: creating user: %w", err)
+		return gen.User{}, err
 	}
 	return user, nil
 }

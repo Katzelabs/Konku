@@ -27,11 +27,13 @@ func TestSessionDateComesFromTheClient(t *testing.T) {
 	// derived the date from now(), this comes back as today instead.
 	yesterday := srs.Today(time.Now()).AddDays(-1)
 
+	math := c.domainID("math")
+
 	var sess sessionBody
 	c.expect(c.do(http.MethodPost, "/sessions", map[string]any{
 		"durationMinutes": 20,
 		"sessionDate":     string(yesterday),
-		"domainId":        "math",
+		"domainId":        math,
 	}), http.StatusCreated, &sess)
 
 	if sess.SessionDate != string(yesterday) {
@@ -41,8 +43,8 @@ func TestSessionDateComesFromTheClient(t *testing.T) {
 	if sess.DurationMinutes != 20 {
 		t.Errorf("durationMinutes = %d, want 20", sess.DurationMinutes)
 	}
-	if sess.DomainID == nil || *sess.DomainID != "math" {
-		t.Errorf("domainId = %v, want math", sess.DomainID)
+	if sess.DomainID == nil || *sess.DomainID != math {
+		t.Errorf("domainId = %v, want %s", sess.DomainID, math)
 	}
 
 	// And it is stored as a date, with no time-of-day component to drift.

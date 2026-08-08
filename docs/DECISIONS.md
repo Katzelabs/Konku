@@ -1,6 +1,6 @@
 # DECISIONS.md — Decision Log
 
-**Last updated:** 2026-08-05
+**Last updated:** 2026-08-08
 
 Why this file exists: `PRD.md` and `TECH.md` say *what* was decided. This says *why*, and what was **rejected**. Without it, every future session re-litigates the same trade-offs and quietly reintroduces the things that were deliberately cut.
 
@@ -259,9 +259,86 @@ Each rejected library — Viper, zap/logrus, Wire/Fx, struct-tag validators — 
 
 ---
 
+## Schema v2 — per-user domains and exams
+
+Migration `00002_domains_and_exams.sql`. These six supersede parts of the original data model in `TECH.md` §3.
+
+### D-046 — Domains are per-user *(supersedes D-015, D-034)*
+D-015 hardcoded five global domains because they were known and there was one user. D-039 then made the data model multi-tenant, which leaves global domains as the one shared mutable thing in an otherwise isolated knowledge base: user B renaming "Matematika" renames it for user A. Domains now belong to a user, who can create, rename, recolor, reorder, set quota, and archive them.
+
+**Shape:** surrogate `uuid` PK plus `UNIQUE (user_id, slug)` — *not* a composite `(user_id, slug)` primary key. A composite PK propagates a two-column natural key into `notes`, `focus_sessions` and `exams`, forcing every one of them to carry the slug. The uuid keeps each reference one column wide; the slug survives for seeding and URLs. D-034's quota-0 convention is unchanged and still how coding stays out of the rota.
+
+The five seeded domains move out of the migration and into `seed-user`, since rows can no longer exist without an owner.
+
+**Consequence:** a domains UI stops being deferrable. Per-user domains the user cannot edit are strictly worse than global ones.
+
+**Rejected:** a global catalogue plus a `user_domains` settings join table. It keeps existing FKs untouched but a user can never add a domain that was not shipped, and one label serves everyone — which is the problem, not the workaround.
+
+### D-047 — Cross-tenant references are blocked by composite foreign keys
+Hard rule 4 puts `user_id` in the `WHERE` clause of every read. It does nothing for *writes*: with per-user domains, `notes.domain_id -> domains.id` lets an unvalidated `domainId` in a request body attach one user's note to another user's domain. The FK is satisfied, no `WHERE` clause is involved, and the leak is invisible until someone reads the join.
+
+So every owned reference carries the owner and points at a `UNIQUE (user_id, id)`:
+
+```sql
+FOREIGN KEY (user_id, domain_id) REFERENCES domains (user_id, id)
+```
+
+`user_id` is already denormalized onto every table (D-039), so the columns exist and the cost is one redundant unique index per parent. `MATCH SIMPLE` — the default — is what keeps optional references working: a NULL `domain_id` satisfies the constraint whatever `user_id` says.
+
+Handler-side validation stays, but demoted: it exists to return a 400 with Indonesian copy instead of a 500 on a constraint violation. The database is the guarantee.
+
+**Exception, deliberate:** history tables (`review_logs`, `exam_attempt_cards`) have no FK to `cards`. See D-050.
+
+**Rejected:** validating ownership in the handler alone — that is fetch-then-check wearing a different hat, and D-039 already rejected it.
+
+### D-048 — Exams are in-app practice tests over existing cards
+An exam draws from the cards that already exist in notes. It is not a question bank — a second place for knowledge to live is exactly what D-005 collapsed.
+
+Two selection modes. `fixed` pins a card set in `exam_cards`, so scores are comparable across attempts. `random` draws `question_count` cards from the domain at attempt time — better practice, non-comparable scores. A CHECK ties `question_count` to exactly the mode that uses it.
+
+`domain_id` is nullable: an exam with no domain draws from the whole knowledge base.
+
+**Not decided here, on purpose:** whether a random draw includes mastered cards. Currently all live cards, on the grounds that an exam is not a review session. Revisit with real attempts in front of you.
+
+**Rejected:** a separate question bank divorced from notes (D-005), and exams counting toward the weekly rota or streak (D-035 counts focus sessions — sitting a mock test is not a study session).
+
+### D-049 — An exam answer is a review that does not move the schedule
+Exam answers are written into `review_logs` with `source = 'exam'` and an `exam_attempt_id`. There is no `exam_answers` table.
+
+**Why one table:** D-029 makes `review_logs` *the* retention record, unreconstructable after the fact. A second answer table would make every retention query a `UNION` forever. A `source` column instead gives the metric a lens — default to `'review'`, include exams when you want them.
+
+**Why the schedule stays put:** advancing the ladder on cards that were not due scrambles the capped oldest-first due list (D-009), and a `lupa` in a mock test resetting a month of real progress is a punishment mechanic (rule 6). For `source = 'exam'`, `interval_before` and `interval_after` are written equal — the schedule did not move.
+
+Reversible: making exams advance the schedule is handler logic, not a migration.
+
+**One answer per question per attempt**, enforced by a partial unique index on `(exam_attempt_id, note_id, card_id)` in `00003`, and the insert is `ON CONFLICT DO NOTHING`. Partial because ordinary reviews are *supposed* to repeat — the same card is rated again every time it comes due. Without it a double-clicked rating writes two rows, and since `FinishAttempt` counts rows the score reads 11/10 and the retention metric double-counts that card.
+
+**Rejected:** an `exam_answers` table, and grading exams into the SRS ladder.
+
+### D-050 — Attempts are resumable; the draw is snapshotted
+`exam_attempt_cards` records the question set in presentation order when an attempt starts. Without it a `random` draw exists only in memory, so closing the tab halfway loses every unanswered question, and an edit to `exam_cards` between attempts silently changes what two `fixed` scores are comparing. Remaining questions are the snapshot `LEFT JOIN review_logs` where no log row exists.
+
+`exam_attempt_cards` has **no foreign key to `cards`**, matching `review_logs`. This is history: a hard-deleted note must not take a finished attempt's question list with it. That trades FK-enforced tenancy (D-047) for durability on this one table — the composite FK to `exam_attempts` still pins the owner, and rows are only ever inserted from a user-scoped `SELECT`.
+
+**Rejected:** one-sitting-only attempts. An interruption costing you the run is friction with no upside, and fixed exams would still drift between attempts.
+
+### D-051 — Domains and exams archive; deletion is only for unreferenced rows
+Both carry `archived_at`, and every reference to them is `ON DELETE NO ACTION` — explicit, not a leftover default. A domain with notes or sessions cannot be deleted, only hidden from pickers; a domain created by mistake with nothing attached still deletes cleanly. Same for exams: deleting one with attempts would destroy the score history while the individual answers survive in `review_logs`, which is the worst of both.
+
+Same reasoning as card soft-delete (D-019) — history outlives the thing it points at — and it matters more for `focus_sessions`, where the domain *is* the record.
+
+Handlers map `foreign_key_violation` to a 409 with Indonesian copy, never a 500.
+
+### D-052 — `sessions` is renamed to `auth_sessions`
+Server-side auth sessions and focus sessions both wanted the name. With exam attempts arriving as a third timed thing, "which sessions table" stops being a joke. One migration line, permanent clarity.
+
+---
+
 ## Open questions
 
-None blocking. Two deferred details, both intentionally left until the feature is being built:
+None blocking. Deferred details, intentionally left until the feature is being built:
 
 - **Feynman grading output format** (D-036) — v0.3
 - **Progressive focus N** (D-037) — currently 5, tune against real session data
+- **Per-user settings have nowhere to live.** Progressive focus N, default timer duration, rota preference were constants under one user. Multi-tenant they are per-user, and there is no table or column for them. Needed alongside the domains UI, which shares the surface.
+- **Do random exam draws include mastered cards?** (D-048) — currently yes.

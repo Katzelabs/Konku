@@ -74,7 +74,44 @@ func (s *Server) Routes() http.Handler {
 			})
 
 			r.Post("/sessions", s.handleCreateSession)
-			r.Get("/domains", s.handleListDomains)
+
+			// Domains are per-user and editable (D-046). Deletion only
+			// succeeds for a domain nothing references; archiving is the
+			// normal path (D-051).
+			// Exams are practice tests over existing cards (D-048). Attempts
+			// hang off /attempts rather than nesting under the exam: an
+			// attempt is addressed on its own once it has started, and the
+			// answer path already carries a note and a card.
+			r.Route("/exams", func(r chi.Router) {
+				r.Get("/", s.handleListExams)
+				r.Post("/", s.handleCreateExam)
+				r.Get("/{id}", s.handleGetExam)
+				r.Patch("/{id}", s.handleUpdateExam)
+				r.Delete("/{id}", s.handleDeleteExam)
+				r.Post("/{id}/archive", s.handleArchiveExam)
+				r.Put("/{id}/cards", s.handleSetExamCards)
+				r.Post("/{id}/attempts", s.handleStartAttempt)
+			})
+
+			// The candidate list for pinning a fixed exam's questions.
+			r.Get("/cards", s.handleListCards)
+
+			r.Route("/attempts/{attemptID}", func(r chi.Router) {
+				r.Get("/", s.handleGetAttempt)
+				r.Delete("/", s.handleDeleteAttempt)
+				r.Post("/finish", s.handleFinishAttempt)
+				r.Get("/{noteID}/{cardID}/answer", s.handleAttemptAnswer)
+				r.Post("/{noteID}/{cardID}", s.handleAnswerQuestion)
+			})
+
+			r.Route("/domains", func(r chi.Router) {
+				r.Get("/", s.handleListDomains)
+				r.Post("/", s.handleCreateDomain)
+				r.Patch("/{id}", s.handleUpdateDomain)
+				r.Delete("/{id}", s.handleDeleteDomain)
+				r.Post("/{id}/archive", s.handleArchiveDomain)
+				r.Post("/{id}/unarchive", s.handleUnarchiveDomain)
+			})
 		})
 
 		// Unknown /api paths must return JSON, never the HTML shell.

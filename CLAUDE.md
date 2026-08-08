@@ -16,11 +16,11 @@ Module: `github.com/Katzelabs/Konku` · Go 1.25 · remote `Katzelabs/Konku`
 
 `03-app` is complete: notes, review, session and domain endpoints, and the React app — note list, editor with autosave and preview, review screen, focus timer, capture-at-session-end. The loop runs end to end.
 
-**Next: `docs/tasks/04-ship.md`.**
+**In progress: schema v2** — migration `00002_domains_and_exams.sql` makes domains per-user and adds exams (D-046 → D-052). The migration is written and tested; the store layer, queries, handlers and UI are not. `docs/tasks/04-ship.md` follows.
 
 Note: a card is addressed by note *and* ID (`/api/review/{noteID}/{cardID}`). Card IDs are unique within their note, never within the account.
 
-Scope is the **MVP** in `PRD.md` §8. Cloze/feynman card types, domains UI, full-text search, public signup and password reset are deliberately deferred to v0.2 (D-031, D-038, D-039). **Do not reintroduce them.**
+Scope is the **MVP** in `PRD.md` §8 **plus schema v2**. Cloze/feynman card types, full-text search, public signup and password reset stay deferred to v0.2 (D-031, D-038, D-039). **Do not reintroduce them.** Domains UI is no longer deferred — per-user domains require it (D-046).
 
 ## Read these first
 

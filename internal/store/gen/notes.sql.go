@@ -16,14 +16,14 @@ const createNote = `-- name: CreateNote :one
 
 INSERT INTO notes (user_id, title, content_md, domain_id)
 VALUES ($1, $2, $3, $4)
-RETURNING id, user_id, title, content_md, domain_id, created_at, updated_at, tsv
+RETURNING id, user_id, title, content_md, created_at, updated_at, tsv, domain_id
 `
 
 type CreateNoteParams struct {
-	UserID    uuid.UUID `json:"user_id"`
-	Title     string    `json:"title"`
-	ContentMd string    `json:"content_md"`
-	DomainID  *string   `json:"domain_id"`
+	UserID    uuid.UUID  `json:"user_id"`
+	Title     string     `json:"title"`
+	ContentMd string     `json:"content_md"`
+	DomainID  *uuid.UUID `json:"domain_id"`
 }
 
 // Every query here carries user_id in the WHERE clause.
@@ -45,10 +45,10 @@ func (q *Queries) CreateNote(ctx context.Context, arg CreateNoteParams) (Note, e
 		&i.UserID,
 		&i.Title,
 		&i.ContentMd,
-		&i.DomainID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Tsv,
+		&i.DomainID,
 	)
 	return i, err
 }
@@ -72,7 +72,7 @@ func (q *Queries) DeleteNote(ctx context.Context, arg DeleteNoteParams) (int64, 
 }
 
 const getNote = `-- name: GetNote :one
-SELECT id, user_id, title, content_md, domain_id, created_at, updated_at, tsv FROM notes
+SELECT id, user_id, title, content_md, created_at, updated_at, tsv, domain_id FROM notes
 WHERE id = $1 AND user_id = $2
 `
 
@@ -89,45 +89,16 @@ func (q *Queries) GetNote(ctx context.Context, arg GetNoteParams) (Note, error) 
 		&i.UserID,
 		&i.Title,
 		&i.ContentMd,
-		&i.DomainID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Tsv,
+		&i.DomainID,
 	)
 	return i, err
 }
 
-const listDomains = `-- name: ListDomains :many
-SELECT id, label, color, weekly_quota FROM domains ORDER BY weekly_quota DESC, id
-`
-
-func (q *Queries) ListDomains(ctx context.Context) ([]Domain, error) {
-	rows, err := q.db.Query(ctx, listDomains)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Domain{}
-	for rows.Next() {
-		var i Domain
-		if err := rows.Scan(
-			&i.ID,
-			&i.Label,
-			&i.Color,
-			&i.WeeklyQuota,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listNotes = `-- name: ListNotes :many
-SELECT n.id, n.user_id, n.title, n.content_md, n.domain_id, n.created_at, n.updated_at, n.tsv,
+SELECT n.id, n.user_id, n.title, n.content_md, n.created_at, n.updated_at, n.tsv, n.domain_id,
        (SELECT count(*) FROM cards c
          WHERE c.note_id = n.id AND c.deleted_at IS NULL) AS card_count
 FROM notes n
@@ -147,10 +118,10 @@ type ListNotesRow struct {
 	UserID    uuid.UUID   `json:"user_id"`
 	Title     string      `json:"title"`
 	ContentMd string      `json:"content_md"`
-	DomainID  *string     `json:"domain_id"`
 	CreatedAt time.Time   `json:"created_at"`
 	UpdatedAt time.Time   `json:"updated_at"`
 	Tsv       interface{} `json:"tsv"`
+	DomainID  *uuid.UUID  `json:"domain_id"`
 	CardCount int64       `json:"card_count"`
 }
 
@@ -168,10 +139,10 @@ func (q *Queries) ListNotes(ctx context.Context, arg ListNotesParams) ([]ListNot
 			&i.UserID,
 			&i.Title,
 			&i.ContentMd,
-			&i.DomainID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Tsv,
+			&i.DomainID,
 			&i.CardCount,
 		); err != nil {
 			return nil, err
@@ -191,15 +162,15 @@ SET title      = $3,
     domain_id  = $5,
     updated_at = now()
 WHERE id = $1 AND user_id = $2
-RETURNING id, user_id, title, content_md, domain_id, created_at, updated_at, tsv
+RETURNING id, user_id, title, content_md, created_at, updated_at, tsv, domain_id
 `
 
 type UpdateNoteParams struct {
-	ID        uuid.UUID `json:"id"`
-	UserID    uuid.UUID `json:"user_id"`
-	Title     string    `json:"title"`
-	ContentMd string    `json:"content_md"`
-	DomainID  *string   `json:"domain_id"`
+	ID        uuid.UUID  `json:"id"`
+	UserID    uuid.UUID  `json:"user_id"`
+	Title     string     `json:"title"`
+	ContentMd string     `json:"content_md"`
+	DomainID  *uuid.UUID `json:"domain_id"`
 }
 
 func (q *Queries) UpdateNote(ctx context.Context, arg UpdateNoteParams) (Note, error) {
@@ -216,10 +187,10 @@ func (q *Queries) UpdateNote(ctx context.Context, arg UpdateNoteParams) (Note, e
 		&i.UserID,
 		&i.Title,
 		&i.ContentMd,
-		&i.DomainID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Tsv,
+		&i.DomainID,
 	)
 	return i, err
 }

@@ -243,11 +243,27 @@ func TestNoteValidation(t *testing.T) {
 	})
 
 	t.Run("a known domain is accepted", func(t *testing.T) {
+		math := c.domainID("math")
 		note := c.createNote(map[string]any{
-			"title": "n", "contentMd": "isi", "domainId": "math",
+			"title": "n", "contentMd": "isi", "domainId": math,
 		})
-		if note.DomainID == nil || *note.DomainID != "math" {
-			t.Errorf("domainId = %v, want math", note.DomainID)
+		if note.DomainID == nil || *note.DomainID != math {
+			t.Errorf("domainId = %v, want %s", note.DomainID, math)
+		}
+	})
+
+	// Domains are per-user (D-046). The composite foreign key is what makes
+	// this impossible (D-047); the handler's job is to turn it into a 400
+	// rather than let a constraint violation surface as a 500. The answer is
+	// identical to an unknown domain, so the endpoint cannot be used to
+	// discover that someone else's domain exists (D-039).
+	t.Run("another user's domain is a 400, not a 500", func(t *testing.T) {
+		other := app.newClient(t)
+		res := c.do(http.MethodPost, "/notes", map[string]any{
+			"title": "n", "contentMd": "isi", "domainId": other.domainID("math"),
+		})
+		if res.StatusCode != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", res.StatusCode)
 		}
 	})
 

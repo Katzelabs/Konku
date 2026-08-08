@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react'
 import type { DomainId } from '../../api/types'
 import { clock, today } from '../../lib/date'
 import CaptureDialog from './CaptureDialog'
-import { useDomains, useLogSession } from './queries'
+import { useDomains } from '../domains/queries'
+import { useLogSession } from './queries'
 import { DURATIONS, useTimer } from './useTimer'
 
 export default function TimerPage() {

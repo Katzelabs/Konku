@@ -46,10 +46,15 @@ sql:
           # deal in uuid.UUID.
           - db_type: "uuid"
             go_type: "github.com/google/uuid.UUID"
+          # The object form takes `import` and a bare `type`; putting the full
+          # path in `type` emits it verbatim and generates
+          # `*github.com/google/uuid.UUID`, which is not valid Go. The string
+          # shorthand above parses the path, the object form does not.
           - db_type: "uuid"
             nullable: true
             go_type:
-              type: "github.com/google/uuid.UUID"
+              import: "github.com/google/uuid"
+              type: "UUID"
               pointer: true
 
           - db_type: "timestamptz"

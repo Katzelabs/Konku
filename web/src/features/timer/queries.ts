@@ -1,20 +1,10 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { api } from '../../api/client'
-import type { Domain, DomainId, FocusSession } from '../../api/types'
+import type { DomainId, FocusSession } from '../../api/types'
 
-export const domainKeys = { all: ['domains'] as const }
-
-/**
- * Domains are global reference data seeded by the migration and never edited
- * from the app, so this is fetched once and kept.
- */
-export function useDomains() {
-  return useQuery({
-    queryKey: domainKeys.all,
-    queryFn: () => api.get<Domain[]>('/domains'),
-    staleTime: Infinity,
-  })
-}
+// useDomains moved to features/domains: domains became per-user and editable
+// (D-046), so they are no longer a fetch-once constant that happens to live
+// next to the timer.
 
 export interface SessionInput {
   domainId: DomainId | null

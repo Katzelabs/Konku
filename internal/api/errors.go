@@ -24,6 +24,7 @@ const (
 	CodeBadRequest   = "bad_request"
 	CodeUnauthorized = "unauthorized"
 	CodeNotFound     = "not_found"
+	CodeConflict     = "conflict"
 	CodeRateLimited  = "rate_limited"
 	CodeInternal     = "internal"
 )

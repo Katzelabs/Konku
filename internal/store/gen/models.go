@@ -10,6 +10,13 @@ import (
 	"github.com/google/uuid"
 )
 
+type AuthSession struct {
+	ID        string    `json:"id"`
+	UserID    uuid.UUID `json:"user_id"`
+	ExpiresAt time.Time `json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type Card struct {
 	ID        string     `json:"id"`
 	NoteID    uuid.UUID  `json:"note_id"`
@@ -33,19 +40,65 @@ type CardSchedule struct {
 }
 
 type Domain struct {
-	ID          string `json:"id"`
-	Label       string `json:"label"`
-	Color       string `json:"color"`
-	WeeklyQuota int32  `json:"weekly_quota"`
+	ID          uuid.UUID  `json:"id"`
+	UserID      uuid.UUID  `json:"user_id"`
+	Slug        string     `json:"slug"`
+	Label       string     `json:"label"`
+	Color       string     `json:"color"`
+	WeeklyQuota int32      `json:"weekly_quota"`
+	SortOrder   int32      `json:"sort_order"`
+	ArchivedAt  *time.Time `json:"archived_at"`
+	CreatedAt   time.Time  `json:"created_at"`
+}
+
+type Exam struct {
+	ID               uuid.UUID  `json:"id"`
+	UserID           uuid.UUID  `json:"user_id"`
+	DomainID         *uuid.UUID `json:"domain_id"`
+	Title            string     `json:"title"`
+	Description      string     `json:"description"`
+	Selection        string     `json:"selection"`
+	QuestionCount    *int32     `json:"question_count"`
+	TimeLimitMinutes *int32     `json:"time_limit_minutes"`
+	ArchivedAt       *time.Time `json:"archived_at"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+}
+
+type ExamAttempt struct {
+	ID           uuid.UUID  `json:"id"`
+	ExamID       uuid.UUID  `json:"exam_id"`
+	UserID       uuid.UUID  `json:"user_id"`
+	StartedAt    time.Time  `json:"started_at"`
+	FinishedAt   *time.Time `json:"finished_at"`
+	AttemptDate  time.Time  `json:"attempt_date"`
+	TotalCount   int32      `json:"total_count"`
+	CorrectCount int32      `json:"correct_count"`
+}
+
+type ExamAttemptCard struct {
+	AttemptID uuid.UUID `json:"attempt_id"`
+	UserID    uuid.UUID `json:"user_id"`
+	NoteID    uuid.UUID `json:"note_id"`
+	CardID    string    `json:"card_id"`
+	Position  int32     `json:"position"`
+}
+
+type ExamCard struct {
+	ExamID   uuid.UUID `json:"exam_id"`
+	UserID   uuid.UUID `json:"user_id"`
+	NoteID   uuid.UUID `json:"note_id"`
+	CardID   string    `json:"card_id"`
+	Position int32     `json:"position"`
 }
 
 type FocusSession struct {
-	ID              uuid.UUID `json:"id"`
-	UserID          uuid.UUID `json:"user_id"`
-	DomainID        *string   `json:"domain_id"`
-	DurationMinutes int32     `json:"duration_minutes"`
-	SessionDate     time.Time `json:"session_date"`
-	CompletedAt     time.Time `json:"completed_at"`
+	ID              uuid.UUID  `json:"id"`
+	UserID          uuid.UUID  `json:"user_id"`
+	DurationMinutes int32      `json:"duration_minutes"`
+	SessionDate     time.Time  `json:"session_date"`
+	CompletedAt     time.Time  `json:"completed_at"`
+	DomainID        *uuid.UUID `json:"domain_id"`
 }
 
 type Note struct {
@@ -53,28 +106,23 @@ type Note struct {
 	UserID    uuid.UUID   `json:"user_id"`
 	Title     string      `json:"title"`
 	ContentMd string      `json:"content_md"`
-	DomainID  *string     `json:"domain_id"`
 	CreatedAt time.Time   `json:"created_at"`
 	UpdatedAt time.Time   `json:"updated_at"`
 	Tsv       interface{} `json:"tsv"`
+	DomainID  *uuid.UUID  `json:"domain_id"`
 }
 
 type ReviewLog struct {
-	ID             int64     `json:"id"`
-	NoteID         uuid.UUID `json:"note_id"`
-	CardID         string    `json:"card_id"`
-	UserID         uuid.UUID `json:"user_id"`
-	Rating         string    `json:"rating"`
-	IntervalBefore int32     `json:"interval_before"`
-	IntervalAfter  int32     `json:"interval_after"`
-	ReviewedAt     time.Time `json:"reviewed_at"`
-}
-
-type Session struct {
-	ID        string    `json:"id"`
-	UserID    uuid.UUID `json:"user_id"`
-	ExpiresAt time.Time `json:"expires_at"`
-	CreatedAt time.Time `json:"created_at"`
+	ID             int64      `json:"id"`
+	NoteID         uuid.UUID  `json:"note_id"`
+	CardID         string     `json:"card_id"`
+	UserID         uuid.UUID  `json:"user_id"`
+	Rating         string     `json:"rating"`
+	IntervalBefore int32      `json:"interval_before"`
+	IntervalAfter  int32      `json:"interval_after"`
+	ReviewedAt     time.Time  `json:"reviewed_at"`
+	Source         string     `json:"source"`
+	ExamAttemptID  *uuid.UUID `json:"exam_attempt_id"`
 }
 
 type User struct {

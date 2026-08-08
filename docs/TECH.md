@@ -96,8 +96,9 @@ Commit `internal/web/dist/.gitkeep` — `//go:embed all:dist` is a compile-time 
 
 ```sql
 users            -- id, email, password_hash (argon2id), created_at
-sessions         -- id, user_id, expires_at        (server-side, revocable)
-domains          -- id, label, color, weekly_quota (global, not per-user)
+auth_sessions    -- id, user_id, expires_at        (server-side, revocable)
+domains          -- id, user_id, slug, label, color, weekly_quota,
+                 -- sort_order, archived_at        (per-user, D-046)
 
 notes            -- id, user_id, title, content_md, domain_id,
                  -- created_at, updated_at, tsv (generated), embedding (v0.3)
@@ -109,14 +110,31 @@ card_schedules   -- card_id, user_id, stage, next_review_date, lapses, state
                  -- state: 'learning' | 'mastered'
 
 review_logs      -- card_id, user_id, rating ('ingat'|'lupa'), reviewed_at,
-                 -- interval_before, interval_after
+                 -- interval_before, interval_after,
+                 -- source ('review'|'exam'), exam_attempt_id   (D-049)
 
-focus_sessions   -- id, user_id, domain_id, duration_minutes, completed_at
+focus_sessions   -- id, user_id, domain_id, duration_minutes,
+                 -- session_date, completed_at
+
+exams            -- id, user_id, domain_id?, title, selection ('fixed'|'random'),
+                 -- question_count, time_limit_minutes, archived_at   (D-048)
+exam_cards       -- exam_id, user_id, note_id, card_id, position
+                 -- the pinned set, selection = 'fixed' only
+exam_attempts    -- id, exam_id, user_id, started_at, finished_at,
+                 -- attempt_date, total_count, correct_count
+exam_attempt_cards -- attempt_id, user_id, note_id, card_id, position
+                 -- the draw, snapshotted at start so attempts resume  (D-050)
 ```
+
+There is no `exam_answers` table: an exam answer is a `review_logs` row with `source = 'exam'`, and it never moves `card_schedules` (D-049).
 
 **`user_id` is denormalized onto every owned table** — including `cards`, `card_schedules` and `review_logs`, which could reach it through joins. Deliberate: it keeps every scoped query a single indexed predicate instead of a join-to-check, and it is what makes Postgres RLS a drop-in later (v0.2) rather than a rewrite.
 
 **Ownership is enforced in the `WHERE` clause, never fetch-then-check.** `SELECT ... WHERE id = $1 AND user_id = $2` — a wrong owner returns "not found," so the API cannot leak whether another user's note exists. Every store method takes a `userID` parameter; none of them are callable without one.
+
+**Writes are guarded by composite foreign keys, not by handler discipline** (D-047). The `WHERE` clause protects reads; it does nothing for a request body carrying someone else's `domainId`. Every owned reference therefore carries the owner — `FOREIGN KEY (user_id, domain_id) REFERENCES domains (user_id, id)` — so a cross-tenant write is rejected by Postgres. History tables (`review_logs`, `exam_attempt_cards`) are the deliberate exception: no FK to `cards`, so deleting a note cannot erase retention evidence (D-050).
+
+**Domains and exams archive; they do not delete** (D-051). Every reference is `ON DELETE NO ACTION`, so a referenced row cannot be removed and an unreferenced one still can. Handlers map `foreign_key_violation` to a 409, never a 500.
 
 **`review_logs` is non-negotiable and must exist from day one.** It is what makes the retention metric computable, and it cannot be reconstructed retroactively. Log every single review.
 

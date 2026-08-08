@@ -12,24 +12,26 @@ SELECT * FROM users WHERE id = $1;
 -- name: CountUsers :one
 SELECT count(*) FROM users;
 
--- Sessions are server-side so logout actually revokes access (D-039).
+-- Auth sessions are server-side so logout actually revokes access (D-039).
+-- The table is auth_sessions, not sessions, because focus sessions and exam
+-- attempts both wanted that name (D-052).
 
 -- name: CreateSession :one
-INSERT INTO sessions (id, user_id, expires_at)
+INSERT INTO auth_sessions (id, user_id, expires_at)
 VALUES ($1, $2, $3)
 RETURNING *;
 
 -- name: GetActiveSession :one
 -- Expiry is enforced here rather than in Go, so an expired session can never
 -- be treated as valid by a caller that forgot to check.
-SELECT sqlc.embed(sessions), sqlc.embed(users)
-FROM sessions
-JOIN users ON users.id = sessions.user_id
-WHERE sessions.id = $1
-  AND sessions.expires_at > now();
+SELECT sqlc.embed(auth_sessions), sqlc.embed(users)
+FROM auth_sessions
+JOIN users ON users.id = auth_sessions.user_id
+WHERE auth_sessions.id = $1
+  AND auth_sessions.expires_at > now();
 
 -- name: DeleteSession :exec
-DELETE FROM sessions WHERE id = $1;
+DELETE FROM auth_sessions WHERE id = $1;
 
 -- name: DeleteExpiredSessions :exec
-DELETE FROM sessions WHERE expires_at <= now();
+DELETE FROM auth_sessions WHERE expires_at <= now();

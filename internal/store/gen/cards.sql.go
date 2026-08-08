@@ -119,7 +119,7 @@ func (q *Queries) GetCardWithSchedule(ctx context.Context, arg GetCardWithSchedu
 const insertReviewLog = `-- name: InsertReviewLog :one
 INSERT INTO review_logs (note_id, card_id, user_id, rating, interval_before, interval_after)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, note_id, card_id, user_id, rating, interval_before, interval_after, reviewed_at
+RETURNING id, note_id, card_id, user_id, rating, interval_before, interval_after, reviewed_at, source, exam_attempt_id
 `
 
 type InsertReviewLogParams struct {
@@ -153,6 +153,8 @@ func (q *Queries) InsertReviewLog(ctx context.Context, arg InsertReviewLogParams
 		&i.IntervalBefore,
 		&i.IntervalAfter,
 		&i.ReviewedAt,
+		&i.Source,
+		&i.ExamAttemptID,
 	)
 	return i, err
 }

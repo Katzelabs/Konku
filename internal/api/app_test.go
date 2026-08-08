@@ -138,6 +138,31 @@ func (c *testClient) expect(res *http.Response, want int, dst any) string {
 	return string(raw)
 }
 
+type domainBody struct {
+	ID    string `json:"id"`
+	Slug  string `json:"slug"`
+	Label string `json:"label"`
+}
+
+// domainID resolves one of this user's starter domains by slug.
+//
+// Domains stopped being global text ids like "math" when they became per-user
+// (D-046), so a test cannot hardcode one: every account gets its own rows with
+// their own uuids, seeded by auth.CreateUser.
+func (c *testClient) domainID(slug string) string {
+	c.t.Helper()
+
+	var domains []domainBody
+	c.expect(c.do(http.MethodGet, "/domains", nil), http.StatusOK, &domains)
+	for _, d := range domains {
+		if d.Slug == slug {
+			return d.ID
+		}
+	}
+	c.t.Fatalf("no seeded domain with slug %q", slug)
+	return ""
+}
+
 type noteBody struct {
 	ID        string  `json:"id"`
 	Title     string  `json:"title"`

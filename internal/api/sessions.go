@@ -52,7 +52,8 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, CodeBadRequest, "Durasi sesi tidak masuk akal.")
 		return
 	}
-	if !s.validDomain(w, r, req.DomainID) {
+	domainID, ok := s.parseDomain(w, r, req.DomainID)
+	if !ok {
 		return
 	}
 
@@ -69,7 +70,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 
 	sess, err := s.store.Q().InsertFocusSession(r.Context(), gen.InsertFocusSessionParams{
 		UserID:          user.ID,
-		DomainID:        req.DomainID,
+		DomainID:        domainID,
 		DurationMinutes: int32(req.DurationMinutes),
 		SessionDate:     date,
 	})
@@ -80,7 +81,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusCreated, sessionResponse{
 		ID:              sess.ID.String(),
-		DomainID:        sess.DomainID,
+		DomainID:        uuidString(sess.DomainID),
 		DurationMinutes: sess.DurationMinutes,
 		SessionDate:     string(store.FromTime(sess.SessionDate)),
 		CompletedAt:     sess.CompletedAt,

@@ -61,10 +61,21 @@ func toNoteResponse(n gen.Note) noteResponse {
 		ID:        n.ID.String(),
 		Title:     n.Title,
 		ContentMd: n.ContentMd,
-		DomainID:  n.DomainID,
+		DomainID:  uuidString(n.DomainID),
 		CreatedAt: n.CreatedAt,
 		UpdatedAt: n.UpdatedAt,
 	}
+}
+
+// uuidString renders an optional uuid for JSON. Domains stopped being text
+// slugs when they became per-user (D-046), but the wire contract stays a
+// string — it is now a uuid string rather than "math".
+func uuidString(id *uuid.UUID) *string {
+	if id == nil {
+		return nil
+	}
+	s := id.String()
+	return &s
 }
 
 func (s *Server) handleCreateNote(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +88,11 @@ func (s *Server) handleCreateNote(w http.ResponseWriter, r *http.Request) {
 
 	title := strings.TrimSpace(deref(req.Title))
 	content := deref(req.ContentMd)
-	if !s.validNote(w, r, title, content, req.DomainID) {
+	if !s.validNote(w, title, content) {
+		return
+	}
+	domainID, ok := s.parseDomain(w, r, req.DomainID)
+	if !ok {
 		return
 	}
 	// An untitled note is a normal thing to create — the capture dialog (A7)
@@ -90,7 +105,7 @@ func (s *Server) handleCreateNote(w http.ResponseWriter, r *http.Request) {
 	saved, err := s.store.CreateNoteWithCards(r.Context(), user.ID, store.NoteInput{
 		Title:     title,
 		ContentMd: content,
-		DomainID:  req.DomainID,
+		DomainID:  domainID,
 	}, srs.Today(time.Now()))
 	if err != nil {
 		writeInternal(w, err)
@@ -165,10 +180,14 @@ func (s *Server) handleUpdateNote(w http.ResponseWriter, r *http.Request) {
 		in.ContentMd = *req.ContentMd
 	}
 	if req.DomainID != nil {
-		in.DomainID = req.DomainID
+		domainID, ok := s.parseDomain(w, r, req.DomainID)
+		if !ok {
+			return
+		}
+		in.DomainID = domainID
 	}
 
-	if !s.validNote(w, r, in.Title, in.ContentMd, in.DomainID) {
+	if !s.validNote(w, in.Title, in.ContentMd) {
 		return
 	}
 	if in.Title == "" {
@@ -209,7 +228,7 @@ func (s *Server) handleListNotes(w http.ResponseWriter, r *http.Request) {
 		out = append(out, noteSummary{
 			ID:        n.ID.String(),
 			Title:     n.Title,
-			DomainID:  n.DomainID,
+			DomainID:  uuidString(n.DomainID),
 			CardCount: n.CardCount,
 			UpdatedAt: n.UpdatedAt,
 		})
@@ -221,7 +240,7 @@ func (s *Server) handleListNotes(w http.ResponseWriter, r *http.Request) {
 // validNote checks what the database cannot express as a clean error. A
 // hand-written check rather than struct tags: eight endpoints do not justify a
 // validation framework (D-045).
-func (s *Server) validNote(w http.ResponseWriter, r *http.Request, title, content string, domainID *string) bool {
+func (s *Server) validNote(w http.ResponseWriter, title, content string) bool {
 	if utf8.RuneCountInString(title) > maxTitleLen {
 		writeError(w, http.StatusBadRequest, CodeBadRequest, "Judul terlalu panjang.")
 		return false
@@ -230,29 +249,44 @@ func (s *Server) validNote(w http.ResponseWriter, r *http.Request, title, conten
 		writeError(w, http.StatusBadRequest, CodeBadRequest, "Catatan terlalu panjang.")
 		return false
 	}
-	return s.validDomain(w, r, domainID)
+	return true
 }
 
-// validDomain accepts no domain at all. Domains are static reference data, so
-// checking here turns a foreign-key violation — which would surface as a 500 —
-// into a plain 400.
-func (s *Server) validDomain(w http.ResponseWriter, r *http.Request, domainID *string) bool {
-	if domainID == nil || *domainID == "" {
-		return true
+// parseDomain turns the wire's optional domainId into a uuid, and reports
+// whether it is one of this user's live domains.
+//
+// It is not what enforces tenancy — the composite foreign key on notes is
+// (D-047), and it holds even if this check is forgotten. This exists so an
+// unknown or someone else's domain comes back as a 400 with Indonesian copy
+// instead of a constraint violation surfacing as a 500.
+//
+// An unknown domain and another user's domain give the same answer, so the
+// endpoint cannot be used to discover whether a domain exists (D-039).
+func (s *Server) parseDomain(w http.ResponseWriter, r *http.Request, raw *string) (*uuid.UUID, bool) {
+	if raw == nil || *raw == "" {
+		return nil, true
 	}
 
-	domains, err := s.store.Q().ListDomains(r.Context())
+	id, err := uuid.Parse(*raw)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, CodeBadRequest, "Domain tidak dikenal.")
+		return nil, false
+	}
+
+	user, _ := UserFrom(r.Context())
+	exists, err := s.store.Q().DomainExists(r.Context(), gen.DomainExistsParams{
+		ID:     id,
+		UserID: user.ID,
+	})
 	if err != nil {
 		writeInternal(w, err)
-		return false
+		return nil, false
 	}
-	for _, d := range domains {
-		if d.ID == *domainID {
-			return true
-		}
+	if !exists {
+		writeError(w, http.StatusBadRequest, CodeBadRequest, "Domain tidak dikenal.")
+		return nil, false
 	}
-	writeError(w, http.StatusBadRequest, CodeBadRequest, "Domain tidak dikenal.")
-	return false
+	return &id, true
 }
 
 // deriveTitle takes the first line that carries text. A card line is trimmed

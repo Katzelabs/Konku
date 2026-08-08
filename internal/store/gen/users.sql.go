@@ -25,7 +25,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 
 const createSession = `-- name: CreateSession :one
 
-INSERT INTO sessions (id, user_id, expires_at)
+INSERT INTO auth_sessions (id, user_id, expires_at)
 VALUES ($1, $2, $3)
 RETURNING id, user_id, expires_at, created_at
 `
@@ -36,10 +36,12 @@ type CreateSessionParams struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-// Sessions are server-side so logout actually revokes access (D-039).
-func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
+// Auth sessions are server-side so logout actually revokes access (D-039).
+// The table is auth_sessions, not sessions, because focus sessions and exam
+// attempts both wanted that name (D-052).
+func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (AuthSession, error) {
 	row := q.db.QueryRow(ctx, createSession, arg.ID, arg.UserID, arg.ExpiresAt)
-	var i Session
+	var i AuthSession
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
@@ -73,7 +75,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 }
 
 const deleteExpiredSessions = `-- name: DeleteExpiredSessions :exec
-DELETE FROM sessions WHERE expires_at <= now()
+DELETE FROM auth_sessions WHERE expires_at <= now()
 `
 
 func (q *Queries) DeleteExpiredSessions(ctx context.Context) error {
@@ -82,7 +84,7 @@ func (q *Queries) DeleteExpiredSessions(ctx context.Context) error {
 }
 
 const deleteSession = `-- name: DeleteSession :exec
-DELETE FROM sessions WHERE id = $1
+DELETE FROM auth_sessions WHERE id = $1
 `
 
 func (q *Queries) DeleteSession(ctx context.Context, id string) error {
@@ -91,16 +93,16 @@ func (q *Queries) DeleteSession(ctx context.Context, id string) error {
 }
 
 const getActiveSession = `-- name: GetActiveSession :one
-SELECT sessions.id, sessions.user_id, sessions.expires_at, sessions.created_at, users.id, users.email, users.password_hash, users.created_at
-FROM sessions
-JOIN users ON users.id = sessions.user_id
-WHERE sessions.id = $1
-  AND sessions.expires_at > now()
+SELECT auth_sessions.id, auth_sessions.user_id, auth_sessions.expires_at, auth_sessions.created_at, users.id, users.email, users.password_hash, users.created_at
+FROM auth_sessions
+JOIN users ON users.id = auth_sessions.user_id
+WHERE auth_sessions.id = $1
+  AND auth_sessions.expires_at > now()
 `
 
 type GetActiveSessionRow struct {
-	Session Session `json:"session"`
-	User    User    `json:"user"`
+	AuthSession AuthSession `json:"auth_session"`
+	User        User        `json:"user"`
 }
 
 // Expiry is enforced here rather than in Go, so an expired session can never
@@ -109,10 +111,10 @@ func (q *Queries) GetActiveSession(ctx context.Context, id string) (GetActiveSes
 	row := q.db.QueryRow(ctx, getActiveSession, id)
 	var i GetActiveSessionRow
 	err := row.Scan(
-		&i.Session.ID,
-		&i.Session.UserID,
-		&i.Session.ExpiresAt,
-		&i.Session.CreatedAt,
+		&i.AuthSession.ID,
+		&i.AuthSession.UserID,
+		&i.AuthSession.ExpiresAt,
+		&i.AuthSession.CreatedAt,
 		&i.User.ID,
 		&i.User.Email,
 		&i.User.PasswordHash,

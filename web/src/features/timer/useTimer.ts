@@ -37,6 +37,8 @@ const initial: TimerState = {
   logged: false,
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 /**
  * Restores a timer across a refresh.
  *
@@ -52,6 +54,13 @@ function load(): TimerState {
     const parsed = { ...initial, ...(JSON.parse(raw) as Partial<TimerState>) }
     if (!DURATIONS.includes(parsed.durationMinutes as (typeof DURATIONS)[number])) {
       parsed.durationMinutes = DEFAULT_DURATION
+    }
+    // Domains used to be slugs like "math" and are now per-user uuids (D-046).
+    // A timer left running across the change would post a stale slug and get a
+    // 400 at the one moment that must not fail — the capture prompt. Drop it;
+    // an untagged session is a normal thing.
+    if (parsed.domainId !== null && !UUID.test(parsed.domainId)) {
+      parsed.domainId = null
     }
     if (parsed.status === 'running' && (!parsed.targetAt || Date.now() >= parsed.targetAt)) {
       return { ...parsed, status: 'done', targetAt: null, remainingMs: null }

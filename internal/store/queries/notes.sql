@@ -35,6 +35,3 @@ FROM notes n
 WHERE n.user_id = $1
 ORDER BY n.updated_at DESC
 LIMIT $2 OFFSET $3;
-
--- name: ListDomains :many
-SELECT * FROM domains ORDER BY weekly_quota DESC, id;
