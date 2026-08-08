@@ -32,12 +32,9 @@ function useCategoryMutation<V, R>(fn: (v: V) => Promise<R>) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: fn,
-    // The braces matter. An arrow that *returns* the invalidate promise makes
-    // TanStack Query await the refetch before running the callbacks passed to
-    // `mutate` — and after a delete that refetch asks for the row just
-    // deleted, gets a 404, and rejects. The caller's onSuccess is then skipped
-    // entirely, so a confirm dialog never closes and a peek stays open on a
-    // thing that is gone. Invalidate, return nothing.
+    // Braces, not a returned promise — see the frontend conventions in
+    // CLAUDE.md. Returning the invalidate makes mutate's callbacks wait on a
+    // refetch that may 404 on the row just deleted, and then never run.
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: categoryKeys.all })
     },

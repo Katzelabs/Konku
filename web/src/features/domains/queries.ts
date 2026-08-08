@@ -44,7 +44,12 @@ function useDomainMutation<V>(fn: (v: V) => Promise<unknown>) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: fn,
-    onSuccess: () => qc.invalidateQueries({ queryKey: domainKeys.all }),
+    // Braces, not a returned promise — see the frontend conventions in
+    // CLAUDE.md. Returning the invalidate makes mutate's callbacks wait on a
+    // refetch that may 404 on the row just deleted, and then never run.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: domainKeys.all })
+    },
   })
 }
 

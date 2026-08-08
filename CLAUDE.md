@@ -70,6 +70,8 @@ go run ./cmd/konku seed-user -email you@example.com
 
 **Frontend.** Feature folders under `web/src/features/`. TanStack Query owns all server state; `useState`/Zustand only for genuine client state, which is essentially just the timer (D-044). A 401 from `/auth/me` is a normal "signed out" answer, not an error.
 
+A mutation's `onSuccess` must **never return the invalidate promise** — always braces: `onSuccess: () => { qc.invalidateQueries(...) }`. TanStack Query awaits whatever that callback returns before it runs the callbacks passed to `mutate`, so returning it makes them wait on a refetch. After a delete that refetch asks for the row just deleted, takes a 404 and rejects, and the `mutate` callbacks are then skipped entirely. The symptom is a dialog that will not close and a panel left open on something that no longer exists — the mutation itself succeeded, so nothing looks wrong on the server side.
+
 **Design system.** Tailwind **v4** — tokens live in `web/src/styles/theme.css`, there is no `tailwind.config.js`. Build screens from `web/src/components/ui/`; a raw palette class (`bg-slate-100`, `text-red-500`) or a hex value in a feature folder is a bug in the token file, not a shortcut. Domain colours are the one exception — they are user data. See `docs/DESIGN.md` and the live style guide at `/design` (dev only). The palette has no green and no `success` token on purpose (D-054).
 
 ## Stack

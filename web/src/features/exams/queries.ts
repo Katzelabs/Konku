@@ -47,7 +47,12 @@ export function useCreateExam() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (input: ExamInput) => api.post<Exam>('/exams', input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: examKeys.all }),
+    // Braces, not a returned promise — see the frontend conventions in
+    // CLAUDE.md. Returning the invalidate makes mutate's callbacks wait on a
+    // refetch that may 404 on the row just deleted, and then never run.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: examKeys.all })
+    },
   })
 }
 
@@ -55,7 +60,12 @@ export function useArchiveExam() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => api.post<Exam>(`/exams/${id}/archive`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: examKeys.all }),
+    // Braces, not a returned promise — see the frontend conventions in
+    // CLAUDE.md. Returning the invalidate makes mutate's callbacks wait on a
+    // refetch that may 404 on the row just deleted, and then never run.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: examKeys.all })
+    },
   })
 }
 
@@ -63,7 +73,12 @@ export function useDeleteExam() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => api.del<void>(`/exams/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: examKeys.all }),
+    // Braces, not a returned promise — see the frontend conventions in
+    // CLAUDE.md. Returning the invalidate makes mutate's callbacks wait on a
+    // refetch that may 404 on the row just deleted, and then never run.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: examKeys.all })
+    },
   })
 }
 
@@ -157,7 +172,12 @@ export function useSetExamCards() {
   return useMutation({
     mutationFn: (v: { examId: string; cards: { cardId: string }[] }) =>
       api.put<void>(`/exams/${v.examId}/cards`, { cards: v.cards }),
-    onSuccess: (_r, v) => qc.invalidateQueries({ queryKey: examKeys.detail(v.examId) }),
+    // Braces, not a returned promise — see the frontend conventions in
+    // CLAUDE.md. Returning the invalidate makes mutate's callbacks wait on a
+    // refetch that may 404 on the row just deleted, and then never run.
+    onSuccess: (_r, v) => {
+      qc.invalidateQueries({ queryKey: examKeys.detail(v.examId) })
+    },
   })
 }
 
@@ -165,6 +185,11 @@ export function useDiscardAttempt() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (attemptId: string) => api.del<void>(`/attempts/${attemptId}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: examKeys.all }),
+    // Braces, not a returned promise — see the frontend conventions in
+    // CLAUDE.md. Returning the invalidate makes mutate's callbacks wait on a
+    // refetch that may 404 on the row just deleted, and then never run.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: examKeys.all })
+    },
   })
 }

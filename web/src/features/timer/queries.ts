@@ -39,6 +39,11 @@ export function useLogSession() {
     mutationFn: (input: SessionInput) => api.post<FocusSession>('/sessions', input),
     // The session that just ended has to appear in the log underneath the
     // timer without a refresh — it is the one entry the user is looking for.
-    onSuccess: () => qc.invalidateQueries({ queryKey: sessionKeys.all }),
+    // Braces, not a returned promise — see the frontend conventions in
+    // CLAUDE.md. Returning the invalidate makes mutate's callbacks wait on a
+    // refetch that may 404 on the row just deleted, and then never run.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: sessionKeys.all })
+    },
   })
 }
