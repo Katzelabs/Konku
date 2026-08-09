@@ -75,7 +75,7 @@ func (s *Server) requireUser(next http.Handler) http.Handler {
 		user, err := s.auth.Resolve(r.Context(), cred)
 		if err != nil {
 			if !errors.Is(err, auth.ErrNoSession) {
-				writeInternal(w, err)
+				writeInternal(w, r, err)
 				return
 			}
 			// Distinguish "never signed in" from "session no longer valid".
@@ -130,7 +130,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 				"Email atau kata sandi salah.")
 			return
 		}
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -147,7 +147,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if err := s.auth.Logout(r.Context(), credential(r)); err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 	s.clearSessionCookie(w)

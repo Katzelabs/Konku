@@ -58,7 +58,7 @@ func (s *Server) handleDueCards(w http.ResponseWriter, r *http.Request) {
 
 	today, err := store.ToTime(srs.Today(time.Now()))
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -72,7 +72,7 @@ func (s *Server) handleDueCards(w http.ResponseWriter, r *http.Request) {
 		})
 	})
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -83,7 +83,7 @@ func (s *Server) handleDueCards(w http.ResponseWriter, r *http.Request) {
 		})
 	})
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -119,7 +119,7 @@ func (s *Server) handleCardAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -201,7 +201,7 @@ func (s *Server) handleRate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 

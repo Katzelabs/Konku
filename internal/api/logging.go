@@ -36,6 +36,20 @@ func reqInfoFrom(ctx context.Context) *reqInfo {
 	return info
 }
 
+// routePattern is the chi route the request matched, e.g. "/api/notes/{id}".
+//
+// Always this, never r.URL.Path: the raw path carries resource uuids, and as a
+// metric label it would mint a time series per row. Only known once chi has
+// matched, so callers read it after the handler returns.
+func routePattern(r *http.Request) string {
+	if rc := chi.RouteContext(r.Context()); rc != nil {
+		if p := rc.RoutePattern(); p != "" {
+			return p
+		}
+	}
+	return "unmatched"
+}
+
 // requestLogger logs one line per request and publishes the request ID.
 //
 // What is deliberately absent: the body, any header, the query string, and the
@@ -60,16 +74,8 @@ func requestLogger(next http.Handler) http.Handler {
 		start := time.Now()
 
 		defer func() {
-			// The routed pattern is only known once chi has matched, so this
-			// has to be read after the handler returns.
-			route := "unmatched"
-			if rc := chi.RouteContext(r.Context()); rc != nil {
-				if p := rc.RoutePattern(); p != "" {
-					route = p
-				}
-			}
-
 			status := ww.Status()
+			route := routePattern(r)
 			attrs := []any{
 				"request_id", id,
 				"method", r.Method,

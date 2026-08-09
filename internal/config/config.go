@@ -12,7 +12,7 @@ import (
 )
 
 type Config struct {
-	Port        string
+	Port string
 	// DatabaseURL is the application pool, connecting as the non-owner
 	// konku_app role so that FORCE ROW LEVEL SECURITY applies to it (D-059).
 	DatabaseURL string
@@ -34,6 +34,15 @@ type Config struct {
 	SessionTTL time.Duration
 	// Dev relaxes cookie Secure so http://localhost works.
 	Dev bool
+	// SentryDSN enables error tracking. Empty disables it, which is the
+	// normal case in dev and in tests — sentry-go treats an empty DSN as a
+	// no-op client, so no call site has to check whether Sentry is on.
+	SentryDSN string
+	// SentryRelease tags every event, so a regression points at a deploy
+	// rather than at a date (D-062).
+	SentryRelease string
+	// SentryEnvironment separates the laptop from the box.
+	SentryEnvironment string
 	// MetricsAddr is where /metrics is served, on its own listener.
 	//
 	// Bound to loopback by default and never to 0.0.0.0: pool saturation and
@@ -45,12 +54,15 @@ type Config struct {
 
 func Load() (Config, error) {
 	c := Config{
-		Port:          env("PORT", "8080"),
+		Port:                 env("PORT", "8080"),
 		DatabaseURL:          os.Getenv("DATABASE_URL"),
 		MigrationDatabaseURL: os.Getenv("MIGRATION_DATABASE_URL"),
-		SessionSecret: os.Getenv("SESSION_SECRET"),
-		AllowSignup:   env("ALLOW_SIGNUP", "false") == "true",
-		Dev:           env("DEV", "false") == "true",
+		SessionSecret:        os.Getenv("SESSION_SECRET"),
+		AllowSignup:          env("ALLOW_SIGNUP", "false") == "true",
+		Dev:                  env("DEV", "false") == "true",
+		SentryDSN:            os.Getenv("SENTRY_DSN"),
+		SentryRelease:        env("SENTRY_RELEASE", "dev"),
+		SentryEnvironment:    env("SENTRY_ENVIRONMENT", "development"),
 		// LookupEnv, not env(): METRICS_ADDR is documented as "empty disables
 		// it", and env() returns its fallback for an empty value, so setting
 		// METRICS_ADDR= would have started the listener anyway.

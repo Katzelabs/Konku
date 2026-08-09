@@ -59,6 +59,12 @@ func run() error {
 		return err
 	}
 
+	// Before the server starts, so a panic during startup is still reported.
+	if err := api.InitSentry(cfg); err != nil {
+		return err
+	}
+	defer api.FlushSentry()
+
 	app := api.NewServer(cfg, st, auth.NewService(st, cfg.SessionTTL), web.FS())
 
 	srv := &http.Server{

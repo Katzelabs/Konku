@@ -161,7 +161,30 @@ is the pool to its cap" without adding code.
 
 ## P3 — Error tracking
 
-`todo` · ~3 h · needs P2
+`done` (instrumentation) · `todo` (a real DSN, and the three destinations in
+`04-ship.md` S5) · ~3 h · needs P2
+
+**Verified without a DSN, on purpose.** `sentry-go` accepts a custom
+`Transport`, so the tests capture the event exactly as it would go over the
+wire — same `BeforeSend`, same serialisation — and assert on the payload.
+"No PII in it" is therefore a check that runs on every CI build rather than
+something eyeballed once in the Sentry UI. A real DSN adds proof of delivery,
+which is Sentry's job rather than this codebase's.
+
+**Two mechanisms, and both were mutation-tested** (hard rule 9). Nothing that
+could carry PII is ever attached — the event is built field by field, and no
+code path reaches for `r.Header` or `r.Body`. `BeforeSend` then strips
+`Request`, `User` beyond the id, breadcrumbs and `ServerName` on the way out
+anyway. Breaking the first alone leaves the suite green; breaking both turns it
+red. The second exists precisely because the first depends on everyone
+remembering.
+
+`/api/__panic` exercises the panic path end to end and is **dev-gated with a
+test asserting it 404s when `Dev=false`** — an endpoint that reliably burns a
+500 is a denial-of-service primitive handed over for free.
+
+chi's `Recoverer` is replaced, so a panic now returns the standard error shape
+with its request id instead of a stack trace on stdout.
 
 A `Recoverer` writing to stdout on a box nobody reads is not an alert.
 
@@ -180,6 +203,18 @@ them, wire the destinations at deploy:
 1. `/readyz` failing 2 min → the service is down
 2. 5xx above 0.1% for 5 min → something shipped broken
 3. The nightly backup did not complete → the only one otherwise entirely silent
+
+**Decided here, so the instrumentation supports them:**
+
+| Alert | Signal it reads | Exists? |
+|---|---|---|
+| Service down | `/readyz` non-200 for 2 min | yes — P2, and it fails on schema drift as well as an unreachable database |
+| Shipped broken | `konku_http_requests_total{status="5xx"}` over the same by `status` | yes — P2, and the class label makes it a ratio rather than a regex |
+| Backup did not complete | absence of a fresh dump in `$KONKU_BACKUP_DIR` | **no** — `make db-dump` is manual, so there is nothing to miss yet. The alert and the schedule arrive together in `04-ship.md` |
+
+The third is the one worth stating plainly: it is currently the only one of
+the three with no signal behind it, because nothing runs the backup on a
+timer. Writing the alert now would be writing an alert that can never fire.
 
 A fourth waits for something real to justify it. An alert that fires and gets
 ignored is worse than no alert.

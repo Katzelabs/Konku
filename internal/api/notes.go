@@ -128,7 +128,7 @@ func (s *Server) handleCreateNote(w http.ResponseWriter, r *http.Request) {
 		CategoryIDs: categoryIDs,
 	})
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -151,7 +151,7 @@ func (s *Server) handleGetNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -174,7 +174,7 @@ func (s *Server) noteCategoryIDs(w http.ResponseWriter, r *http.Request, noteID 
 		})
 	})
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return nil, false
 	}
 
@@ -215,7 +215,7 @@ func (s *Server) handleUpdateNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -267,7 +267,7 @@ func (s *Server) handleUpdateNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -291,7 +291,7 @@ func (s *Server) handleDeleteNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -312,7 +312,7 @@ func (s *Server) handleRestoreNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -333,7 +333,7 @@ func (s *Server) handleDeleteNotes(w http.ResponseWriter, r *http.Request) {
 
 	count, err := s.store.DeleteNotes(r.Context(), user.ID, ids)
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -350,7 +350,7 @@ func (s *Server) handleRestoreNotes(w http.ResponseWriter, r *http.Request) {
 
 	count, err := s.store.RestoreNotes(r.Context(), user.ID, ids)
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -386,7 +386,7 @@ func (s *Server) handleListNotes(w http.ResponseWriter, r *http.Request) {
 		})
 	})
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -464,7 +464,7 @@ func (s *Server) parseDomain(w http.ResponseWriter, r *http.Request, raw *string
 		})
 	})
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return nil, false
 	}
 	if !exists {
@@ -523,7 +523,7 @@ func (s *Server) parseCategories(w http.ResponseWriter, r *http.Request, raw *[]
 			writeError(w, http.StatusBadRequest, CodeBadRequest, "Kategori tidak dikenal.")
 			return nil, false
 		} else if err != nil {
-			writeInternal(w, err)
+			writeInternal(w, r, err)
 			return nil, false
 		}
 		out = append(out, id)

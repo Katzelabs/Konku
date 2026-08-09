@@ -77,7 +77,7 @@ func (s *Server) handleListExams(w http.ResponseWriter, r *http.Request) {
 		return q.ListExams(r.Context(), user.ID)
 	})
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -113,7 +113,7 @@ func (s *Server) handleGetExam(w http.ResponseWriter, r *http.Request) {
 		})
 	})
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -139,7 +139,7 @@ func (s *Server) handleGetExam(w http.ResponseWriter, r *http.Request) {
 			})
 		})
 		if err != nil {
-			writeInternal(w, err)
+			writeInternal(w, r, err)
 			return
 		}
 		for _, c := range pinned {
@@ -190,7 +190,7 @@ func (s *Server) handleCreateExam(w http.ResponseWriter, r *http.Request) {
 		})
 	})
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -258,7 +258,7 @@ func (s *Server) handleUpdateExam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -281,7 +281,7 @@ func (s *Server) handleArchiveExam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -308,7 +308,7 @@ func (s *Server) handleDeleteExam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 	if rows == 0 {
@@ -380,7 +380,7 @@ func (s *Server) handleSetExamCards(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -445,7 +445,7 @@ func (s *Server) examOr404(w http.ResponseWriter, r *http.Request) (gen.Exam, bo
 		return gen.Exam{}, false
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return gen.Exam{}, false
 	}
 	return exam, true
@@ -541,7 +541,7 @@ func (s *Server) handleStartAttempt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -582,7 +582,7 @@ func (s *Server) attemptDetailFor(w http.ResponseWriter, r *http.Request, a gen.
 		})
 	})
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return nil
 	}
 
@@ -626,7 +626,7 @@ func (s *Server) handleAttemptAnswer(w http.ResponseWriter, r *http.Request) {
 		})
 	})
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 	for _, row := range rows {
@@ -679,7 +679,7 @@ func (s *Server) handleAnswerQuestion(w http.ResponseWriter, r *http.Request) {
 		})
 	})
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 	if !belongs {
@@ -703,7 +703,7 @@ func (s *Server) handleAnswerQuestion(w http.ResponseWriter, r *http.Request) {
 			State:      srs.State(row.CardSchedule.State),
 		})
 	} else if !errors.Is(err, pgx.ErrNoRows) {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -716,7 +716,7 @@ func (s *Server) handleAnswerQuestion(w http.ResponseWriter, r *http.Request) {
 			ExamAttemptID: &attempt.ID,
 		})
 	}); err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -744,7 +744,7 @@ func (s *Server) handleFinishAttempt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -767,7 +767,7 @@ func (s *Server) handleDeleteAttempt(w http.ResponseWriter, r *http.Request) {
 		return q.DeleteAttempt(r.Context(), gen.DeleteAttemptParams{ID: id, UserID: user.ID})
 	})
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 	if rows == 0 {
@@ -795,7 +795,7 @@ func (s *Server) attemptOr404(w http.ResponseWriter, r *http.Request) (gen.ExamA
 		return gen.ExamAttempt{}, false
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return gen.ExamAttempt{}, false
 	}
 	return attempt, true

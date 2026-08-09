@@ -82,9 +82,13 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 //
 // The log line and the response now share a request ID, which is the entire
 // point: the user can read theirs off the screen and it finds this line.
-func writeInternal(w http.ResponseWriter, err error) {
+func writeInternal(w http.ResponseWriter, r *http.Request, err error) {
 	id := requestIDOf(w)
 	slog.Error("request failed", "request_id", id, "error", err)
+
+	// The same failure reaches Sentry with the same request id, so a log
+	// line, an event and the user's screenshot all name each other (D-062).
+	reportError(r, err, id)
 
 	msg := "Terjadi kesalahan di server. Coba lagi sebentar lagi."
 	if id != "" {

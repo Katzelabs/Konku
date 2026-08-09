@@ -111,7 +111,7 @@ func (s *Server) handleListCards(w http.ResponseWriter, r *http.Request) {
 		})
 	})
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -162,7 +162,7 @@ func (s *Server) handleCreateCard(w http.ResponseWriter, r *http.Request) {
 		CategoryIDs: categoryIDs,
 	}, srs.Today(time.Now()))
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -185,7 +185,7 @@ func (s *Server) handleGetCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -220,7 +220,7 @@ func (s *Server) handleUpdateCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -266,7 +266,7 @@ func (s *Server) handleUpdateCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -289,7 +289,7 @@ func (s *Server) handleDeleteCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -310,7 +310,7 @@ func (s *Server) handleRestoreCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -331,7 +331,7 @@ func (s *Server) handleDeleteCards(w http.ResponseWriter, r *http.Request) {
 
 	count, err := s.store.DeleteCards(r.Context(), user.ID, ids)
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -348,7 +348,7 @@ func (s *Server) handleRestoreCards(w http.ResponseWriter, r *http.Request) {
 
 	count, err := s.store.RestoreCards(r.Context(), user.ID, ids)
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -365,7 +365,7 @@ func (s *Server) cardCategoryIDs(w http.ResponseWriter, r *http.Request, cardID 
 		})
 	})
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return nil, false
 	}
 

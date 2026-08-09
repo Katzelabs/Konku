@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -68,12 +67,7 @@ func (m *metrics) middleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(ww, r)
 
-		route := "unmatched"
-		if rc := chi.RouteContext(r.Context()); rc != nil {
-			if p := rc.RoutePattern(); p != "" {
-				route = p
-			}
-		}
+		route := routePattern(r)
 
 		m.durations.WithLabelValues(route, r.Method).Observe(time.Since(start).Seconds())
 		m.requests.WithLabelValues(route, r.Method, statusText(ww.status)).Inc()

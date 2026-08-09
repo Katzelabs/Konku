@@ -48,7 +48,9 @@ func (s *Server) Routes() http.Handler {
 	// produces a request log line with its status, and both are above the
 	// metrics middleware so a panicked request is counted as the 500 it is.
 	r.Use(requestLogger)
-	r.Use(middleware.Recoverer)
+	// Ours, not chi's: a panic has to become a Sentry event and the standard
+	// error shape, not a stack trace on stdout (D-062).
+	r.Use(recoverer)
 	r.Use(s.metrics.middleware)
 	r.Use(middleware.Timeout(30 * time.Second))
 
@@ -75,6 +77,17 @@ func (s *Server) Routes() http.Handler {
 			r.Use(s.requireUser)
 
 			r.Get("/auth/me", s.handleMe)
+
+			// A deliberately panicking route, dev only, so the panic path can
+			// be exercised end to end: recoverer, the standard error shape,
+			// the request id, and the Sentry event (06 P3). Registered inside
+			// requireUser so the event carries a user id, and behind the Dev
+			// flag so it cannot exist in production.
+			if s.cfg.Dev {
+				r.Get("/__panic", func(http.ResponseWriter, *http.Request) {
+					panic("deliberate panic from /api/__panic")
+				})
+			}
 
 			// Deleting is soft on both resources, so both carry a restore and
 			// both lists take ?deleted=true for the Terhapus view. The bulk

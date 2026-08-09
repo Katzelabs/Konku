@@ -30,7 +30,7 @@ func spaHandler(dist fs.FS) http.HandlerFunc {
 				fileServer.ServeHTTP(w, r)
 				return
 			} else if !errors.Is(err, fs.ErrNotExist) {
-				writeInternal(w, err)
+				writeInternal(w, r, err)
 				return
 			}
 		}

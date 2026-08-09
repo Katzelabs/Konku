@@ -77,7 +77,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		})
 	})
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -102,7 +102,7 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		})
 	})
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 

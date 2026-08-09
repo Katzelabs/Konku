@@ -57,7 +57,7 @@ func (s *Server) handleListCategories(w http.ResponseWriter, r *http.Request) {
 		})
 	})
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -107,7 +107,7 @@ func (s *Server) handleCreateCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -119,7 +119,7 @@ func (s *Server) handleCreateCategory(w http.ResponseWriter, r *http.Request) {
 		})
 	})
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -156,7 +156,7 @@ func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, CodeConflict, "Sudah ada kategori dengan nama itu.")
 		return
 	} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -170,7 +170,7 @@ func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -211,7 +211,7 @@ func (s *Server) setCategoryArchived(w http.ResponseWriter, r *http.Request, arc
 		return
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 
@@ -240,7 +240,7 @@ func (s *Server) handleDeleteCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeInternal(w, err)
+		writeInternal(w, r, err)
 		return
 	}
 	if rows == 0 {
