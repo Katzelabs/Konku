@@ -4,6 +4,19 @@
 > Tujuannya supaya Claude Code paham *kenapa* app ini dibuat, bukan cuma *apa* yang dibuat.
 > File teknisnya ada di `PRD.md`.
 
+> **Catatan (D-057).** Konku sekarang dibangun dan dioperasikan seperti produk
+> production — ada akun publik, pengguna nyata, dan kewajiban yang menyertainya.
+> Yang **tidak** berubah: semua aturan di file ini. "Tidak menghukum", tanpa
+> gamifikasi, tanpa fitur sosial, streak mingguan bukan harian, capture cost di
+> atas segalanya — semuanya naik status dari *preferensi pribadi* menjadi
+> **batasan produk**. Aturan-aturan itu tidak pernah dibenarkan oleh fakta
+> penggunanya cuma satu orang; dasarnya adalah apa yang benar-benar bikin orang
+> bertahan belajar.
+>
+> File ini sendiri tetap ditulis dari sudut pandang satu orang, dan itu
+> disengaja — desainnya memang untuk orang itu dan orang yang belajar dengan
+> cara serupa, bukan untuk pasar yang lebih luas.
+
 ---
 
 ## Siapa saya

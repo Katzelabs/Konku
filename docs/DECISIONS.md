@@ -1,6 +1,6 @@
 # DECISIONS.md — Decision Log
 
-**Last updated:** 2026-08-08
+**Last updated:** 2026-08-09
 
 Why this file exists: `PRD.md` and `TECH.md` say *what* was decided. This says *why*, and what was **rejected**. Without it, every future session re-litigates the same trade-offs and quietly reintroduces the things that were deliberately cut.
 
@@ -422,11 +422,366 @@ Notes get `deleted_at` (migration `00005`) and the same delete/restore pair card
 
 ---
 
+## Production
+
+Konku stops being a personal instance. The entries below reverse deferrals that
+were correct while there was one user and one operator, and are wrong the
+moment a stranger's data is on the box. Each names what it supersedes — none of
+the earlier reasoning was mistaken at the time, and the ones that still hold
+(dependency discipline, no framework, no Redis) are amended rather than
+discarded.
+
+### D-057 — Konku is a product; the personal-project framing is retired *(amends D-021, D-030, D-031; supersedes PRD §3's "solo project, single user")*
+
+The app is built and operated to the same standard as any production service:
+CI as a merge gate, observability, security hardening, tested restores, public
+accounts. "It's just for me" stops being an argument that closes a discussion.
+
+**What does not change.** Every constraint in `GOALS.md` — never punitive, no
+gamification, no social, no losable streaks, capture cost above all — was
+recorded as a personal preference and is hereby promoted to a **product
+constraint**. They were never justified by the audience being one person; they
+were justified by what actually makes people keep learning. Rule 6 and rule 7
+outrank growth metrics, and there are no growth metrics.
+
+**What the earlier framing got right, kept.** D-030 and D-031 exist to manage
+one failure mode: spending months building a learning tool and none learning.
+That risk is real and does not go away because the ambition grew. It is now
+managed by ordering rather than by cutting — the personal instance ships and
+enters daily use **before** the hardening work starts, and public signup opens
+after both. Hardening an app nobody uses is the same mistake wearing a
+production badge.
+
+**What is explicitly still out.** Teams, sharing, collaboration, leaderboards,
+public profiles, billing, ads, referral mechanics, engagement notifications.
+"Production" means the engineering and operational bar, not a growth surface.
+Multi-tenant, never social (D-039) is unchanged.
+
+**Rejected:** rewriting the product to be broadly appealing. The design is for
+one specific person and people who learn like them; widening the audience by
+softening the opinions produces the mediocre SRS app the market already has.
+
+### D-058 — Public accounts ship complete: signup, email verification, reset, and deletion *(supersedes D-039's deferral)*
+
+D-039 deferred signup and password reset to v0.2 on the grounds that a signup
+flow is cheap to add anytime. That is still true, and it is now due. All four
+land together because three of them alone is a trap.
+
+- **Signup** behind `ALLOW_SIGNUP`, which stays a flag and becomes `true` only
+  on the public instance. A private deployment keeps the seeded-account model.
+- **Email verification is required before the account is usable.** Not
+  politeness — the reset link is the only account-recovery path there is, so an
+  unverified address is an account that can never be recovered, and an
+  unverified signup form is a free spam relay pointed at whatever address an
+  attacker types.
+- **Password reset** with single-use, expiring (1 h), constant-time-compared
+  tokens stored hashed. The response is identical for a known and an unknown
+  address — the same existence-leak reasoning as D-039's not-found rule.
+- **Account deletion** that actually deletes, self-service, with the export
+  offered first (D-066).
+
+Every one of these is an unauthenticated write path, so every one of them is
+rate-limited — by IP *and* by target address, because per-IP alone lets an
+attacker mailbomb one victim from many hosts.
+
+**Rejected:** OAuth/social login (a third-party dependency in the auth path and
+an account-recovery story you do not own, for a login screen used once a
+month). Magic links as the only login method (an email round trip on every
+sign-in is friction, and rule 7 is about friction). Unverified accounts with a
+"verify later" nag.
+
+### D-059 — Postgres RLS becomes a launch requirement *(supersedes D-039's deferral)*
+
+D-039 called RLS "defense in depth, worth doing, not worth blocking the MVP
+on." Correct then: the only data a scoping bug could leak was the operator's
+own. With strangers' notes in the same tables, one forgotten `WHERE user_id`
+stops being a bug and becomes a breach that must be disclosed. Defense in depth
+is exactly what you want backing a rule enforced by 60-odd hand-written
+queries.
+
+**Shape.** `user_id` is already denormalized onto every owned table (D-039)
+precisely so this would be a drop-in. Policy per table on
+`user_id = current_setting('app.user_id')::uuid`, with the setting applied by
+`SET LOCAL` inside the transaction that runs the query.
+
+**The cost, stated honestly.** `SET LOCAL` is transaction-scoped, which means
+every user-scoped read has to run inside a transaction — today most of them do
+not. That is a real store-layer change (`WithUserTx`), not a migration you
+apply and forget. It is worth it because the alternative is trusting that
+nobody ever writes one query wrong, forever.
+
+**Two details that make the difference between RLS and the appearance of it:**
+
+- **`ALTER TABLE ... FORCE ROW LEVEL SECURITY`.** A table owner bypasses its
+  own policies by default, and the app currently connects as `konku`, which
+  owns the database. Without `FORCE`, every policy is inert and every test of
+  them passes.
+- **Prefer a non-owner application role** (`konku_app`, `GRANT`-ed only what it
+  needs) so migrations and the running app are not the same principal.
+
+**Rejected:** RLS *instead of* the `WHERE` clause. The application predicate
+stays primary; two independent mechanisms is the entire point, and a single
+mechanism configured in the database is not obviously safer than a single
+mechanism written in Go.
+
+### D-060 — Browser hardening: same-site cookies and origin checks, not a CSRF token
+
+State-changing requests are same-origin (D-040) JSON. Given
+`SameSite=Lax; Secure; HttpOnly`, a cross-site form POST does not carry the
+session cookie, and a cross-site `fetch` with `Content-Type: application/json`
+is preflighted and refused. So the control is:
+
+- `SameSite=Lax` (not `Strict` — `Strict` breaks arriving from an email link,
+  which D-058 makes a normal path), `Secure`, `HttpOnly`
+- Reject state-changing requests whose `Origin` is present and not our own, and
+  whose `Content-Type` is not `application/json`
+- **Session ID rotates on login**, so a fixated session cannot survive
+  authentication
+- A **sessions screen**: list active sessions, revoke one or all. Server-side
+  sessions (D-039) already make this a query rather than a feature.
+
+Plus the middleware that should have existed anyway: a security-header set
+(`Content-Security-Policy` with no `unsafe-inline`, `frame-ancestors 'none'`,
+`X-Content-Type-Options`, `Referrer-Policy`, HSTS from Caddy) and
+`http.MaxBytesReader` on every request body — an unbounded note body is a
+memory-exhaustion primitive once anyone can sign up.
+
+**Rejected:** a synchroniser-token CSRF layer. It defends against an attack the
+cookie policy already blocks, and it costs a token endpoint, a client-side
+cache, and a class of confusing 403s. **Revisit if** the API ever accepts
+form-encoded bodies or the frontend ever moves to a second origin — either one
+makes the token necessary and this entry wrong.
+
+### D-061 — CI is a merge gate, and deploys come from tags
+
+There is no `.github/` in this repository. Every rule this project has —
+`internal/srs` imports nothing, sqlc must not drift, the frontend must
+typecheck — is enforced by remembering to run `make check`. Rules that are not
+enforced decay, and that was already the argument in the CI task (written as
+`04-ship.md` S1, moved to `06` P0 by D-067) before
+production was on the table.
+
+- **On every PR:** `go vet`, `go test ./...` against a Postgres service
+  container, `make check-pure`, sqlc drift check, `npm ci && npm run typecheck
+  && npm run build`, frontend tests, e2e (D-063), `govulncheck`, and a Docker
+  image build so a broken Dockerfile is caught before deploy day.
+- **Branch protection on `main`:** green CI required, no direct pushes.
+- **Deploys are from tags**, from an image built by CI and pinned by digest —
+  never `docker build` on the VPS, which makes "what is running in production"
+  unanswerable.
+- **Migrations still run at startup** (D-039 era) and that stays, but the
+  rollout is now: back up, deploy, verify `/readyz`, and keep the previous
+  image tag one command away.
+
+**Rejected:** a self-hosted runner (a second thing to patch and monitor).
+Auto-deploy on merge to `main` — the gap between "tests pass" and "I want this
+live" is where a solo operator's judgment lives.
+
+### D-062 — Observability is a feature, not a log file *(amends D-045)*
+
+Today: JSON `slog` to stdout, chi's `RequestID`, and `/api/health` pinging the
+database. That is a genuinely good start and it is not enough to operate
+against — nothing records how long a request took, nothing counts errors, and
+nothing tells you a deploy broke something except a user noticing.
+
+- **Request logging middleware** — method, path, status, duration, request ID,
+  and `user_id` when there is one. Never the body, never a token, never an
+  email address.
+- **The request ID travels**: into every log line, into the error response, so
+  a user's screenshot maps to a log query.
+- **`/healthz` (liveness — process is up) and `/readyz` (readiness — database
+  reachable, migrations applied)** as separate endpoints. The current
+  `/api/health` conflates them, which means a database blip looks like a dead
+  container to anything watching.
+- **Metrics** at `/metrics`, bound to localhost or behind auth: request rate,
+  latency histogram, error rate, pgx pool saturation. Pool saturation is the
+  one that matters — D-028 caps the pool at 10 on a shared instance, so
+  exhaustion is the most likely way this app falls over.
+- **Error tracking** (Sentry or equivalent) on panics and 5xx, because a
+  `Recoverer` that writes to stdout on a box you do not read is not an alert.
+- **Alerts**, few and real: readiness failing, error rate spiking, the nightly
+  backup not completing. An alert that fires and is ignored is worse than none.
+
+**On D-045.** The dependency budget is amended, not abandoned — see D-065.
+
+**Rejected:** distributed tracing. One process, one database, no service mesh;
+a latency histogram plus the request ID answers everything a trace would, at a
+fraction of the setup. Revisit when the MCP server becomes a second deployable.
+
+### D-063 — The test pyramid gets a frontend and an end-to-end tier
+
+Backend coverage is real — 13 test files, table-driven, integration tests
+against a live Postgres. **The frontend has zero tests**, and it is where the
+last two classes of shipped bug came from: the login rate limiter that was
+broken because nothing asserted a 429, and the mutation `onSuccess` returning
+the invalidate promise so a delete dialog would not close.
+
+- **Frontend unit tests** (Vitest + Testing Library) on the parts where a bug
+  is silent: the date helpers, the API client's error path, the timer
+  reduction, and every mutation's cache-invalidation behaviour.
+- **End-to-end** (Playwright) on the core loop only — sign in, write a note,
+  write a card, review it, complete a session, capture at session end — plus
+  the signup → verify → reset flow from D-058, since an auth flow that half
+  works locks people out of their own data. Runs in CI against the compose
+  stack.
+- **A tenancy test that is not optional.** One test per resource asserting that
+  user B gets 404, not 403, for user A's row (D-039). With RLS landing (D-059),
+  the same suite runs as the proof that policies are actually on.
+- **Migration tests**: every migration applies to an empty database and to the
+  previous release's schema.
+
+**No coverage-percentage gate.** A number gates test volume, not test quality,
+and the tests that would have caught both shipped bugs are behavioural
+assertions that a percentage would not have demanded. The gate is the list
+above.
+
+**Rejected:** snapshot tests of rendered components (they assert that the
+markup is what the markup is, and get regenerated the moment they fail).
+
+### D-064 — A backup is a restore you have performed
+
+`04-ship.md` S3 already says this and already requires one test restore. As a
+production obligation it becomes recurring and specific:
+
+- Nightly per-database `pg_dump -Fc konku` (never `pg_dumpall` — restoring
+  Konku must not disturb the other projects on the shared instance), pushed off
+  the box with restic to B2/S3, encrypted, with a retention policy.
+- **The backup job alerts on failure.** A silent cron that stopped working in
+  March is the standard way this goes wrong.
+- **A restore drill every quarter**, into the dev database, timed, with the
+  result written down. What is being measured is RTO, and an untested dump is a
+  hypothesis.
+- **Stated targets:** RPO 24 h, RTO 4 h. Modest on purpose — they are what a
+  solo operator can actually honour, and a target you miss quietly is worse
+  than a modest one you meet.
+- The git vault export (D-026) remains the second line of defense and now has
+  cards to export too (D-055).
+
+### D-065 — The dependency budget is amended, not abandoned *(amends D-045)*
+
+D-045's reasoning stands: a dependency list defensible line by line is worth
+having, and Viper/zap/Wire/struct-tag validators still buy nothing here.
+Production adds obligations that stdlib genuinely does not cover, so the
+budget is revised rather than waived.
+
+**Added, each with the obligation that justifies it:**
+
+| Dependency | Obligation | Why not stdlib |
+|---|---|---|
+| `prometheus/client_golang` | D-062 metrics | Histograms and an exposition format, hand-rolled badly otherwise |
+| `getsentry/sentry-go` | D-062 error tracking | Panic capture, grouping, release tagging |
+| Playwright (dev only) | D-063 e2e | No stdlib equivalent; never ships in the image |
+| Vitest + Testing Library (dev only) | D-063 frontend tests | Same |
+
+**Still stdlib, deliberately:** logging (`log/slog`), config (`os.Getenv`),
+email (`net/smtp` against a transactional provider — an SDK for "send one
+templated message" is not a trade worth making), validation, rate limiting
+(`internal/api/ratelimit.go` already works and sweeps its own map), and
+dependency injection.
+
+**The rule that replaces "keep it short":** a new dependency names the
+production obligation it discharges, or it does not go in. "Everyone uses it"
+is not an obligation.
+
+### D-066 — Real users create obligations a personal instance did not have
+
+The moment someone else's data is in the database, several things stop being
+optional and none of them are features anyone will thank you for.
+
+- **Data export.** Every account can export everything — notes, cards,
+  schedules, review history — as markdown plus JSON. It is a legal expectation,
+  it is the thing that makes "no lock-in" true rather than a claim, and the
+  vault export (D-026) is most of the work already.
+- **Deletion means deletion**, within 30 days, including from backups as they
+  age out. Offer the export first.
+- **A privacy policy and terms** that say what is actually stored (email,
+  password hash, everything the user wrote), how long, and who it is shared
+  with (nobody). Short and honest; a copy-pasted boilerplate is worse than
+  none because it describes a product that is not this one.
+- **Per-user quotas.** Note and card counts, request rate, body size. Not
+  monetisation — an unbounded free write path on a shared VPS is an outage
+  waiting for one bad actor, and D-028 caps the pool at 10 for the sake of
+  every other project on that box.
+- **A status and incident path.** When it breaks, users find out from the
+  operator, and an incident gets written down. Two sentences in a file counts.
+- **Secrets are not in `.env` on the VPS forever.** `SESSION_SECRET`, the
+  database password, and the SMTP credentials get a rotation procedure, and
+  rotating the session secret must invalidate sessions rather than crash the
+  process.
+
+**Rejected:** collecting analytics on how people study. It would be the single
+most useful data set this product could have, and it is other people's learning
+history. The retention metric is computed per-account, for that account, and
+never aggregated across users.
+
+### D-067 — Everything buildable is built before the VPS is touched *(re-orders 04, 06, 07; amends D-057's ordering rule)*
+
+D-057 sequenced the work as ship → use → harden → open, and put `04-ship.md`
+before `06`. That conflated two different things: **deploying** and **using**.
+Once separated, almost nothing in the remaining plan actually needs the box.
+
+**What genuinely requires the VPS**, and it is a short list:
+
+- The deploy itself — Caddy, HTTPS, the shared network, provisioning the
+  database and role
+- Nightly backups running as a cron *on the box*
+- **Email deliverability** — SPF, DKIM and DMARC on a real sending domain
+- The half of the release pipeline where the VPS pulls an image by digest
+- Uptime monitoring and alert routing against a real endpoint
+- Opening signup
+- **Phone access**, which is what makes daily review realistic rather than
+  theoretical
+
+Everything else — RLS, observability code, security headers, the whole test
+pyramid, CI, signup, verification, reset, export, deletion, quotas — is local
+work against `docker-compose.yml`, which is self-contained precisely so that
+`git clone && docker compose up -d db` works (D-024).
+
+**So the order becomes:** local hardening (`06`) → local account work (`07`
+L1–L9) → deploy and the VPS-only residue (`04`) → open signup (`07` L10).
+
+**Three things follow from this, and the first is the one that matters:**
+
+1. **Daily use starts now, locally.** D-030's failure mode — months building a
+   learning tool, none learning — is not solved by deferring the work, it is
+   solved by *using the app*. The gate was never "deploy"; it was "use it".
+   Running `make dev-web` daily satisfies most of what S4 was protecting, and
+   it must start immediately rather than at the end of 68 hours of hardening.
+   It is a **weaker** gate than the original, honestly: reviewing on a phone
+   during dead time is the behaviour the product depends on, and a laptop-only
+   instance does not test it. That part of S4 survives the deploy.
+2. **The local database becomes real data, so it needs a real backup.** Weeks
+   of notes accumulating in a Docker volume with no dump is exactly the failure
+   this project's thesis exists to prevent. A local `pg_dump` is now part of
+   `06`, not something that waits for the VPS.
+3. **Deliverability stays an untested unknown until the deploy.** It is the
+   one item here with a real chance of surprising you late, because
+   verification mail landing in spam is an outage that looks like a signup bug.
+   Build against a local SMTP catcher, and treat the first real send as a task
+   with its own risk rather than a formality.
+
+**RLS gets cheaper, not riskier.** Doing it before there is production data was
+already the argument in `06` P1; this ordering strengthens it.
+
+**Rejected:** deploying a bare MVP first "to have something live." It buys a URL
+and costs a second migration path — schema changes from `07` L1 would then run
+against real data instead of dev data, which is the same reasoning that put 05
+before 04 in the first place.
+
+---
+
 ## Open questions
 
 None blocking. Deferred details, intentionally left until the feature is being built:
 
 - **Feynman grading output format** (D-036) — v0.3
 - **Progressive focus N** (D-037) — currently 5, tune against real session data
-- **Per-user settings have nowhere to live.** Progressive focus N, default timer duration, rota preference were constants under one user. Multi-tenant they are per-user, and there is no table or column for them. Needed alongside the domains UI, which shares the surface.
+- **Per-user settings have nowhere to live.** Progressive focus N, default timer duration, rota preference were constants under one user. Multi-tenant they are per-user, and there is no table or column for them. Needed alongside the domains UI, which shares the surface. **Now blocking** — D-058's account screen and D-066's export both need somewhere to hang.
 - **Do random exam draws include mastered cards?** (D-048) — currently yes.
+
+Opened by the production shift (D-057 – D-066):
+
+- **Which transactional email provider** (D-058). Needs to be one whose free tier survives a hobby-scale launch and whose deliverability does not put verification mail in spam — which is an outage that looks like a signup bug. Decide when writing the signup flow, not before.
+- **What bounds the cost of an open signup** (D-066). Quotas cap storage; they do not cap the number of accounts. Invite codes, a waitlist, and "open and watch" are all defensible; the answer depends on how the launch actually goes.
+- **The rate limiter is per-process** (`internal/api/ratelimit.go`). Correct for one container, wrong the moment there are two, and D-023 rejected Redis for a problem that did not exist yet. It exists once a second instance does — not before, and running two instances is not currently planned.
+- **How much of `GOALS.md` survives having other users.** It is written in the first person about one person's constraints, and D-057 promotes its rules to product constraints without rewriting it. Whether it becomes a product-principles document or stays a personal one that the principles cite is unresolved.

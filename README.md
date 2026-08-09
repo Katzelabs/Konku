@@ -3,13 +3,17 @@
 **Konku** — *Konsisten-ku*, "my consistency". The name is the thesis: small
 consistency beats occasional intensity.
 
-Personal learning system. One job: **nothing you learn disappears silently.**
+Learning system. One job: **nothing you learn disappears silently.**
 
-Markdown notes with flashcards embedded inline, a spaced-repetition scheduler
-over those cards, a focus timer that feeds capture, and (later) MCP access so
-Claude can read and write the knowledge base directly.
+Markdown notes, flashcards as their own feature, a spaced-repetition scheduler
+over those cards, exams over the cards you already have, a focus timer that
+feeds capture, and (later) MCP access so Claude can read and write the
+knowledge base directly. Notes and cards share categories and domains; neither
+contains the other.
 
-Go + Postgres + React, one binary, self-hosted.
+Multi-tenant, never social — an account is an isolated private knowledge base.
+
+Go + Postgres + React, one binary, self-hostable.
 
 ## Quick start
 
@@ -39,7 +43,6 @@ make check          # vet, typecheck, tests, purity check
 ```
 cmd/konku/          server binary + seed-user
 internal/
-  card/             ★ PURE — parse cards from markdown, stable IDs
   srs/              ★ PURE — the spaced-repetition scheduler
   auth/             argon2id, server-side sessions, middleware
   store/            Postgres; every method takes a userID
@@ -48,29 +51,39 @@ internal/
   web/              embeds the built frontend
 migrations/         goose
 web/                the React app (Vite writes into internal/web/dist)
-docs/               GOALS · PRD · TECH · DECISIONS · backlog.csv
+docs/               GOALS · PRD · TECH · DECISIONS · DESIGN · tasks/
 ```
 
 ## The rules that matter
 
-- **`card/` and `srs/` import nothing from `internal/`.** They carry the
-  product's value and must stay trivially testable. `make check-pure` enforces
-  it.
-- **Cards are matched by stable ID, never by content.** Matching by content
-  means fixing a typo destroys that card's review history.
-- **Note update and card sync commit in one transaction.**
+- **`srs/` imports nothing from `internal/`.** It carries the product's value
+  and must stay trivially testable. `make check-pure` enforces it.
+- **Editing a card's text never resets its schedule.** A card is a uuid, and
+  an edit is an `UPDATE` — fixing a typo must not destroy review history.
+- **A note or card and its category links commit in one transaction.**
 - **Every query is scoped by `user_id` in the `WHERE` clause**, never
   fetch-then-check — a wrong owner gets "not found", not a probe-able 403.
 - **Dates are local `YYYY-MM-DD` strings, never UTC.** An 11pm session belongs
   to that day.
 - **Never punitive.** No guilt copy, no losable streaks, no gamification.
 - **User-facing copy in Bahasa Indonesia. Code, comments, docs in English.**
+- **Every guarantee has two mechanisms or it is a hope** — tenancy is the
+  `WHERE` clause *and* RLS, cross-tenant writes are validated *and* blocked by
+  composite foreign keys.
+
+## Status
+
+The MVP is built and the loop runs end to end. What follows is hardening it to
+a production standard (`06`), building the account surface (`07` L1–L9),
+deploying (`04`), and opening signup (`07` L10) — in that order, deliberately.
+Everything before the deploy is local work against `docker-compose.yml`.
 
 ## Docs
 
 Read `docs/GOALS.md` first — it explains why this exists. `docs/DECISIONS.md`
 records what was decided *and what was rejected*; check it before proposing
 anything, because a lot of obvious-seeming ideas were cut deliberately.
+D-057 – D-066 are why this is built like a production service.
 
-`docs/tasks/` is the MVP execution plan — start at
+`docs/tasks/` is the execution plan — start at
 [`docs/tasks/README.md`](docs/tasks/README.md).
