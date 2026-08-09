@@ -55,14 +55,34 @@ func run() error {
 
 	// Fatal on purpose: serving against a half-migrated schema produces errors
 	// that look like application bugs.
-	if err := st.Migrate(ctx); err != nil {
+	if err := st.Migrate(ctx, cfg.MigrationDatabaseURL); err != nil {
 		return err
 	}
 
+	app := api.NewServer(cfg, st, auth.NewService(st, cfg.SessionTTL), web.FS())
+
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.NewServer(cfg, st, auth.NewService(st, cfg.SessionTTL), web.FS()).Routes(),
+		Handler:           app.Routes(),
 		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	// /metrics gets its own listener, bound to loopback (D-062). Failing to
+	// bind it must not stop the application from serving: metrics are how you
+	// find out something is wrong, not something the product needs to work.
+	var metricsSrv *http.Server
+	if cfg.MetricsAddr != "" {
+		metricsSrv = &http.Server{
+			Addr:              cfg.MetricsAddr,
+			Handler:           app.MetricsHandler(),
+			ReadHeaderTimeout: 10 * time.Second,
+		}
+		go func() {
+			slog.Info("metrics listening", "addr", cfg.MetricsAddr)
+			if err := metricsSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				slog.Error("metrics listener failed", "error", err)
+			}
+		}()
 	}
 
 	// Shut down cleanly so in-flight requests finish and, later, the pgx pool
@@ -78,6 +98,11 @@ func run() error {
 		slog.Info("shutting down")
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
+		if metricsSrv != nil {
+			// Closed first and without waiting: a scrape in flight is not
+			// worth delaying the shutdown of the thing serving users.
+			_ = metricsSrv.Close()
+		}
 		if err := srv.Shutdown(ctx); err != nil {
 			slog.Error("graceful shutdown failed", "error", err)
 		}

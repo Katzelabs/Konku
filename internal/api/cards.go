@@ -98,15 +98,17 @@ func (s *Server) handleListCards(w http.ResponseWriter, r *http.Request) {
 		query = &q
 	}
 
-	rows, err := s.store.Q().ListCards(r.Context(), gen.ListCardsParams{
-		UserID: user.ID,
-		// The Terhapus view, off unless asked for. The exam picker never asks
-		// for it: a deleted card must not be pinnable as a question.
-		Deleted:    boolQuery(r, "deleted"),
-		DomainID:   domainID,
-		CategoryID: categoryID,
-		Query:      query,
-		Limit:      int32(intParam(r, "limit", cardListLimit, 1, cardListLimit)),
+	rows, err := scoped(s, r, func(q *gen.Queries) ([]gen.ListCardsRow, error) {
+		return q.ListCards(r.Context(), gen.ListCardsParams{
+			UserID: user.ID,
+			// The Terhapus view, off unless asked for. The exam picker never asks
+			// for it: a deleted card must not be pinnable as a question.
+			Deleted:    boolQuery(r, "deleted"),
+			DomainID:   domainID,
+			CategoryID: categoryID,
+			Query:      query,
+			Limit:      int32(intParam(r, "limit", cardListLimit, 1, cardListLimit)),
+		})
 	})
 	if err != nil {
 		writeInternal(w, err)
@@ -175,7 +177,9 @@ func (s *Server) handleGetCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	card, err := s.store.Q().GetCard(r.Context(), gen.GetCardParams{ID: id, UserID: user.ID})
+	card, err := scoped(s, r, func(q *gen.Queries) (gen.Card, error) {
+		return q.GetCard(r.Context(), gen.GetCardParams{ID: id, UserID: user.ID})
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeNotFound(w)
 		return
@@ -208,7 +212,9 @@ func (s *Server) handleUpdateCard(w http.ResponseWriter, r *http.Request) {
 
 	// PATCH is partial and UpdateCard replaces the row, so absent fields come
 	// from the stored card. This read also gives the 404 before any work.
-	current, err := s.store.Q().GetCard(r.Context(), gen.GetCardParams{ID: id, UserID: user.ID})
+	current, err := scoped(s, r, func(q *gen.Queries) (gen.Card, error) {
+		return q.GetCard(r.Context(), gen.GetCardParams{ID: id, UserID: user.ID})
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeNotFound(w)
 		return
@@ -353,8 +359,10 @@ func (s *Server) handleRestoreCards(w http.ResponseWriter, r *http.Request) {
 func (s *Server) cardCategoryIDs(w http.ResponseWriter, r *http.Request, cardID uuid.UUID) ([]uuid.UUID, bool) {
 	user, _ := UserFrom(r.Context())
 
-	rows, err := s.store.Q().ListCategoriesForCard(r.Context(), gen.ListCategoriesForCardParams{
-		CardID: cardID, UserID: user.ID,
+	rows, err := scoped(s, r, func(q *gen.Queries) ([]gen.Category, error) {
+		return q.ListCategoriesForCard(r.Context(), gen.ListCategoriesForCardParams{
+			CardID: cardID, UserID: user.ID,
+		})
 	})
 	if err != nil {
 		writeInternal(w, err)

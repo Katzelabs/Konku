@@ -47,7 +47,7 @@ type ratingRequest struct {
 }
 
 type ratingResponse struct {
-	Stage int32 `json:"stage"`
+	Stage int32  `json:"stage"`
 	State string `json:"state"`
 	// Null once mastered: the card is no longer scheduled.
 	NextReviewDate *string `json:"nextReviewDate"`
@@ -64,19 +64,23 @@ func (s *Server) handleDueCards(w http.ResponseWriter, r *http.Request) {
 
 	limit := intParam(r, "limit", srs.DefaultDueLimit, 1, 100)
 
-	rows, err := s.store.Q().ListDueCards(r.Context(), gen.ListDueCardsParams{
-		UserID: user.ID,
-		Today:  today,
-		Limit:  int32(limit),
+	rows, err := scoped(s, r, func(q *gen.Queries) ([]gen.ListDueCardsRow, error) {
+		return q.ListDueCards(r.Context(), gen.ListDueCardsParams{
+			UserID: user.ID,
+			Today:  today,
+			Limit:  int32(limit),
+		})
 	})
 	if err != nil {
 		writeInternal(w, err)
 		return
 	}
 
-	total, err := s.store.Q().CountDueCards(r.Context(), gen.CountDueCardsParams{
-		UserID: user.ID,
-		Today:  today,
+	total, err := scoped(s, r, func(q *gen.Queries) (int64, error) {
+		return q.CountDueCards(r.Context(), gen.CountDueCardsParams{
+			UserID: user.ID,
+			Today:  today,
+		})
 	})
 	if err != nil {
 		writeInternal(w, err)
@@ -105,8 +109,10 @@ func (s *Server) handleCardAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	row, err := s.store.Q().GetCardWithSchedule(r.Context(), gen.GetCardWithScheduleParams{
-		ID: cardID, UserID: user.ID,
+	row, err := scoped(s, r, func(q *gen.Queries) (gen.GetCardWithScheduleRow, error) {
+		return q.GetCardWithSchedule(r.Context(), gen.GetCardWithScheduleParams{
+			ID: cardID, UserID: user.ID,
+		})
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeNotFound(w)
@@ -149,7 +155,7 @@ func (s *Server) handleRate(w http.ResponseWriter, r *http.Request) {
 	today := srs.Today(time.Now())
 
 	var next srs.Schedule
-	err := s.store.WithTx(r.Context(), func(q *gen.Queries) error {
+	err := scopedExec(s, r, func(q *gen.Queries) error {
 		row, err := q.GetCardWithSchedule(r.Context(), gen.GetCardWithScheduleParams{
 			ID: cardID, UserID: user.ID,
 		})

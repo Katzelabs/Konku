@@ -55,7 +55,7 @@ func seedUser(args []string) error {
 	}
 	defer st.Close()
 
-	if err := st.Migrate(ctx); err != nil {
+	if err := st.Migrate(ctx, cfg.MigrationDatabaseURL); err != nil {
 		return err
 	}
 

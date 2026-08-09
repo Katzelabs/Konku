@@ -13,7 +13,17 @@ import (
 
 type Config struct {
 	Port        string
+	// DatabaseURL is the application pool, connecting as the non-owner
+	// konku_app role so that FORCE ROW LEVEL SECURITY applies to it (D-059).
 	DatabaseURL string
+	// MigrationDatabaseURL is the owner, used once at startup and then closed.
+	//
+	// Two principals so that migrations and the running app are not the same
+	// role: the app has no DDL rights at all, so a SQL injection in a handler
+	// cannot reach ALTER TABLE, and it cannot disable a policy it is subject
+	// to. Empty falls back to DatabaseURL, which is correct only where the two
+	// roles are the same.
+	MigrationDatabaseURL string
 	// SessionSecret signs session cookies. Must be set in production.
 	SessionSecret string
 	// AllowSignup gates public registration. Off by default: the correct
@@ -24,15 +34,27 @@ type Config struct {
 	SessionTTL time.Duration
 	// Dev relaxes cookie Secure so http://localhost works.
 	Dev bool
+	// MetricsAddr is where /metrics is served, on its own listener.
+	//
+	// Bound to loopback by default and never to 0.0.0.0: pool saturation and
+	// request latency are operational data, and a separate socket cannot be
+	// exposed by a reverse-proxy misconfiguration the way a route on the main
+	// mux can (D-062). Empty disables it.
+	MetricsAddr string
 }
 
 func Load() (Config, error) {
 	c := Config{
 		Port:          env("PORT", "8080"),
-		DatabaseURL:   os.Getenv("DATABASE_URL"),
+		DatabaseURL:          os.Getenv("DATABASE_URL"),
+		MigrationDatabaseURL: os.Getenv("MIGRATION_DATABASE_URL"),
 		SessionSecret: os.Getenv("SESSION_SECRET"),
 		AllowSignup:   env("ALLOW_SIGNUP", "false") == "true",
 		Dev:           env("DEV", "false") == "true",
+		// LookupEnv, not env(): METRICS_ADDR is documented as "empty disables
+		// it", and env() returns its fallback for an empty value, so setting
+		// METRICS_ADDR= would have started the listener anyway.
+		MetricsAddr: lookup("METRICS_ADDR", "127.0.0.1:9090"),
 	}
 
 	days, err := strconv.Atoi(env("SESSION_TTL_DAYS", "30"))
@@ -55,6 +77,15 @@ func Load() (Config, error) {
 
 func env(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+// lookup distinguishes "unset" from "set to empty", for the settings where
+// empty is a meaningful value rather than an absent one.
+func lookup(key, fallback string) string {
+	if v, ok := os.LookupEnv(key); ok {
 		return v
 	}
 	return fallback

@@ -65,6 +65,11 @@ type Querier interface {
 	// The table is auth_sessions, not sessions, because focus sessions and exam
 	// attempts both wanted that name (D-052).
 	CreateSession(ctx context.Context, arg CreateSessionParams) (AuthSession, error)
+	// The id is supplied rather than defaulted so the caller knows the identity
+	// before the row exists. Account creation runs inside WithUserTx, and
+	// app.user_id has to be set before the INSERT for the users WITH CHECK policy
+	// to pass and for the starter domains to be insertable in the same
+	// transaction (D-046, D-059).
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	// Discards a run. The snapshot goes with it, but the answers stay in
 	// review_logs with exam_attempt_id set to NULL — retention evidence is not

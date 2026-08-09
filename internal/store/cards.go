@@ -43,7 +43,7 @@ type CardInput struct {
 func (s *Store) CreateCard(ctx context.Context, userID uuid.UUID, in CardInput, today srs.Date) (gen.Card, error) {
 	var out gen.Card
 
-	err := s.WithTx(ctx, func(q *gen.Queries) error {
+	err := s.WithUserTx(ctx, userID, func(q *gen.Queries) error {
 		card, err := q.CreateCard(ctx, gen.CreateCardParams{
 			UserID:   userID,
 			DomainID: in.DomainID,
@@ -80,7 +80,7 @@ func (s *Store) CreateCard(ctx context.Context, userID uuid.UUID, in CardInput, 
 func (s *Store) UpdateCard(ctx context.Context, userID, cardID uuid.UUID, in CardInput) (gen.Card, error) {
 	var out gen.Card
 
-	err := s.WithTx(ctx, func(q *gen.Queries) error {
+	err := s.WithUserTx(ctx, userID, func(q *gen.Queries) error {
 		card, err := q.UpdateCard(ctx, gen.UpdateCardParams{
 			ID:       cardID,
 			UserID:   userID,
@@ -129,7 +129,9 @@ func (s *Store) RestoreCard(ctx context.Context, userID, cardID uuid.UUID) error
 // deleted, or somebody else's do not match, so the count can be lower than the
 // number asked for without that being an error.
 func (s *Store) DeleteCards(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) (int64, error) {
-	rows, err := s.q.SoftDeleteCards(ctx, gen.SoftDeleteCardsParams{UserID: userID, Ids: ids})
+	rows, err := UserQuery(ctx, s, userID, func(q *gen.Queries) (int64, error) {
+		return q.SoftDeleteCards(ctx, gen.SoftDeleteCardsParams{UserID: userID, Ids: ids})
+	})
 	if err != nil {
 		return 0, fmt.Errorf("store: deleting cards: %w", err)
 	}
@@ -137,7 +139,9 @@ func (s *Store) DeleteCards(ctx context.Context, userID uuid.UUID, ids []uuid.UU
 }
 
 func (s *Store) RestoreCards(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) (int64, error) {
-	rows, err := s.q.RestoreCards(ctx, gen.RestoreCardsParams{UserID: userID, Ids: ids})
+	rows, err := UserQuery(ctx, s, userID, func(q *gen.Queries) (int64, error) {
+		return q.RestoreCards(ctx, gen.RestoreCardsParams{UserID: userID, Ids: ids})
+	})
 	if err != nil {
 		return 0, fmt.Errorf("store: restoring cards: %w", err)
 	}

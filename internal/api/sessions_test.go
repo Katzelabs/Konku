@@ -49,8 +49,9 @@ func TestSessionDateComesFromTheClient(t *testing.T) {
 
 	// And it is stored as a date, with no time-of-day component to drift.
 	var stored string
-	if err := c.app.store.Pool().QueryRow(c.app.ctx,
-		"SELECT session_date::text FROM focus_sessions WHERE id = $1", sess.ID).Scan(&stored); err != nil {
+	if err := c.scanAs(
+		"SELECT session_date::text FROM focus_sessions WHERE id = $1",
+		[]any{sess.ID}, &stored); err != nil {
 		t.Fatalf("reading the stored session: %v", err)
 	}
 	if stored != string(yesterday) {

@@ -8,8 +8,10 @@ package store
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Katzelabs/Konku/internal/store/gen"
@@ -34,6 +36,10 @@ const maxConnLifetime = 5 * time.Minute
 type Store struct {
 	pool *pgxpool.Pool
 	q    *gen.Queries
+
+	// schemaVersion is the version Migrate settled on, read by /readyz.
+	// Atomic because readiness is served concurrently with startup in tests.
+	schemaVersion atomic.Int64
 }
 
 // Q returns the generated queries bound to the pool.
@@ -69,6 +75,80 @@ func (s *Store) WithTx(ctx context.Context, fn func(*gen.Queries) error) error {
 		return fmt.Errorf("store: commit: %w", err)
 	}
 	return nil
+}
+
+// WithUserTx runs fn in a transaction scoped to one user's rows by RLS.
+//
+// This is the mechanism behind every policy in migration 00006 (D-059).
+// Postgres evaluates `current_setting('app.user_id')` per statement, and
+// SET LOCAL is transaction-scoped, so a user-scoped query has to run inside a
+// transaction — which is why almost every read in this application moved into
+// one. That cost was stated up front and paid deliberately: the alternative is
+// trusting that nobody, ever, writes one of ~70 queries without its WHERE
+// clause.
+//
+// The application predicate stays in the SQL regardless. RLS backs it up; it
+// does not replace it (hard rule 9).
+func (s *Store) WithUserTx(ctx context.Context, userID uuid.UUID, fn func(*gen.Queries) error) error {
+	if userID == uuid.Nil {
+		// Fail loudly rather than opening a transaction that can see nothing
+		// and reporting it as an empty result set.
+		return fmt.Errorf("store: WithUserTx called with the nil user id")
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("store: begin: %w", err)
+	}
+	defer func() {
+		// Rollback after a successful Commit is a no-op, so this is safe as
+		// unconditional cleanup and survives a panic in fn.
+		_ = tx.Rollback(ctx)
+	}()
+
+	// SET LOCAL does not accept bind parameters — `SET LOCAL app.user_id = $1`
+	// is a syntax error. set_config with local=true is the parameterised
+	// equivalent, and taking a parameter is what keeps this off the string
+	// concatenation path.
+	if _, err := tx.Exec(ctx,
+		"select set_config('app.user_id', $1, true)", userID.String(),
+	); err != nil {
+		return fmt.Errorf("store: setting app.user_id: %w", err)
+	}
+
+	// fn's error is returned unwrapped: callers match on pgx.ErrNoRows to turn
+	// a missing row into a 404, and wrapping here would break every one.
+	if err := fn(s.q.WithTx(tx)); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("store: commit: %w", err)
+	}
+	return nil
+}
+
+// UserQuery is WithUserTx for the common case: one query returning one value.
+//
+// A package-level function because Go does not allow type parameters on
+// methods. Without it every single-query handler would grow a four-line
+// closure and a pre-declared variable, which is a lot of noise across the
+// roughly fifty call sites this change touches.
+func UserQuery[T any](ctx context.Context, s *Store, userID uuid.UUID, fn func(*gen.Queries) (T, error)) (T, error) {
+	var out T
+	err := s.WithUserTx(ctx, userID, func(q *gen.Queries) error {
+		var err error
+		out, err = fn(q)
+		return err
+	})
+	if err != nil {
+		// Return the zero value rather than a half-populated one: fn may have
+		// assigned before failing, and a committed-looking value from a rolled
+		// back transaction is the worst kind of bug to chase.
+		var zero T
+		return zero, err
+	}
+	return out, nil
 }
 
 // Open parses the connection string, applies the pool caps, and verifies the

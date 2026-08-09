@@ -39,7 +39,7 @@ type NoteInput struct {
 func (s *Store) CreateNote(ctx context.Context, userID uuid.UUID, in NoteInput) (gen.Note, error) {
 	var out gen.Note
 
-	err := s.WithTx(ctx, func(q *gen.Queries) error {
+	err := s.WithUserTx(ctx, userID, func(q *gen.Queries) error {
 		note, err := q.CreateNote(ctx, gen.CreateNoteParams{
 			UserID:    userID,
 			Title:     in.Title,
@@ -71,7 +71,7 @@ func (s *Store) CreateNote(ctx context.Context, userID uuid.UUID, in NoteInput) 
 func (s *Store) UpdateNote(ctx context.Context, userID, noteID uuid.UUID, in NoteInput) (gen.Note, error) {
 	var out gen.Note
 
-	err := s.WithTx(ctx, func(q *gen.Queries) error {
+	err := s.WithUserTx(ctx, userID, func(q *gen.Queries) error {
 		note, err := q.UpdateNote(ctx, gen.UpdateNoteParams{
 			ID:        noteID,
 			UserID:    userID,
@@ -124,7 +124,9 @@ func (s *Store) RestoreNote(ctx context.Context, userID, noteID uuid.UUID) error
 // reports the count rather than treating that as an error, because "delete
 // these twelve" is still satisfied when one of them was already gone.
 func (s *Store) DeleteNotes(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) (int64, error) {
-	rows, err := s.q.SoftDeleteNotes(ctx, gen.SoftDeleteNotesParams{UserID: userID, Ids: ids})
+	rows, err := UserQuery(ctx, s, userID, func(q *gen.Queries) (int64, error) {
+		return q.SoftDeleteNotes(ctx, gen.SoftDeleteNotesParams{UserID: userID, Ids: ids})
+	})
 	if err != nil {
 		return 0, fmt.Errorf("store: deleting notes: %w", err)
 	}
@@ -132,7 +134,9 @@ func (s *Store) DeleteNotes(ctx context.Context, userID uuid.UUID, ids []uuid.UU
 }
 
 func (s *Store) RestoreNotes(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) (int64, error) {
-	rows, err := s.q.RestoreNotes(ctx, gen.RestoreNotesParams{UserID: userID, Ids: ids})
+	rows, err := UserQuery(ctx, s, userID, func(q *gen.Queries) (int64, error) {
+		return q.RestoreNotes(ctx, gen.RestoreNotesParams{UserID: userID, Ids: ids})
+	})
 	if err != nil {
 		return 0, fmt.Errorf("store: restoring notes: %w", err)
 	}

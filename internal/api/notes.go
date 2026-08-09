@@ -143,7 +143,9 @@ func (s *Server) handleGetNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	note, err := s.store.Q().GetNote(r.Context(), gen.GetNoteParams{ID: id, UserID: user.ID})
+	note, err := scoped(s, r, func(q *gen.Queries) (gen.Note, error) {
+		return q.GetNote(r.Context(), gen.GetNoteParams{ID: id, UserID: user.ID})
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeNotFound(w)
 		return
@@ -166,8 +168,10 @@ func (s *Server) handleGetNote(w http.ResponseWriter, r *http.Request) {
 func (s *Server) noteCategoryIDs(w http.ResponseWriter, r *http.Request, noteID uuid.UUID) ([]uuid.UUID, bool) {
 	user, _ := UserFrom(r.Context())
 
-	rows, err := s.store.Q().ListCategoriesForNote(r.Context(), gen.ListCategoriesForNoteParams{
-		NoteID: noteID, UserID: user.ID,
+	rows, err := scoped(s, r, func(q *gen.Queries) ([]gen.Category, error) {
+		return q.ListCategoriesForNote(r.Context(), gen.ListCategoriesForNoteParams{
+			NoteID: noteID, UserID: user.ID,
+		})
 	})
 	if err != nil {
 		writeInternal(w, err)
@@ -203,7 +207,9 @@ func (s *Server) handleUpdateNote(w http.ResponseWriter, r *http.Request) {
 	// PATCH is partial, and gen.UpdateNote replaces the whole row, so fields
 	// the client left out are filled from the stored note. This read also
 	// gives the 404 before any work happens.
-	current, err := s.store.Q().GetNote(r.Context(), gen.GetNoteParams{ID: id, UserID: user.ID})
+	current, err := scoped(s, r, func(q *gen.Queries) (gen.Note, error) {
+		return q.GetNote(r.Context(), gen.GetNoteParams{ID: id, UserID: user.ID})
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeNotFound(w)
 		return
@@ -366,16 +372,18 @@ func (s *Server) handleListNotes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := s.store.Q().ListNotes(r.Context(), gen.ListNotesParams{
-		UserID: user.ID,
-		Limit:  int32(limit),
-		Offset: int32(offset),
-		// The Terhapus view, off unless asked for: the same list, filtered to
-		// what has been deleted, so restoring is a normal screen rather than a
-		// toast the user has to catch.
-		Deleted:    boolQuery(r, "deleted"),
-		DomainID:   domainID,
-		CategoryID: categoryID,
+	rows, err := scoped(s, r, func(q *gen.Queries) ([]gen.ListNotesRow, error) {
+		return q.ListNotes(r.Context(), gen.ListNotesParams{
+			UserID: user.ID,
+			Limit:  int32(limit),
+			Offset: int32(offset),
+			// The Terhapus view, off unless asked for: the same list, filtered to
+			// what has been deleted, so restoring is a normal screen rather than a
+			// toast the user has to catch.
+			Deleted:    boolQuery(r, "deleted"),
+			DomainID:   domainID,
+			CategoryID: categoryID,
+		})
 	})
 	if err != nil {
 		writeInternal(w, err)
@@ -449,9 +457,11 @@ func (s *Server) parseDomain(w http.ResponseWriter, r *http.Request, raw *string
 	}
 
 	user, _ := UserFrom(r.Context())
-	exists, err := s.store.Q().DomainExists(r.Context(), gen.DomainExistsParams{
-		ID:     id,
-		UserID: user.ID,
+	exists, err := scoped(s, r, func(q *gen.Queries) (bool, error) {
+		return q.DomainExists(r.Context(), gen.DomainExistsParams{
+			ID:     id,
+			UserID: user.ID,
+		})
 	})
 	if err != nil {
 		writeInternal(w, err)
@@ -505,8 +515,10 @@ func (s *Server) parseCategories(w http.ResponseWriter, r *http.Request, raw *[]
 		}
 		seen[id] = true
 
-		if _, err := s.store.Q().GetCategory(r.Context(), gen.GetCategoryParams{
-			ID: id, UserID: user.ID,
+		if _, err := scoped(s, r, func(q *gen.Queries) (gen.Category, error) {
+			return q.GetCategory(r.Context(), gen.GetCategoryParams{
+				ID: id, UserID: user.ID,
+			})
 		}); errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusBadRequest, CodeBadRequest, "Kategori tidak dikenal.")
 			return nil, false

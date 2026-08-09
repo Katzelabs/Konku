@@ -25,7 +25,12 @@ task below (D-067).
 
 ## P0 — CI skeleton
 
-`todo` · ~1 h · no deps · **do this first**
+`done` · ~1 h · no deps · **do this first**
+
+Branch protection is on `main`: the four CI checks are required, force-pushes
+and deletions are off, `enforce_admins` is true. Reviews are required at a
+count of **0** — a solo operator cannot approve their own PR, so a 1 there
+deadlocks the repository rather than protecting it.
 
 Moved here from `04-ship.md` — GitHub Actions needs no server, and it should be
 gating every task below rather than arriving after them (D-067).
@@ -54,7 +59,33 @@ and `main` cannot be pushed to directly.
 
 ## P1 — Postgres RLS
 
-`todo` · ~10 h · no deps · **the largest single item here**
+`done` · ~10 h · no deps · **the largest single item here**
+
+**The dev `konku` role is a SUPERUSER with BYPASSRLS** — it is the Postgres
+image's bootstrap user. `FORCE` does not apply to superusers, so connecting the
+app or the tests as `konku` leaves every policy inert. The non-owner role was
+not the "prefer" nice-to-have D-059 framed it as; without it this task ships
+nothing. `make db-app-role` grants LOGIN, and the test harness **fails** rather
+than skips if it finds itself on a BYPASSRLS role.
+
+Two details that cost a debugging round each, recorded so they are not
+rediscovered:
+
+- **Postgres does not short-circuit `OR`.** A policy written as
+  `setting IS NULL OR id = setting::uuid` still evaluates the cast and raises
+  `invalid input syntax for type uuid: ""`. Both branches use the `NULLIF`
+  form. The empty string, not "unset", is what a committed `SET LOCAL` leaves
+  behind on a pooled connection.
+- **`SET LOCAL` takes no bind parameters.** `set_config(..., true)` is the
+  parameterised equivalent.
+
+**On the "removing `FORCE` turns it red" criterion below:** it does not, and
+cannot, once the app connects as a non-owner. `FORCE` only governs the *table
+owner*; for `konku_app`, plain `ENABLE` already applies. The two requirements
+in this task each make the other redundant for the app path. `FORCE` is still
+correct — it is what protects against someone later pointing `DATABASE_URL` at
+the owner — so it is asserted directly by `TestEveryUserTableIsProtected`
+instead, as a schema invariant across every table carrying a `user_id`.
 
 D-039 deferred this as "defense in depth, worth doing, not worth blocking the
 MVP on." Correct then — the only data a scoping bug could leak was your own.
@@ -87,7 +118,22 @@ Both directions matter — the second is what proves the policies are on.
 
 ## P2 — Request logging, health, and metrics
 
-`todo` · ~5 h · no deps
+`done` · ~5 h · no deps
+
+`/api/health` is **gone**, not aliased — nothing but this document referenced
+it. `/healthz` and `/readyz` sit outside `/api` because they are operational
+endpoints, not product surface. `/readyz` also compares the live schema
+version against the one this process migrated to, which is the only warning
+you get when a rollback moves the schema underneath a running container.
+
+`METRICS_ADDR` defaults to `127.0.0.1:9090` and is served by a **second
+listener**, not a route with auth on it: a separate socket cannot be exposed
+by a Caddy misconfiguration, and there is a test asserting the application
+listener never serves Prometheus output.
+
+Adds **prometheus/client_golang**, which D-065 requires be justified by an
+obligation: pool saturation is unobservable without it, and D-028's cap of 10
+on a shared instance makes exhaustion the likeliest way this falls over.
 
 Today: JSON `slog` to stdout, chi's `RequestID`, and `/api/health` pinging the
 database. A good start that cannot be operated against — nothing records how
@@ -289,7 +335,13 @@ crashing the process.
 
 ## P11 — Back up the local database
 
-`todo` · ~2 h · no deps · **do this early, not last**
+`done` · ~2 h · no deps · **do this early, not last**
+
+**Deliberately local-only for now.** `make db-dump` writes outside the repo and
+outside the Docker volume, which covers the two failure modes that are actually
+likely today — `docker compose down -v` and a bad migration. It does **not**
+cover losing the laptop. Restic to B2 is `04-ship.md`, where the same tooling
+has to exist for the box anyway; doing it twice was the only alternative.
 
 Daily use starts now and it is local (D-067), which means a Docker volume is
 about to hold weeks of real notes and review history — the thing this project

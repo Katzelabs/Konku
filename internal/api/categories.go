@@ -50,9 +50,11 @@ func toCategoryResponse(c gen.Category, notes, cards int64) categoryResponse {
 func (s *Server) handleListCategories(w http.ResponseWriter, r *http.Request) {
 	user, _ := UserFrom(r.Context())
 
-	rows, err := s.store.Q().ListCategories(r.Context(), gen.ListCategoriesParams{
-		UserID:          user.ID,
-		IncludeArchived: r.URL.Query().Get("includeArchived") == "true",
+	rows, err := scoped(s, r, func(q *gen.Queries) ([]gen.ListCategoriesRow, error) {
+		return q.ListCategories(r.Context(), gen.ListCategoriesParams{
+			UserID:          user.ID,
+			IncludeArchived: r.URL.Query().Get("includeArchived") == "true",
+		})
 	})
 	if err != nil {
 		writeInternal(w, err)
@@ -95,8 +97,10 @@ func (s *Server) handleCreateCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := s.store.Q().GetCategoryBySlug(r.Context(), gen.GetCategoryBySlugParams{
-		Slug: slug, UserID: user.ID,
+	existing, err := scoped(s, r, func(q *gen.Queries) (gen.Category, error) {
+		return q.GetCategoryBySlug(r.Context(), gen.GetCategoryBySlugParams{
+			Slug: slug, UserID: user.ID,
+		})
 	})
 	if err == nil {
 		writeJSON(w, http.StatusOK, toCategoryResponse(existing, 0, 0))
@@ -107,10 +111,12 @@ func (s *Server) handleCreateCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	created, err := s.store.Q().CreateCategory(r.Context(), gen.CreateCategoryParams{
-		UserID: user.ID,
-		Slug:   slug,
-		Label:  label,
+	created, err := scoped(s, r, func(q *gen.Queries) (gen.Category, error) {
+		return q.CreateCategory(r.Context(), gen.CreateCategoryParams{
+			UserID: user.ID,
+			Slug:   slug,
+			Label:  label,
+		})
 	})
 	if err != nil {
 		writeInternal(w, err)
@@ -142,8 +148,10 @@ func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request) {
 	// Renaming onto a slug another category already holds is the one genuine
 	// conflict here — unlike create, there is no sensible "you meant that one"
 	// answer, because this category already has its own labelled rows.
-	if existing, err := s.store.Q().GetCategoryBySlug(r.Context(), gen.GetCategoryBySlugParams{
-		Slug: slug, UserID: user.ID,
+	if existing, err := scoped(s, r, func(q *gen.Queries) (gen.Category, error) {
+		return q.GetCategoryBySlug(r.Context(), gen.GetCategoryBySlugParams{
+			Slug: slug, UserID: user.ID,
+		})
 	}); err == nil && existing.ID != id {
 		writeError(w, http.StatusConflict, CodeConflict, "Sudah ada kategori dengan nama itu.")
 		return
@@ -152,8 +160,10 @@ func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updated, err := s.store.Q().UpdateCategory(r.Context(), gen.UpdateCategoryParams{
-		ID: id, UserID: user.ID, Slug: slug, Label: label,
+	updated, err := scoped(s, r, func(q *gen.Queries) (gen.Category, error) {
+		return q.UpdateCategory(r.Context(), gen.UpdateCategoryParams{
+			ID: id, UserID: user.ID, Slug: slug, Label: label,
+		})
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeNotFound(w)
@@ -188,9 +198,13 @@ func (s *Server) setCategoryArchived(w http.ResponseWriter, r *http.Request, arc
 		err error
 	)
 	if archived {
-		c, err = s.store.Q().ArchiveCategory(r.Context(), gen.ArchiveCategoryParams{ID: id, UserID: user.ID})
+		c, err = scoped(s, r, func(q *gen.Queries) (gen.Category, error) {
+			return q.ArchiveCategory(r.Context(), gen.ArchiveCategoryParams{ID: id, UserID: user.ID})
+		})
 	} else {
-		c, err = s.store.Q().UnarchiveCategory(r.Context(), gen.UnarchiveCategoryParams{ID: id, UserID: user.ID})
+		c, err = scoped(s, r, func(q *gen.Queries) (gen.Category, error) {
+			return q.UnarchiveCategory(r.Context(), gen.UnarchiveCategoryParams{ID: id, UserID: user.ID})
+		})
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeNotFound(w)
@@ -217,7 +231,9 @@ func (s *Server) handleDeleteCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := s.store.Q().DeleteCategory(r.Context(), gen.DeleteCategoryParams{ID: id, UserID: user.ID})
+	rows, err := scoped(s, r, func(q *gen.Queries) (int64, error) {
+		return q.DeleteCategory(r.Context(), gen.DeleteCategoryParams{ID: id, UserID: user.ID})
+	})
 	if isForeignKeyViolation(err) {
 		writeError(w, http.StatusConflict, CodeConflict,
 			"Kategori ini masih dipakai. Arsipkan saja kalau sudah tidak perlu.")

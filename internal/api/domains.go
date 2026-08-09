@@ -55,9 +55,13 @@ func (s *Server) handleListDomains(w http.ResponseWriter, r *http.Request) {
 		err     error
 	)
 	if r.URL.Query().Get("includeArchived") == "true" {
-		domains, err = s.store.Q().ListAllDomains(r.Context(), user.ID)
+		domains, err = scoped(s, r, func(q *gen.Queries) ([]gen.Domain, error) {
+			return q.ListAllDomains(r.Context(), user.ID)
+		})
 	} else {
-		domains, err = s.store.Q().ListDomains(r.Context(), user.ID)
+		domains, err = scoped(s, r, func(q *gen.Queries) ([]gen.Domain, error) {
+			return q.ListDomains(r.Context(), user.ID)
+		})
 	}
 	if err != nil {
 		writeInternal(w, err)
@@ -103,13 +107,15 @@ func (s *Server) handleCreateDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	d, err := s.store.Q().CreateDomain(r.Context(), gen.CreateDomainParams{
-		UserID:      user.ID,
-		Slug:        slugify(label),
-		Label:       label,
-		Color:       color,
-		WeeklyQuota: quota,
-		SortOrder:   derefInt(req.SortOrder),
+	d, err := scoped(s, r, func(q *gen.Queries) (gen.Domain, error) {
+		return q.CreateDomain(r.Context(), gen.CreateDomainParams{
+			UserID:      user.ID,
+			Slug:        slugify(label),
+			Label:       label,
+			Color:       color,
+			WeeklyQuota: quota,
+			SortOrder:   derefInt(req.SortOrder),
+		})
 	})
 	if isUniqueViolation(err) {
 		writeError(w, http.StatusConflict, CodeConflict, "Sudah ada domain dengan nama itu.")
@@ -139,7 +145,9 @@ func (s *Server) handleUpdateDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	current, err := s.store.Q().GetDomain(r.Context(), gen.GetDomainParams{ID: id, UserID: user.ID})
+	current, err := scoped(s, r, func(q *gen.Queries) (gen.Domain, error) {
+		return q.GetDomain(r.Context(), gen.GetDomainParams{ID: id, UserID: user.ID})
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeNotFound(w)
 		return
@@ -167,13 +175,15 @@ func (s *Server) handleUpdateDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	d, err := s.store.Q().UpdateDomain(r.Context(), gen.UpdateDomainParams{
-		ID:          id,
-		UserID:      user.ID,
-		Label:       label,
-		Color:       color,
-		WeeklyQuota: quota,
-		SortOrder:   order,
+	d, err := scoped(s, r, func(q *gen.Queries) (gen.Domain, error) {
+		return q.UpdateDomain(r.Context(), gen.UpdateDomainParams{
+			ID:          id,
+			UserID:      user.ID,
+			Label:       label,
+			Color:       color,
+			WeeklyQuota: quota,
+			SortOrder:   order,
+		})
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeNotFound(w)
@@ -210,9 +220,13 @@ func (s *Server) setDomainArchived(w http.ResponseWriter, r *http.Request, archi
 		err error
 	)
 	if archive {
-		d, err = s.store.Q().ArchiveDomain(r.Context(), gen.ArchiveDomainParams{ID: id, UserID: user.ID})
+		d, err = scoped(s, r, func(q *gen.Queries) (gen.Domain, error) {
+			return q.ArchiveDomain(r.Context(), gen.ArchiveDomainParams{ID: id, UserID: user.ID})
+		})
 	} else {
-		d, err = s.store.Q().UnarchiveDomain(r.Context(), gen.UnarchiveDomainParams{ID: id, UserID: user.ID})
+		d, err = scoped(s, r, func(q *gen.Queries) (gen.Domain, error) {
+			return q.UnarchiveDomain(r.Context(), gen.UnarchiveDomainParams{ID: id, UserID: user.ID})
+		})
 	}
 	// ArchiveDomain also matches nothing when the domain is already archived,
 	// which is indistinguishable here from not existing. Both are 404, and
@@ -241,7 +255,9 @@ func (s *Server) handleDeleteDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := s.store.Q().DeleteDomain(r.Context(), gen.DeleteDomainParams{ID: id, UserID: user.ID})
+	rows, err := scoped(s, r, func(q *gen.Queries) (int64, error) {
+		return q.DeleteDomain(r.Context(), gen.DeleteDomainParams{ID: id, UserID: user.ID})
+	})
 	if isForeignKeyViolation(err) {
 		writeError(w, http.StatusConflict, CodeConflict,
 			"Domain ini masih dipakai catatan atau sesi. Arsipkan saja.")

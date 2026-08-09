@@ -52,18 +52,24 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (A
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (email, password_hash)
-VALUES ($1, $2)
+INSERT INTO users (id, email, password_hash)
+VALUES ($1, $2, $3)
 RETURNING id, email, password_hash, created_at
 `
 
 type CreateUserParams struct {
-	Email        string `json:"email"`
-	PasswordHash string `json:"password_hash"`
+	ID           uuid.UUID `json:"id"`
+	Email        string    `json:"email"`
+	PasswordHash string    `json:"password_hash"`
 }
 
+// The id is supplied rather than defaulted so the caller knows the identity
+// before the row exists. Account creation runs inside WithUserTx, and
+// app.user_id has to be set before the INSERT for the users WITH CHECK policy
+// to pass and for the starter domains to be insertable in the same
+// transaction (D-046, D-059).
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, createUser, arg.Email, arg.PasswordHash)
+	row := q.db.QueryRow(ctx, createUser, arg.ID, arg.Email, arg.PasswordHash)
 	var i User
 	err := row.Scan(
 		&i.ID,

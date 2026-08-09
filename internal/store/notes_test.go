@@ -19,8 +19,10 @@ import (
 func newCategory(t *testing.T, st *store.Store, ctx context.Context, userID uuid.UUID, slug string) gen.Category {
 	t.Helper()
 
-	c, err := st.Q().CreateCategory(ctx, gen.CreateCategoryParams{
-		UserID: userID, Slug: slug, Label: slug,
+	c, err := store.UserQuery(ctx, st, userID, func(q *gen.Queries) (gen.Category, error) {
+		return q.CreateCategory(ctx, gen.CreateCategoryParams{
+			UserID: userID, Slug: slug, Label: slug,
+		})
 	})
 	if err != nil {
 		t.Fatalf("creating category %q: %v", slug, err)
@@ -31,8 +33,10 @@ func newCategory(t *testing.T, st *store.Store, ctx context.Context, userID uuid
 func noteCategoryIDs(t *testing.T, st *store.Store, ctx context.Context, userID, noteID uuid.UUID) []uuid.UUID {
 	t.Helper()
 
-	rows, err := st.Q().ListCategoriesForNote(ctx, gen.ListCategoriesForNoteParams{
-		NoteID: noteID, UserID: userID,
+	rows, err := store.UserQuery(ctx, st, userID, func(q *gen.Queries) ([]gen.Category, error) {
+		return q.ListCategoriesForNote(ctx, gen.ListCategoriesForNoteParams{
+			NoteID: noteID, UserID: userID,
+		})
 	})
 	if err != nil {
 		t.Fatalf("listing note categories: %v", err)
@@ -136,7 +140,9 @@ func TestCategorySyncCommitsWithTheNote(t *testing.T) {
 		t.Fatal("updating with an unknown category succeeded, want a foreign key error")
 	}
 
-	after, err := st.Q().GetNote(ctx, gen.GetNoteParams{ID: note.ID, UserID: user.ID})
+	after, err := store.UserQuery(ctx, st, user.ID, func(q *gen.Queries) (gen.Note, error) {
+		return q.GetNote(ctx, gen.GetNoteParams{ID: note.ID, UserID: user.ID})
+	})
 	if err != nil {
 		t.Fatalf("re-reading note: %v", err)
 	}

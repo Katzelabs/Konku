@@ -95,10 +95,10 @@ func TestExamAnswerDoesNotMoveTheSchedule(t *testing.T) {
 	read := func(cardID string) schedule {
 		t.Helper()
 		var s schedule
-		if err := c.app.store.Pool().QueryRow(c.app.ctx,
+		if err := c.scanAs(
 			`SELECT stage, lapses, next_review_date::text FROM card_schedules
-			  WHERE card_id = $1`, cardID).
-			Scan(&s.stage, &s.lapses, &s.due); err != nil {
+			  WHERE card_id = $1`,
+			[]any{cardID}, &s.stage, &s.lapses, &s.due); err != nil {
 			t.Fatalf("reading schedule: %v", err)
 		}
 		return s
@@ -126,10 +126,11 @@ func TestExamAnswerDoesNotMoveTheSchedule(t *testing.T) {
 
 	// The answers are still recorded as retention evidence, tagged as exam.
 	var exams, reviews int
-	if err := c.app.store.Pool().QueryRow(c.app.ctx,
+	if err := c.scanAs(
 		`SELECT count(*) FILTER (WHERE source = 'exam'),
 		        count(*) FILTER (WHERE source = 'review')
-		   FROM review_logs WHERE user_id = $1`, c.userID).Scan(&exams, &reviews); err != nil {
+		   FROM review_logs WHERE user_id = $1`,
+		[]any{c.userID}, &exams, &reviews); err != nil {
 		t.Fatalf("reading review_logs: %v", err)
 	}
 	if exams != 2 {
@@ -277,8 +278,9 @@ func TestAnsweringTwiceIsIdempotent(t *testing.T) {
 	}
 
 	var logs int
-	if err := c.app.store.Pool().QueryRow(c.app.ctx,
-		`SELECT count(*) FROM review_logs WHERE exam_attempt_id = $1`, attempt.ID).Scan(&logs); err != nil {
+	if err := c.scanAs(
+		`SELECT count(*) FROM review_logs WHERE exam_attempt_id = $1`,
+		[]any{attempt.ID}, &logs); err != nil {
 		t.Fatalf("counting logs: %v", err)
 	}
 	if logs != 1 {
@@ -339,10 +341,10 @@ func TestDiscardingAnAttemptKeepsTheAnswers(t *testing.T) {
 	c.expect(c.do(http.MethodDelete, "/attempts/"+attempt.ID, nil), http.StatusNoContent, nil)
 
 	var kept, snapshot int
-	if err := c.app.store.Pool().QueryRow(c.app.ctx,
+	if err := c.scanAs(
 		`SELECT (SELECT count(*) FROM review_logs WHERE user_id = $1 AND source = 'exam'),
 		        (SELECT count(*) FROM exam_attempt_cards WHERE attempt_id = $2)`,
-		c.userID, attempt.ID).Scan(&kept, &snapshot); err != nil {
+		[]any{c.userID, attempt.ID}, &kept, &snapshot); err != nil {
 		t.Fatalf("reading state: %v", err)
 	}
 	if kept != 1 {

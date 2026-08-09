@@ -33,9 +33,10 @@ func newStore(t *testing.T) (*store.Store, context.Context) {
 	}
 	t.Cleanup(st.Close)
 
-	if err := st.Migrate(ctx); err != nil {
+	if err := st.Migrate(ctx, migrationURL()); err != nil {
 		t.Fatalf("migrating: %v", err)
 	}
+	requireRLSEnforcedRole(t, st)
 	return st, ctx
 }
 
@@ -44,9 +45,17 @@ func newStore(t *testing.T) (*store.Store, context.Context) {
 func newUser(t *testing.T, st *store.Store, ctx context.Context) gen.User {
 	t.Helper()
 
-	u, err := st.Q().CreateUser(ctx, gen.CreateUserParams{
-		Email:        "test-" + uuid.NewString() + "@example.com",
-		PasswordHash: "not-a-real-hash",
+	// The id is minted here, not defaulted by the database: CreateUser now
+	// takes it explicitly so account creation can set app.user_id before it
+	// inserts anything (D-059). Omitting it inserts the nil uuid, and the
+	// second user in a run collides on the primary key.
+	id := uuid.New()
+	u, err := store.UserQuery(ctx, st, id, func(q *gen.Queries) (gen.User, error) {
+		return q.CreateUser(ctx, gen.CreateUserParams{
+			ID:           id,
+			Email:        "test-" + uuid.NewString() + "@example.com",
+			PasswordHash: "not-a-real-hash",
+		})
 	})
 	if err != nil {
 		t.Fatalf("creating user: %v", err)
@@ -78,10 +87,12 @@ func TestTenantIsolation(t *testing.T) {
 	alice := newUser(t, st, ctx)
 	bob := newUser(t, st, ctx)
 
-	note, err := st.Q().CreateNote(ctx, gen.CreateNoteParams{
-		UserID:    alice.ID,
-		Title:     "Teorema Bayes",
-		ContentMd: "P(A|B) = P(B|A)P(A)/P(B)",
+	note, err := store.UserQuery(ctx, st, alice.ID, func(q *gen.Queries) (gen.Note, error) {
+		return q.CreateNote(ctx, gen.CreateNoteParams{
+			UserID:    alice.ID,
+			Title:     "Teorema Bayes",
+			ContentMd: "P(A|B) = P(B|A)P(A)/P(B)",
+		})
 	})
 	if err != nil {
 		t.Fatalf("creating note: %v", err)
@@ -89,22 +100,28 @@ func TestTenantIsolation(t *testing.T) {
 	card := newCard(t, st, ctx, alice.ID, "Apa itu prior?", "Keyakinan awal")
 
 	t.Run("bob cannot read alice's note", func(t *testing.T) {
-		_, err := st.Q().GetNote(ctx, gen.GetNoteParams{ID: note.ID, UserID: bob.ID})
+		_, err := store.UserQuery(ctx, st, bob.ID, func(q *gen.Queries) (gen.Note, error) {
+			return q.GetNote(ctx, gen.GetNoteParams{ID: note.ID, UserID: bob.ID})
+		})
 		if !errors.Is(err, pgx.ErrNoRows) {
 			t.Fatalf("got %v, want ErrNoRows — a wrong owner must be indistinguishable from a missing row", err)
 		}
 	})
 
 	t.Run("bob cannot update alice's note", func(t *testing.T) {
-		_, err := st.Q().UpdateNote(ctx, gen.UpdateNoteParams{
-			ID: note.ID, UserID: bob.ID, Title: "hijacked", ContentMd: "hijacked",
+		_, err := store.UserQuery(ctx, st, bob.ID, func(q *gen.Queries) (gen.Note, error) {
+			return q.UpdateNote(ctx, gen.UpdateNoteParams{
+				ID: note.ID, UserID: bob.ID, Title: "hijacked", ContentMd: "hijacked",
+			})
 		})
 		if !errors.Is(err, pgx.ErrNoRows) {
 			t.Fatalf("got %v, want ErrNoRows", err)
 		}
 
 		// And the note is genuinely untouched.
-		after, err := st.Q().GetNote(ctx, gen.GetNoteParams{ID: note.ID, UserID: alice.ID})
+		after, err := store.UserQuery(ctx, st, alice.ID, func(q *gen.Queries) (gen.Note, error) {
+			return q.GetNote(ctx, gen.GetNoteParams{ID: note.ID, UserID: alice.ID})
+		})
 		if err != nil {
 			t.Fatalf("re-reading note: %v", err)
 		}
@@ -121,13 +138,17 @@ func TestTenantIsolation(t *testing.T) {
 		// And alice's note is genuinely still there, not soft-deleted by the
 		// attempt: the user_id in the WHERE clause is what makes the delete a
 		// no-op rather than anything checked afterwards.
-		if _, err := st.Q().GetNote(ctx, gen.GetNoteParams{ID: note.ID, UserID: alice.ID}); err != nil {
+		if _, err := store.UserQuery(ctx, st, alice.ID, func(q *gen.Queries) (gen.Note, error) {
+			return q.GetNote(ctx, gen.GetNoteParams{ID: note.ID, UserID: alice.ID})
+		}); err != nil {
 			t.Fatalf("re-reading alice's note: %v", err)
 		}
 	})
 
 	t.Run("alice's note is absent from bob's list", func(t *testing.T) {
-		list, err := st.Q().ListNotes(ctx, gen.ListNotesParams{UserID: bob.ID, Limit: 100})
+		list, err := store.UserQuery(ctx, st, bob.ID, func(q *gen.Queries) ([]gen.ListNotesRow, error) {
+			return q.ListNotes(ctx, gen.ListNotesParams{UserID: bob.ID, Limit: 100})
+		})
 		if err != nil {
 			t.Fatalf("listing: %v", err)
 		}
@@ -141,7 +162,9 @@ func TestTenantIsolation(t *testing.T) {
 	// Cards are a top-level resource now (D-055), so they need the same
 	// guarantees the notes above do rather than inheriting them from a parent.
 	t.Run("bob cannot read alice's card", func(t *testing.T) {
-		_, err := st.Q().GetCard(ctx, gen.GetCardParams{ID: card.ID, UserID: bob.ID})
+		_, err := store.UserQuery(ctx, st, bob.ID, func(q *gen.Queries) (gen.Card, error) {
+			return q.GetCard(ctx, gen.GetCardParams{ID: card.ID, UserID: bob.ID})
+		})
 		if !errors.Is(err, pgx.ErrNoRows) {
 			t.Fatalf("got %v, want ErrNoRows", err)
 		}
@@ -153,7 +176,9 @@ func TestTenantIsolation(t *testing.T) {
 			t.Fatalf("got %v, want ErrCardNotFound", err)
 		}
 
-		after, err := st.Q().GetCard(ctx, gen.GetCardParams{ID: card.ID, UserID: alice.ID})
+		after, err := store.UserQuery(ctx, st, alice.ID, func(q *gen.Queries) (gen.Card, error) {
+			return q.GetCard(ctx, gen.GetCardParams{ID: card.ID, UserID: alice.ID})
+		})
 		if err != nil {
 			t.Fatalf("re-reading card: %v", err)
 		}
@@ -169,7 +194,9 @@ func TestTenantIsolation(t *testing.T) {
 	})
 
 	t.Run("alice's card is absent from bob's list", func(t *testing.T) {
-		list, err := st.Q().ListCards(ctx, gen.ListCardsParams{UserID: bob.ID, Limit: 100})
+		list, err := store.UserQuery(ctx, st, bob.ID, func(q *gen.Queries) ([]gen.ListCardsRow, error) {
+			return q.ListCards(ctx, gen.ListCardsParams{UserID: bob.ID, Limit: 100})
+		})
 		if err != nil {
 			t.Fatalf("listing: %v", err)
 		}
@@ -198,9 +225,11 @@ func TestScheduleSurvivesCardEdit(t *testing.T) {
 
 	// Put it well up the ladder, so a reset would be unmistakable.
 	due, _ := store.ToTimePtr("2026-09-01")
-	if _, err := st.Q().UpdateSchedule(ctx, gen.UpdateScheduleParams{
-		CardID: card.ID, UserID: user.ID,
-		Stage: 4, NextReviewDate: due, Lapses: 2, State: "learning",
+	if _, err := store.UserQuery(ctx, st, user.ID, func(q *gen.Queries) (gen.CardSchedule, error) {
+		return q.UpdateSchedule(ctx, gen.UpdateScheduleParams{
+			CardID: card.ID, UserID: user.ID,
+			Stage: 4, NextReviewDate: due, Lapses: 2, State: "learning",
+		})
 	}); err != nil {
 		t.Fatalf("advancing schedule: %v", err)
 	}
@@ -212,8 +241,10 @@ func TestScheduleSurvivesCardEdit(t *testing.T) {
 		t.Fatalf("editing card: %v", err)
 	}
 
-	got, err := st.Q().GetCardWithSchedule(ctx, gen.GetCardWithScheduleParams{
-		ID: card.ID, UserID: user.ID,
+	got, err := store.UserQuery(ctx, st, user.ID, func(q *gen.Queries) (gen.GetCardWithScheduleRow, error) {
+		return q.GetCardWithSchedule(ctx, gen.GetCardWithScheduleParams{
+			ID: card.ID, UserID: user.ID,
+		})
 	})
 	if err != nil {
 		t.Fatalf("reading card: %v", err)
@@ -241,9 +272,11 @@ func TestSoftDeleteRestoresHistory(t *testing.T) {
 	card := newCard(t, st, ctx, user.ID, "q", "a")
 
 	due, _ := store.ToTimePtr("2026-10-01")
-	if _, err := st.Q().UpdateSchedule(ctx, gen.UpdateScheduleParams{
-		CardID: card.ID, UserID: user.ID,
-		Stage: 5, NextReviewDate: due, State: "learning",
+	if _, err := store.UserQuery(ctx, st, user.ID, func(q *gen.Queries) (gen.CardSchedule, error) {
+		return q.UpdateSchedule(ctx, gen.UpdateScheduleParams{
+			CardID: card.ID, UserID: user.ID,
+			Stage: 5, NextReviewDate: due, State: "learning",
+		})
 	}); err != nil {
 		t.Fatalf("schedule: %v", err)
 	}
@@ -252,7 +285,9 @@ func TestSoftDeleteRestoresHistory(t *testing.T) {
 		t.Fatalf("soft delete: %v", err)
 	}
 
-	live, err := st.Q().ListCards(ctx, gen.ListCardsParams{UserID: user.ID, Limit: 100})
+	live, err := store.UserQuery(ctx, st, user.ID, func(q *gen.Queries) ([]gen.ListCardsRow, error) {
+		return q.ListCards(ctx, gen.ListCardsParams{UserID: user.ID, Limit: 100})
+	})
 	if err != nil {
 		t.Fatalf("listing: %v", err)
 	}
@@ -272,8 +307,10 @@ func TestSoftDeleteRestoresHistory(t *testing.T) {
 		t.Fatalf("restore: %v", err)
 	}
 
-	got, err := st.Q().GetCardWithSchedule(ctx, gen.GetCardWithScheduleParams{
-		ID: card.ID, UserID: user.ID,
+	got, err := store.UserQuery(ctx, st, user.ID, func(q *gen.Queries) (gen.GetCardWithScheduleRow, error) {
+		return q.GetCardWithSchedule(ctx, gen.GetCardWithScheduleParams{
+			ID: card.ID, UserID: user.ID,
+		})
 	})
 	if err != nil {
 		t.Fatalf("reading restored card: %v", err)
@@ -291,7 +328,7 @@ func TestWithTxRollsBack(t *testing.T) {
 	sentinel := errors.New("boom")
 	var noteID uuid.UUID
 
-	err := st.WithTx(ctx, func(q *gen.Queries) error {
+	err := st.WithUserTx(ctx, user.ID, func(q *gen.Queries) error {
 		n, err := q.CreateNote(ctx, gen.CreateNoteParams{
 			UserID: user.ID, Title: "should not survive", ContentMd: "x",
 		})
@@ -306,7 +343,9 @@ func TestWithTxRollsBack(t *testing.T) {
 		t.Fatalf("got %v, want the sentinel error propagated", err)
 	}
 
-	if _, err := st.Q().GetNote(ctx, gen.GetNoteParams{ID: noteID, UserID: user.ID}); !errors.Is(err, pgx.ErrNoRows) {
+	if _, err := store.UserQuery(ctx, st, user.ID, func(q *gen.Queries) (gen.Note, error) {
+		return q.GetNote(ctx, gen.GetNoteParams{ID: noteID, UserID: user.ID})
+	}); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("note survived a rolled-back transaction: %v", err)
 	}
 }
@@ -330,7 +369,9 @@ func TestCardCreationIsAtomic(t *testing.T) {
 		t.Fatal("creating a card with an unknown category succeeded, want a foreign key error")
 	}
 
-	cards, err := st.Q().ListCards(ctx, gen.ListCardsParams{UserID: user.ID, Limit: 100})
+	cards, err := store.UserQuery(ctx, st, user.ID, func(q *gen.Queries) ([]gen.ListCardsRow, error) {
+		return q.ListCards(ctx, gen.ListCardsParams{UserID: user.ID, Limit: 100})
+	})
 	if err != nil {
 		t.Fatalf("listing: %v", err)
 	}
@@ -349,9 +390,11 @@ func TestDueCardsExcludeMastered(t *testing.T) {
 	add := func(front, state string, due *time.Time) uuid.UUID {
 		t.Helper()
 		c := newCard(t, st, ctx, user.ID, front, "a")
-		if _, err := st.Q().UpdateSchedule(ctx, gen.UpdateScheduleParams{
-			CardID: c.ID, UserID: user.ID,
-			Stage: 0, NextReviewDate: due, State: state,
+		if _, err := store.UserQuery(ctx, st, user.ID, func(q *gen.Queries) (gen.CardSchedule, error) {
+			return q.UpdateSchedule(ctx, gen.UpdateScheduleParams{
+				CardID: c.ID, UserID: user.ID,
+				Stage: 0, NextReviewDate: due, State: state,
+			})
 		}); err != nil {
 			t.Fatalf("schedule %s: %v", front, err)
 		}
@@ -365,8 +408,10 @@ func TestDueCardsExcludeMastered(t *testing.T) {
 	add("mastered", "mastered", nil)
 
 	today, _ := store.ToTime("2026-08-05")
-	rows, err := st.Q().ListDueCards(ctx, gen.ListDueCardsParams{
-		UserID: user.ID, Today: today, Limit: 10,
+	rows, err := store.UserQuery(ctx, st, user.ID, func(q *gen.Queries) ([]gen.ListDueCardsRow, error) {
+		return q.ListDueCards(ctx, gen.ListDueCardsParams{
+			UserID: user.ID, Today: today, Limit: 10,
+		})
 	})
 	if err != nil {
 		t.Fatalf("listing due: %v", err)

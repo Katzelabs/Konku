@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/Katzelabs/Konku/internal/store"
@@ -130,9 +131,16 @@ func (s *Service) CreateUser(ctx context.Context, email, password string) (gen.U
 		return gen.User{}, err
 	}
 
+	// The identity is minted here rather than by the database default, because
+	// the transaction has to know who it is *before* it inserts anything: RLS
+	// scopes the starter domains by app.user_id, and there is no way to set it
+	// to a value the INSERT has not returned yet (D-059).
+	id := uuid.New()
+
 	var user gen.User
-	err = s.store.WithTx(ctx, func(q *gen.Queries) error {
+	err = s.store.WithUserTx(ctx, id, func(q *gen.Queries) error {
 		user, err = q.CreateUser(ctx, gen.CreateUserParams{
+			ID:           id,
 			Email:        normalizeEmail(email),
 			PasswordHash: hash,
 		})

@@ -73,7 +73,9 @@ func toExamResponse(e gen.Exam, attempts int64) examResponse {
 func (s *Server) handleListExams(w http.ResponseWriter, r *http.Request) {
 	user, _ := UserFrom(r.Context())
 
-	rows, err := s.store.Q().ListExams(r.Context(), user.ID)
+	rows, err := scoped(s, r, func(q *gen.Queries) ([]gen.ListExamsRow, error) {
+		return q.ListExams(r.Context(), user.ID)
+	})
 	if err != nil {
 		writeInternal(w, err)
 		return
@@ -105,8 +107,10 @@ func (s *Server) handleGetExam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	attempts, err := s.store.Q().ListAttempts(r.Context(), gen.ListAttemptsParams{
-		ExamID: exam.ID, UserID: user.ID, Limit: attemptsPerPage,
+	attempts, err := scoped(s, r, func(q *gen.Queries) ([]gen.ExamAttempt, error) {
+		return q.ListAttempts(r.Context(), gen.ListAttemptsParams{
+			ExamID: exam.ID, UserID: user.ID, Limit: attemptsPerPage,
+		})
 	})
 	if err != nil {
 		writeInternal(w, err)
@@ -129,8 +133,10 @@ func (s *Server) handleGetExam(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if exam.Selection == "fixed" {
-		pinned, err := s.store.Q().ListExamCards(r.Context(), gen.ListExamCardsParams{
-			ExamID: exam.ID, UserID: user.ID,
+		pinned, err := scoped(s, r, func(q *gen.Queries) ([]gen.ListExamCardsRow, error) {
+			return q.ListExamCards(r.Context(), gen.ListExamCardsParams{
+				ExamID: exam.ID, UserID: user.ID,
+			})
 		})
 		if err != nil {
 			writeInternal(w, err)
@@ -172,14 +178,16 @@ func (s *Server) handleCreateExam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	exam, err := s.store.Q().CreateExam(r.Context(), gen.CreateExamParams{
-		UserID:           user.ID,
-		DomainID:         domainID,
-		Title:            title,
-		Description:      deref(req.Description),
-		Selection:        selection,
-		QuestionCount:    questionCountFor(selection, req.QuestionCount),
-		TimeLimitMinutes: req.TimeLimitMinutes,
+	exam, err := scoped(s, r, func(q *gen.Queries) (gen.Exam, error) {
+		return q.CreateExam(r.Context(), gen.CreateExamParams{
+			UserID:           user.ID,
+			DomainID:         domainID,
+			Title:            title,
+			Description:      deref(req.Description),
+			Selection:        selection,
+			QuestionCount:    questionCountFor(selection, req.QuestionCount),
+			TimeLimitMinutes: req.TimeLimitMinutes,
+		})
 	})
 	if err != nil {
 		writeInternal(w, err)
@@ -233,15 +241,17 @@ func (s *Server) handleUpdateExam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	exam, err := s.store.Q().UpdateExam(r.Context(), gen.UpdateExamParams{
-		ID:               current.ID,
-		UserID:           user.ID,
-		DomainID:         domainID,
-		Title:            title,
-		Description:      desc,
-		Selection:        selection,
-		QuestionCount:    questionCountFor(selection, count),
-		TimeLimitMinutes: limit,
+	exam, err := scoped(s, r, func(q *gen.Queries) (gen.Exam, error) {
+		return q.UpdateExam(r.Context(), gen.UpdateExamParams{
+			ID:               current.ID,
+			UserID:           user.ID,
+			DomainID:         domainID,
+			Title:            title,
+			Description:      desc,
+			Selection:        selection,
+			QuestionCount:    questionCountFor(selection, count),
+			TimeLimitMinutes: limit,
+		})
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeNotFound(w)
@@ -263,7 +273,9 @@ func (s *Server) handleArchiveExam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	exam, err := s.store.Q().ArchiveExam(r.Context(), gen.ArchiveExamParams{ID: id, UserID: user.ID})
+	exam, err := scoped(s, r, func(q *gen.Queries) (gen.Exam, error) {
+		return q.ArchiveExam(r.Context(), gen.ArchiveExamParams{ID: id, UserID: user.ID})
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeNotFound(w)
 		return
@@ -287,7 +299,9 @@ func (s *Server) handleDeleteExam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := s.store.Q().DeleteExam(r.Context(), gen.DeleteExamParams{ID: id, UserID: user.ID})
+	rows, err := scoped(s, r, func(q *gen.Queries) (int64, error) {
+		return q.DeleteExam(r.Context(), gen.DeleteExamParams{ID: id, UserID: user.ID})
+	})
 	if isForeignKeyViolation(err) {
 		writeError(w, http.StatusConflict, CodeConflict,
 			"Ujian ini sudah pernah dikerjakan. Arsipkan saja.")
@@ -337,7 +351,7 @@ func (s *Server) handleSetExamCards(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := s.store.WithTx(r.Context(), func(q *gen.Queries) error {
+	err := scopedExec(s, r, func(q *gen.Queries) error {
 		if err := q.ClearExamCards(r.Context(), gen.ClearExamCardsParams{
 			ExamID: exam.ID, UserID: user.ID,
 		}); err != nil {
@@ -423,7 +437,9 @@ func (s *Server) examOr404(w http.ResponseWriter, r *http.Request) (gen.Exam, bo
 		return gen.Exam{}, false
 	}
 
-	exam, err := s.store.Q().GetExam(r.Context(), gen.GetExamParams{ID: id, UserID: user.ID})
+	exam, err := scoped(s, r, func(q *gen.Queries) (gen.Exam, error) {
+		return q.GetExam(r.Context(), gen.GetExamParams{ID: id, UserID: user.ID})
+	})
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && exam.ArchivedAt != nil) {
 		writeNotFound(w)
 		return gen.Exam{}, false
@@ -560,8 +576,10 @@ func (s *Server) handleGetAttempt(w http.ResponseWriter, r *http.Request) {
 func (s *Server) attemptDetailFor(w http.ResponseWriter, r *http.Request, a gen.ExamAttempt) *attemptDetail {
 	user, _ := UserFrom(r.Context())
 
-	rows, err := s.store.Q().ListAttemptQuestions(r.Context(), gen.ListAttemptQuestionsParams{
-		AttemptID: a.ID, UserID: user.ID,
+	rows, err := scoped(s, r, func(q *gen.Queries) ([]gen.ListAttemptQuestionsRow, error) {
+		return q.ListAttemptQuestions(r.Context(), gen.ListAttemptQuestionsParams{
+			AttemptID: a.ID, UserID: user.ID,
+		})
 	})
 	if err != nil {
 		writeInternal(w, err)
@@ -602,8 +620,10 @@ func (s *Server) handleAttemptAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := s.store.Q().ListAttemptQuestions(r.Context(), gen.ListAttemptQuestionsParams{
-		AttemptID: attempt.ID, UserID: user.ID,
+	rows, err := scoped(s, r, func(q *gen.Queries) ([]gen.ListAttemptQuestionsRow, error) {
+		return q.ListAttemptQuestions(r.Context(), gen.ListAttemptQuestionsParams{
+			AttemptID: attempt.ID, UserID: user.ID,
+		})
 	})
 	if err != nil {
 		writeInternal(w, err)
@@ -653,8 +673,10 @@ func (s *Server) handleAnswerQuestion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	belongs, err := s.store.Q().AttemptHasQuestion(r.Context(), gen.AttemptHasQuestionParams{
-		AttemptID: attempt.ID, UserID: user.ID, CardID: cardID,
+	belongs, err := scoped(s, r, func(q *gen.Queries) (bool, error) {
+		return q.AttemptHasQuestion(r.Context(), gen.AttemptHasQuestionParams{
+			AttemptID: attempt.ID, UserID: user.ID, CardID: cardID,
+		})
 	})
 	if err != nil {
 		writeInternal(w, err)
@@ -669,8 +691,10 @@ func (s *Server) handleAnswerQuestion(w http.ResponseWriter, r *http.Request) {
 	// the schedule did not move. A card deleted since the attempt began has no
 	// schedule to read; zero is the honest answer there.
 	var interval int32
-	row, err := s.store.Q().GetCardWithSchedule(r.Context(), gen.GetCardWithScheduleParams{
-		ID: cardID, UserID: user.ID,
+	row, err := scoped(s, r, func(q *gen.Queries) (gen.GetCardWithScheduleRow, error) {
+		return q.GetCardWithSchedule(r.Context(), gen.GetCardWithScheduleParams{
+			ID: cardID, UserID: user.ID,
+		})
 	})
 	if err == nil {
 		interval = intervalDays(srs.Schedule{
@@ -683,12 +707,14 @@ func (s *Server) handleAnswerQuestion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.store.Q().InsertExamAnswer(r.Context(), gen.InsertExamAnswerParams{
-		CardID:        cardID,
-		UserID:        user.ID,
-		Rating:        string(rating),
-		IntervalDays:  interval,
-		ExamAttemptID: &attempt.ID,
+	if err := scopedExec(s, r, func(q *gen.Queries) error {
+		return q.InsertExamAnswer(r.Context(), gen.InsertExamAnswerParams{
+			CardID:        cardID,
+			UserID:        user.ID,
+			Rating:        string(rating),
+			IntervalDays:  interval,
+			ExamAttemptID: &attempt.ID,
+		})
 	}); err != nil {
 		writeInternal(w, err)
 		return
@@ -705,8 +731,10 @@ func (s *Server) handleFinishAttempt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	finished, err := s.store.Q().FinishAttempt(r.Context(), gen.FinishAttemptParams{
-		ID: attempt.ID, UserID: user.ID,
+	finished, err := scoped(s, r, func(q *gen.Queries) (gen.ExamAttempt, error) {
+		return q.FinishAttempt(r.Context(), gen.FinishAttemptParams{
+			ID: attempt.ID, UserID: user.ID,
+		})
 	})
 	// No rows means it was already finished. Finishing twice is what a
 	// double-tap on "selesai" looks like, so hand back what is stored rather
@@ -735,7 +763,9 @@ func (s *Server) handleDeleteAttempt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := s.store.Q().DeleteAttempt(r.Context(), gen.DeleteAttemptParams{ID: id, UserID: user.ID})
+	rows, err := scoped(s, r, func(q *gen.Queries) (int64, error) {
+		return q.DeleteAttempt(r.Context(), gen.DeleteAttemptParams{ID: id, UserID: user.ID})
+	})
 	if err != nil {
 		writeInternal(w, err)
 		return
@@ -757,7 +787,9 @@ func (s *Server) attemptOr404(w http.ResponseWriter, r *http.Request) (gen.ExamA
 		return gen.ExamAttempt{}, false
 	}
 
-	attempt, err := s.store.Q().GetAttempt(r.Context(), gen.GetAttemptParams{ID: id, UserID: user.ID})
+	attempt, err := scoped(s, r, func(q *gen.Queries) (gen.ExamAttempt, error) {
+		return q.GetAttempt(r.Context(), gen.GetAttemptParams{ID: id, UserID: user.ID})
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeNotFound(w)
 		return gen.ExamAttempt{}, false

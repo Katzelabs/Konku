@@ -68,11 +68,13 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sess, err := s.store.Q().InsertFocusSession(r.Context(), gen.InsertFocusSessionParams{
-		UserID:          user.ID,
-		DomainID:        domainID,
-		DurationMinutes: int32(req.DurationMinutes),
-		SessionDate:     date,
+	sess, err := scoped(s, r, func(q *gen.Queries) (gen.FocusSession, error) {
+		return q.InsertFocusSession(r.Context(), gen.InsertFocusSessionParams{
+			UserID:          user.ID,
+			DomainID:        domainID,
+			DurationMinutes: int32(req.DurationMinutes),
+			SessionDate:     date,
+		})
 	})
 	if err != nil {
 		writeInternal(w, err)
@@ -93,9 +95,11 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 
 	limit := intParam(r, "limit", defaultLimit, 1, maxLimit)
 
-	rows, err := s.store.Q().ListRecentFocusSessions(r.Context(), gen.ListRecentFocusSessionsParams{
-		UserID: user.ID,
-		Limit:  int32(limit),
+	rows, err := scoped(s, r, func(q *gen.Queries) ([]gen.FocusSession, error) {
+		return q.ListRecentFocusSessions(r.Context(), gen.ListRecentFocusSessionsParams{
+			UserID: user.ID,
+			Limit:  int32(limit),
+		})
 	})
 	if err != nil {
 		writeInternal(w, err)

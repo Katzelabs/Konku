@@ -48,7 +48,7 @@ func (s *Store) StartAttempt(
 ) (StartedAttempt, error) {
 	var out StartedAttempt
 
-	err := s.WithTx(ctx, func(q *gen.Queries) error {
+	err := s.WithUserTx(ctx, userID, func(q *gen.Queries) error {
 		exam, err := q.GetExam(ctx, gen.GetExamParams{ID: examID, UserID: userID})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrExamNotFound

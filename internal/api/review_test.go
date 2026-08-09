@@ -34,9 +34,12 @@ func makeDue(t *testing.T, c *testClient, cardID string, stage int32, lapses int
 	if err != nil {
 		t.Fatalf("date: %v", err)
 	}
-	if _, err := c.app.store.Q().UpdateSchedule(c.app.ctx, gen.UpdateScheduleParams{
-		CardID: id, UserID: c.userID,
-		Stage: stage, NextReviewDate: due, Lapses: lapses, State: "learning",
+	if err := c.asUser(func(q *gen.Queries) error {
+		_, err := q.UpdateSchedule(c.app.ctx, gen.UpdateScheduleParams{
+			CardID: id, UserID: c.userID,
+			Stage: stage, NextReviewDate: due, Lapses: lapses, State: "learning",
+		})
+		return err
 	}); err != nil {
 		t.Fatalf("backdating schedule: %v", err)
 	}
@@ -48,9 +51,14 @@ func scheduleOf(t *testing.T, c *testClient, cardID string) gen.CardSchedule {
 	if err != nil {
 		t.Fatalf("card id %q: %v", cardID, err)
 	}
-	row, err := c.app.store.Q().GetCardWithSchedule(c.app.ctx, gen.GetCardWithScheduleParams{
-		ID: id, UserID: c.userID,
-	})
+	// Scoped like the application scopes it: on the app pool with no
+	// app.user_id set, RLS matches no rows at all (D-059).
+	row, err := store.UserQuery(c.app.ctx, c.app.store, c.userID,
+		func(q *gen.Queries) (gen.GetCardWithScheduleRow, error) {
+			return q.GetCardWithSchedule(c.app.ctx, gen.GetCardWithScheduleParams{
+				ID: id, UserID: c.userID,
+			})
+		})
 	if err != nil {
 		t.Fatalf("reading schedule for %q: %v", cardID, err)
 	}
@@ -142,10 +150,10 @@ func TestRateLupa(t *testing.T) {
 	// fact, which is why this table exists before the feature that reads it.
 	var rating string
 	var before, after int32
-	if err := c.app.store.Pool().QueryRow(c.app.ctx,
+	if err := c.scanAs(
 		`SELECT rating, interval_before, interval_after FROM review_logs
 		  WHERE card_id = $1 AND user_id = $2`,
-		cardID, c.userID).Scan(&rating, &before, &after); err != nil {
+		[]any{cardID, c.userID}, &rating, &before, &after); err != nil {
 		t.Fatalf("no review log was written: %v", err)
 	}
 	if rating != "lupa" {

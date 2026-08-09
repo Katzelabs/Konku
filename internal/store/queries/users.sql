@@ -1,6 +1,11 @@
 -- name: CreateUser :one
-INSERT INTO users (email, password_hash)
-VALUES ($1, $2)
+-- The id is supplied rather than defaulted so the caller knows the identity
+-- before the row exists. Account creation runs inside WithUserTx, and
+-- app.user_id has to be set before the INSERT for the users WITH CHECK policy
+-- to pass and for the starter domains to be insertable in the same
+-- transaction (D-046, D-059).
+INSERT INTO users (id, email, password_hash)
+VALUES ($1, $2, $3)
 RETURNING *;
 
 -- name: GetUserByEmail :one

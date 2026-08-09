@@ -17,6 +17,7 @@ import (
 	"github.com/Katzelabs/Konku/internal/auth"
 	"github.com/Katzelabs/Konku/internal/config"
 	"github.com/Katzelabs/Konku/internal/store"
+	"github.com/Katzelabs/Konku/internal/store/gen"
 	"github.com/Katzelabs/Konku/internal/web"
 )
 
@@ -28,6 +29,36 @@ type testApp struct {
 	store *store.Store
 	auth  *auth.Service
 	ctx   context.Context
+	// metrics is the Prometheus handler, which production serves on its own
+	// loopback listener rather than on srv (D-062). Tests reach it directly
+	// for the same reason: it is deliberately not routable from the app.
+	metrics http.Handler
+}
+
+// migrationURL is the owner connection used for DDL. The application pool
+// connects as konku_app, which deliberately has no DDL rights (D-059).
+func migrationURL() string { return os.Getenv("TEST_MIGRATION_DATABASE_URL") }
+
+// requireRLSEnforcedRole fails if the test connection can bypass row-level
+// security. FORCE ROW LEVEL SECURITY does not apply to a SUPERUSER or a
+// BYPASSRLS role, and the dev database's `konku` is both. Connected as that
+// role, every tenancy test below passes while proving nothing.
+func requireRLSEnforcedRole(t *testing.T, st *store.Store) {
+	t.Helper()
+
+	var name string
+	var super, bypass bool
+	if err := st.Pool().QueryRow(context.Background(),
+		`SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user`,
+	).Scan(&name, &super, &bypass); err != nil {
+		t.Fatalf("reading the current role: %v", err)
+	}
+	if super || bypass {
+		t.Fatalf("tests are connected as %q (superuser=%v, bypassrls=%v). "+
+			"RLS is inert for this role, so the tenancy suite would certify a "+
+			"protection that does not exist. Run `make db-app-role` and point "+
+			"TEST_DATABASE_URL at konku_app.", name, super, bypass)
+	}
 }
 
 func newApp(t *testing.T) *testApp {
@@ -44,17 +75,19 @@ func newApp(t *testing.T) *testApp {
 		t.Fatalf("opening store: %v", err)
 	}
 	t.Cleanup(st.Close)
-	if err := st.Migrate(ctx); err != nil {
+	if err := st.Migrate(ctx, migrationURL()); err != nil {
 		t.Fatalf("migrating: %v", err)
 	}
+	requireRLSEnforcedRole(t, st)
 
 	cfg := config.Config{Dev: true, SessionTTL: time.Hour}
 	svc := auth.NewService(st, cfg.SessionTTL)
 
-	srv := httptest.NewServer(api.NewServer(cfg, st, svc, web.FS()).Routes())
+	app := api.NewServer(cfg, st, svc, web.FS())
+	srv := httptest.NewServer(app.Routes())
 	t.Cleanup(srv.Close)
 
-	return &testApp{srv: srv, store: st, auth: svc, ctx: ctx}
+	return &testApp{srv: srv, store: st, auth: svc, ctx: ctx, metrics: app.MetricsHandler()}
 }
 
 // testClient is one signed-in user.
@@ -88,6 +121,38 @@ func (a *testApp) newClient(t *testing.T) *testClient {
 	}
 
 	return &testClient{t: t, app: a, cookie: sessionCookie(t, res), userID: user.ID, email: email}
+}
+
+// asUser runs a *gen.Queries operation inside a transaction scoped to this
+// client's user.
+//
+// RLS means a query on the application pool with no app.user_id set matches no
+// rows at all (D-059). Tests that reach past the API to assert on stored state
+// — a card's schedule, a review log — have to declare who they are, exactly
+// like the application does. That is not test scaffolding working around the
+// feature; it is the test being held to the same rule as the code.
+func (c *testClient) asUser(fn func(*gen.Queries) error) error {
+	c.t.Helper()
+	return c.app.store.WithUserTx(c.app.ctx, c.userID, fn)
+}
+
+// scanAs runs raw SQL inside the client's user transaction and scans one row.
+// Used where the assertion is about the column type or the stored text, which
+// the generated types would hide.
+func (c *testClient) scanAs(sql string, args []any, dst ...any) error {
+	c.t.Helper()
+
+	tx, err := c.app.store.Pool().Begin(c.app.ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(c.app.ctx) }()
+
+	if _, err := tx.Exec(c.app.ctx,
+		"select set_config('app.user_id', $1, true)", c.userID.String()); err != nil {
+		return err
+	}
+	return tx.QueryRow(c.app.ctx, sql, args...).Scan(dst...)
 }
 
 // do sends an authenticated request. A nil body means no body at all.
