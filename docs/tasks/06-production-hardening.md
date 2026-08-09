@@ -257,7 +257,27 @@ breaking the review reveal makes it fail.
 
 ## P7 — Tenancy and migration suites
 
-`todo` · ~4 h · needs P1
+`done` · ~4 h · needs P1
+
+Seven resources, every mutating and reading route on each, asserted over HTTP.
+403 is checked for explicitly and reported as its own failure, because a
+handler that returns "forbidden" turns the API into an oracle for other
+people's ids — that is the failure this suite exists to catch, and it is not
+the same failure as a wrong status code.
+
+A second test covers the **lists**, which the per-resource probes cannot: a
+scoping bug in a list leaks rows wholesale rather than one id at a time.
+
+Both accounts are created once for the whole suite rather than per subtest.
+Fourteen logins from `127.0.0.1` trip the login rate limiter, and the
+resulting 429s look exactly like tenancy failures.
+
+Migration tests run each case in its own scratch database, created and dropped
+by the test, so a failure cannot leave the dev database half-migrated. Three
+properties: the chain applies to an empty database (and lands with row
+security actually on), each migration applies to the schema of the one before
+it, and the last one rolls back **and re-applies** — a rollback you cannot
+undo is a one-way door, and `rollback.md` is fiction without it (P10).
 
 - **One tenancy test per resource** — notes, cards, categories, domains,
   exams, attempts, sessions, review. User B gets **404**, not 403, for user
