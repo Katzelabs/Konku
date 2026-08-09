@@ -417,7 +417,38 @@ it red (the application predicate alone is not what is being tested).
 
 ## P8 — CI becomes the full gate
 
-`todo` · ~2 h · needs P0, P5, P6, P7
+`done` · ~2 h · needs P0, P5, P6, P7
+
+Five jobs, all five required on `main`: **Go**, **sqlc drift**, **Frontend**,
+**End-to-end**, **Docker image**.
+
+**`govulncheck` found ten real vulnerabilities**, all in the Go standard
+library and all fixed in later 1.25 patches — `go.mod` pinned `1.25.7`. Bumped
+to **1.25.12**, which is the lowest version that clears every one of them
+(they were fixed across .8, .9, .10, .11 and .12, so stopping at the first
+patch would have left eight). One advisory remains in a module we require and
+never call — `x/crypto/openpgp`, pulled in by goose — and `govulncheck` exits
+0 for it, correctly: it reports what the code actually reaches.
+
+`npm audit` is `--audit-level=high` on purpose. Failing a PR on a low-severity
+advisory in a build-time dependency trains everyone to ignore the check, and
+an ignored gate is worse than no gate. It currently reports zero at any level.
+
+Both database jobs connect as **`konku_app`**, not the owner. A CI suite
+running as a superuser would report green while testing no policy at all, and
+the harness fails rather than skips if it finds itself on a BYPASSRLS role.
+
+The e2e fixture reaches the database through a `psql` client when one is
+present and falls back to `docker compose exec` otherwise — CI has a service
+container and no compose project, a laptop may have compose and no client.
+
+All three failure modes in the criterion below were verified by causing them:
+
+| deliberate break | result |
+|---|---|
+| `go.mod` back to the vulnerable `1.25.7` | `govulncheck` exit 3 |
+| `format()` reimplemented with `toISOString()` | 3 frontend tests fail |
+| the review answer rendered before it is asked for | Playwright exit 1 |
 
 P0 built the skeleton. Add what now exists to add:
 

@@ -46,8 +46,35 @@ export function seedAccount(): string {
  * The owner is a superuser and therefore bypasses RLS, which is exactly why
  * the application never connects as it (D-059). Test *setup* is the one place
  * that legitimately needs to reach past a policy.
+ *
+ * Two ways of getting there, because the database is reached differently in
+ * the two places this suite runs: a `psql` client against the owner URL works
+ * everywhere it is installed, including CI, where Postgres is a service
+ * container and there is no compose project to exec into. `docker compose
+ * exec` is the fallback for a laptop without a Postgres client.
  */
+let usePsqlClient: boolean | undefined
+
+function haveLocalPsql(): boolean {
+  if (usePsqlClient === undefined) {
+    try {
+      execFileSync('psql', ['--version'], { stdio: 'ignore' })
+      usePsqlClient = true
+    } catch {
+      usePsqlClient = false
+    }
+  }
+  return usePsqlClient
+}
+
 function psql(sql: string) {
+  if (haveLocalPsql()) {
+    execFileSync('psql', [OWNER_DB, '-v', 'ON_ERROR_STOP=1', '-q', '-c', sql], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+    })
+    return
+  }
+
   execFileSync(
     'docker',
     ['compose', 'exec', '-T', 'db', 'psql', '-q', '-U', 'konku', '-d', 'konku', '-c', sql],

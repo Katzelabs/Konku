@@ -1,9 +1,16 @@
 # Every rule this project has was enforced by remembering to run `make check`.
 # Rules that are not enforced decay, so they run here instead (D-061).
 #
-# This is the skeleton. `govulncheck`, the frontend suite and the e2e run join
-# it in `06` P8, once those tests exist — do not block a green build on gates
-# that have nothing to gate yet.
+# The full gate (`06` P8). Five jobs, all required to merge:
+#
+#   Go            vet, the purity rule, unit + integration tests, govulncheck
+#   sqlc drift    generated code still matches the queries
+#   Frontend      npm audit, typecheck, unit tests, production build
+#   End-to-end    the core loop against the built binary
+#   Docker image  a broken Dockerfile is caught on the PR that broke it
+#
+# The two database jobs connect as the non-owner `konku_app`, because RLS is
+# inert for a superuser and a suite that runs as one certifies nothing (D-059).
 
 name: CI
 
@@ -92,6 +99,17 @@ jobs:
       - name: go test
         run: go test ./...
 
+      # Pinned rather than @latest: a new advisory should turn CI red on the
+      # day it lands, but a new govulncheck *release* should not, on a PR that
+      # changed nothing. Bump this deliberately.
+      - name: install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+
+      # Only reports vulnerabilities this code actually reaches, so it does
+      # not fail on an advisory in a transitive dependency nothing calls.
+      - name: govulncheck
+        run: govulncheck ./...
+
   sqlc:
     name: sqlc drift
     runs-on: ubuntu-latest
@@ -133,14 +151,100 @@ jobs:
       - name: npm ci
         run: npm ci
 
+      # --audit-level=high on purpose. Failing a PR on a low-severity advisory
+      # in a build-time dependency trains everyone to ignore the check, and an
+      # ignored gate is worse than no gate.
+      - name: npm audit
+        run: npm audit --audit-level=high
+
       - name: typecheck
         run: npm run typecheck
+
+      - name: unit tests
+        run: npm run test
 
       # `npm run build` is `tsc -b && vite build`. It catches what typecheck
       # cannot: a missing asset, a broken import that only resolves at bundle
       # time, a Tailwind token referenced but never defined.
       - name: build
         run: npm run build
+
+  e2e:
+    name: End-to-end
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: konku
+          POSTGRES_PASSWORD: konku
+          POSTGRES_DB: konku
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U konku -d konku"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      # Playwright drives the built binary, which connects as the non-owner
+      # role exactly as production does (D-059).
+      E2E_DATABASE_URL: postgres://konku_app:ci_app_password@localhost:5432/konku?sslmode=disable
+      E2E_MIGRATION_DATABASE_URL: postgres://konku:konku@localhost:5432/konku?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: create the application role
+        env:
+          PGPASSWORD: konku
+        run: |
+          psql -h localhost -U konku -d konku -v ON_ERROR_STOP=1 -c \
+            "DO \$\$ BEGIN
+               IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'konku_app') THEN
+                 CREATE ROLE konku_app LOGIN PASSWORD 'ci_app_password';
+               ELSE
+                 ALTER ROLE konku_app WITH LOGIN PASSWORD 'ci_app_password';
+               END IF;
+             END \$\$;"
+
+      - name: npm ci
+        run: npm ci
+        working-directory: web
+
+      # Only chromium. The suite tests this application's behaviour, not
+      # browser compatibility, and three engines is three times the minutes
+      # for the same signal.
+      - name: install playwright chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: web
+
+      # playwright.config.ts runs `make build` itself and then serves the
+      # binary, so the embedded assets and the SPA fallback are exercised
+      # rather than the dev server.
+      - name: playwright
+        run: npx playwright test
+        working-directory: web
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: web/playwright-report/
+          retention-days: 7
 
   docker:
     name: Docker image

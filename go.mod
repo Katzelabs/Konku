@@ -1,6 +1,6 @@
 module github.com/Katzelabs/Konku
 
-go 1.25.7
+go 1.25.12
 
 require (
 	github.com/getsentry/sentry-go v0.48.0
