@@ -226,7 +226,41 @@ request ID and no PII in it.
 
 ## P4 — Browser hardening
 
-`todo` · ~4 h · no deps
+`done` · ~4 h · no deps
+
+**The inline-style problem does not exist, and this was measured rather than
+reasoned about.** The concern was that `style-src 'self'` blocks `style`
+attributes, and five components set styles inline — two of them domain colours,
+which are user data and the one documented exception to the token rule (D-053).
+
+React does not emit a `style` attribute. `setValueForStyles` does
+`node = node.style` and assigns properties, which is CSSOM, and **CSP does not
+govern CSSOM**. Under the exact production policy:
+
+| what the code does | result |
+|---|---|
+| `el.style.width = '50%'` — what React does | applied, **no violation** |
+| `el.setAttribute('style', 'width: 50%')` | **blocked**, `style-src-attr` violation |
+
+So D2 option (b) needed no code changes at all. The real application was then
+loaded under the production policy in headless Chrome: React mounted, the
+stylesheet and bundle both loaded, and **zero CSP violations**.
+
+**The caveat that makes this true, and could stop being true:** it holds
+because the app is client-rendered only. Server-side rendering would put
+`style="..."` into the HTML, and every one of those five components would start
+violating. If SSR is ever introduced, this decision has to be revisited.
+
+`enforceOrigin` exempts **bodyless** requests from the Content-Type rule. That
+is a deliberate narrowing: `POST /auth/logout` carries nothing, and demanding a
+Content-Type describing no content is a strange requirement to put on a client
+— including the Bearer-token consumer D-040 anticipates. It costs nothing,
+because a bodyless cross-site POST is still stopped twice, by `SameSite=Lax`
+and by the Origin check.
+
+HSTS stays with Caddy, which is the only component that knows whether the
+connection was actually TLS. Guessing from a forwarded header and getting it
+wrong is not something you can take back within its `max-age`.
 
 - Security-header middleware: CSP with **no `unsafe-inline`**,
   `frame-ancestors 'none'`, `X-Content-Type-Options`, `Referrer-Policy`. HSTS

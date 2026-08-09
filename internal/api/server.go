@@ -52,6 +52,11 @@ func (s *Server) Routes() http.Handler {
 	// error shape, not a stack trace on stdout (D-062).
 	r.Use(recoverer)
 	r.Use(s.metrics.middleware)
+	r.Use(securityHeaders)
+	// The CSRF control (D-060). Above the routes rather than per-handler, so
+	// a new state-changing endpoint is covered the moment it is added rather
+	// than when somebody remembers.
+	r.Use(enforceOrigin)
 	r.Use(middleware.Timeout(30 * time.Second))
 
 	loginLimit := newRateLimiter(10, 5*time.Minute)

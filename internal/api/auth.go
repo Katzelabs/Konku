@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -119,6 +120,20 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if req.Email == "" || req.Password == "" {
 		writeError(w, http.StatusBadRequest, CodeBadRequest, "Email dan kata sandi wajib diisi.")
 		return
+	}
+
+	// Session fixation: an attacker who can plant a cookie sets the victim's
+	// session id to one they know, waits for the victim to log in, and rides
+	// the now-authenticated session. Minting a fresh id already defeats that,
+	// but the planted session is still live until it expires — so the
+	// credential presented with the login is revoked too (D-060).
+	if old := credential(r); old != "" {
+		if err := s.auth.Logout(r.Context(), old); err != nil {
+			// Not fatal: failing to revoke a session that may not even exist
+			// must not stop someone signing in.
+			slog.Warn("could not revoke the session presented at login",
+				"request_id", requestIDOf(w), "error", err)
+		}
 	}
 
 	user, sessionID, expires, err := s.auth.Login(r.Context(), req.Email, req.Password)
