@@ -49,6 +49,8 @@ make dev-web           # Vite on :5173  ← open this one
 make check             # vet, typecheck, tests, purity, sqlc drift
 make test-integration  # needs make db-up first
 make sqlc              # after editing internal/store/queries/*.sql
+make db-dump           # pg_dump -Fc into $KONKU_BACKUP_DIR (refuses inside the repo)
+make db-restore        # restore the newest dump into konku_restore
 go run ./cmd/konku seed-user -email you@example.com
 ```
 

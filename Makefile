@@ -12,10 +12,26 @@ export
 # Defaults, so `make db-up && make dev-api` works on a fresh clone with no
 # .env at all. A value in .env wins, because include runs first and ?= does
 # not overwrite.
-DATABASE_URL ?= postgres://konku:konku@localhost:5433/konku?sslmode=disable
+# Two principals (D-059). The app connects as the non-owner konku_app so that
+# FORCE ROW LEVEL SECURITY actually applies to it; migrations connect as the
+# owner, which is the only role allowed to run DDL.
+APP_DB_PASSWORD ?= konku_app_dev
+DATABASE_URL ?= postgres://konku_app:$(APP_DB_PASSWORD)@localhost:5433/konku?sslmode=disable
+MIGRATION_DATABASE_URL ?= postgres://konku:konku@localhost:5433/konku?sslmode=disable
 DEV ?= true
 
-.PHONY: help setup dev dev-api dev-web build test test-integration sqlc lint check check-pure migrate-up migrate-down db-up db-down clean
+# Where dumps land. Deliberately outside the repo AND outside the Docker
+# volume: a backup that lives in the thing it is backing up is not a backup,
+# and `docker compose down -v` is the exact accident this guards against.
+# db-dump refuses to write anywhere under $(CURDIR).
+KONKU_BACKUP_DIR ?= $(HOME)/Backups/konku
+
+# db-restore drops and recreates its target, so the default is a scratch
+# database rather than the one holding real notes. Restoring over `konku`
+# needs RESTORE_DB=konku CONFIRM=yes, typed on purpose.
+RESTORE_DB ?= konku_restore
+
+.PHONY: help setup dev dev-api dev-web build test test-integration sqlc sqlc-diff lint check check-pure migrate-up migrate-down db-up db-down db-dump db-restore clean
 
 help:
 	@grep -E '^[a-zA-Z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -29,6 +45,80 @@ db-up: ## Start the dev Postgres (port 5433)
 
 db-down: ## Stop the dev Postgres
 	docker compose down
+
+# The migration creates konku_app as NOLOGIN with no password, because a
+# credential in a migration is a credential in git. This gives it one.
+#
+# Idempotent on purpose: the dev volume already holds real data, and an
+# initdb script only ever runs on a fresh volume.
+#
+# Why this exists at all: the dev database's `konku` role is the Postgres
+# image's bootstrap user, which is SUPERUSER with BYPASSRLS. FORCE ROW LEVEL
+# SECURITY does not apply to it. Connecting the app as `konku` leaves every
+# policy inert while every naive test of them still passes (D-059).
+db-app-role: ## Grant konku_app LOGIN and set its password
+	@docker compose exec -T db psql -v ON_ERROR_STOP=1 -U konku -d konku -c \
+		"ALTER ROLE konku_app WITH LOGIN PASSWORD '$(APP_DB_PASSWORD)'" >/dev/null
+	@docker compose exec -T db psql -tA -U konku -d konku -c \
+		"select 'konku_app: rolsuper=' || rolsuper || ' rolbypassrls=' || rolbypassrls \
+		 from pg_roles where rolname='konku_app'"
+	@echo "konku_app can log in. Both flags above must be f, or RLS is inert."
+
+# Daily use starts now and it is local (D-067), so the dev volume is about to
+# hold weeks of real notes and review history. review_logs in particular cannot
+# be reconstructed after the fact (D-029).
+#
+# pg_dump runs INSIDE the container so its version always matches the server.
+# A Homebrew Postgres upgrade on the host is otherwise enough to turn every
+# backup into a version-mismatch error, discovered at restore time.
+db-dump: ## Dump the dev database to $KONKU_BACKUP_DIR (pg_dump -Fc)
+	@refuse() { \
+	  echo "refusing: $$1 is inside the repo."; \
+	  echo "A dump in the working tree is one git clean away from gone."; \
+	  echo "Set KONKU_BACKUP_DIR to somewhere else."; \
+	  exit 1; \
+	}; \
+	dir="$(KONKU_BACKUP_DIR)"; \
+	case "$$dir" in /*) abs="$$dir";; *) abs="$(CURDIR)/$$dir";; esac; \
+	case "$$abs/" in "$(CURDIR)"/*) refuse "$$abs";; esac; \
+	mkdir -p "$$abs" || exit 1; \
+	dir=$$(cd "$$abs" && pwd -P); \
+	case "$$dir/" in "$(CURDIR)"/*) refuse "$$dir";; esac; \
+	out="$$dir/konku-$$(date +%Y%m%d-%H%M%S).dump"; \
+	docker compose exec -T db pg_dump -Fc -U konku -d konku > "$$out" \
+	  || { rm -f "$$out"; echo "dump failed (is \`make db-up\` running?)"; exit 1; }; \
+	if [ ! -s "$$out" ]; then rm -f "$$out"; echo "dump was empty; refusing to keep it"; exit 1; fi; \
+	pg_restore -l "$$out" > /dev/null 2>&1 \
+	  || docker compose exec -T db pg_restore -l /dev/stdin < "$$out" > /dev/null \
+	  || { rm -f "$$out"; echo "dump is not a readable archive; refusing to keep it"; exit 1; }; \
+	echo "wrote $$out ($$(du -h "$$out" | cut -f1))"; \
+	echo; \
+	echo "This is on the same disk as the database. Get it off the machine —"; \
+	echo "a synced folder counts at this stage (06 P11)."
+
+# The other half. A dump that has never been restored is a hope, not a backup
+# (PRD section 9), and this is the target P10's drill is timed against.
+db-restore: ## Restore a dump into $RESTORE_DB. FILE=path, or the newest dump.
+	@file="$(FILE)"; \
+	if [ -z "$$file" ]; then \
+	  file=$$(ls -t "$(KONKU_BACKUP_DIR)"/*.dump 2>/dev/null | head -1); \
+	fi; \
+	if [ -z "$$file" ] || [ ! -s "$$file" ]; then \
+	  echo "no dump found. Pass FILE=path or run \`make db-dump\` first."; exit 1; \
+	fi; \
+	if [ "$(RESTORE_DB)" = "konku" ] && [ "$(CONFIRM)" != "yes" ]; then \
+	  echo "RESTORE_DB=konku would destroy the live dev database."; \
+	  echo "Re-run with CONFIRM=yes if that is genuinely what you want."; \
+	  exit 1; \
+	fi; \
+	echo "restoring $$file into $(RESTORE_DB)"; \
+	docker compose exec -T db dropdb -U konku --if-exists "$(RESTORE_DB)" || exit 1; \
+	docker compose exec -T db createdb -U konku "$(RESTORE_DB)" || exit 1; \
+	docker compose exec -T db pg_restore -U konku -d "$(RESTORE_DB)" --no-owner < "$$file" || exit 1; \
+	echo; \
+	echo "restored. Row counts in $(RESTORE_DB):"; \
+	docker compose exec -T db psql -U konku -d "$(RESTORE_DB)" -c \
+	  "select relname, n_live_tup from pg_stat_user_tables where n_live_tup > 0 order by n_live_tup desc;"
 
 dev-api: ## Run the Go server on :8080
 	go run ./cmd/konku
@@ -63,9 +153,41 @@ lint: ## Vet Go code and typecheck the frontend
 # It used to guard internal/card too. D-055 deleted that package along with the
 # markdown parser — narrowed rather than dropped, because the rule is the
 # reason the scheduler is still testable without a database.
+#
+# This check itself shipped broken: the pattern was "konku/internal/" while the
+# module is github.com/Katzelabs/Konku/internal/, and grep is case-sensitive.
+# It reported "srs/ is pure" for a file that imported internal/store outright.
+# So the rule is now enforced twice (hard rule 9), because the mechanism that
+# was supposed to be the enforcement was itself a hope:
+#
+#   1. `go list -deps` — authoritative and TRANSITIVE. It resolves imports the
+#      way the compiler does, so it cannot be fooled by an alias, a rename or
+#      a reach through some third package.
+#   2. grep over the source — weaker, but it sees *_test.go, which -deps does
+#      not. A test that needs the database means srs stopped being trivially
+#      testable, which is the actual property being protected.
+#
+# MODULE is read from go.mod rather than written out, so a module rename
+# cannot silently switch the check off again.
+MODULE := $(shell go list -m)
+
 check-pure: ## Assert srs/ imports nothing from internal/
-	@! grep -rn "konku/internal/" internal/srs --include="*.go" \
-		|| (echo "IMPURE: srs/ imports internal/" && exit 1)
+	@deps=$$(go list -deps ./internal/srs) \
+		|| { echo "check-pure: go list failed — cannot prove srs is pure"; exit 1; }; \
+	bad=$$(printf '%s\n' "$$deps" \
+		| grep "^$(MODULE)/internal/" \
+		| grep -v "^$(MODULE)/internal/srs$$" || true); \
+	if [ -n "$$bad" ]; then \
+		echo "IMPURE: internal/srs depends on:"; \
+		printf '%s\n' "$$bad" | sed 's/^/  /'; \
+		exit 1; \
+	fi
+	@hits=$$(grep -rn "$(MODULE)/internal/" internal/srs --include="*.go" || true); \
+	if [ -n "$$hits" ]; then \
+		echo "IMPURE: internal/srs sources reference internal/:"; \
+		echo "$$hits" | sed 's/^/  /'; \
+		exit 1; \
+	fi
 	@echo "srs/ is pure"
 
 # sqlc-generated code must match the SQL it came from, or the two drift and
@@ -89,8 +211,15 @@ clean: ## Remove build output
 	rm -rf bin internal/web/dist/* web/node_modules
 	touch internal/web/dist/.gitkeep
 
+# Tests connect as konku_app, NOT as the owner. This is not a detail: FORCE
+# ROW LEVEL SECURITY does not apply to a superuser, and `konku` is the
+# Postgres image's bootstrap superuser. Run the suite as `konku` and every
+# tenancy test passes while proving nothing at all (D-059). The harness
+# refuses to run as a BYPASSRLS role for that reason.
 test-integration: ## Run integration tests against the dev Postgres
-	TEST_DATABASE_URL="postgres://konku:konku@localhost:5433/konku?sslmode=disable" go test ./internal/store/ ./internal/api/ -v
+	TEST_DATABASE_URL="$(DATABASE_URL)" \
+	TEST_MIGRATION_DATABASE_URL="$(MIGRATION_DATABASE_URL)" \
+	go test ./internal/store/ ./internal/api/ -v
 
 sqlc: ## Regenerate type-safe Go from SQL
 	sqlc generate
