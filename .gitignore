@@ -1,5 +1,7 @@
 # Build output
 /bin/
+# `go build ./cmd/konku` without -o drops the binary here.
+/konku
 /internal/web/dist/*
 !/internal/web/dist/.gitkeep
 

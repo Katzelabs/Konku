@@ -1,0 +1,162 @@
+# Every rule this project has was enforced by remembering to run `make check`.
+# Rules that are not enforced decay, so they run here instead (D-061).
+#
+# This is the skeleton. `govulncheck`, the frontend suite and the e2e run join
+# it in `06` P8, once those tests exist — do not block a green build on gates
+# that have nothing to gate yet.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A force-push or a second commit makes the earlier run irrelevant. Cancelling
+# it keeps the queue honest without weakening the gate: `main` is protected on
+# the *latest* run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+
+    # Integration tests skip themselves unless TEST_DATABASE_URL is set, so
+    # without this container `go test ./...` would pass while testing none of
+    # the SQL. Same image as docker-compose.yml — pgvector, not stock pg17,
+    # because the migrations expect the extension to be available.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: konku
+          POSTGRES_PASSWORD: konku
+          POSTGRES_DB: konku
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U konku -d konku"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      # Tests connect as konku_app, NOT as the owner. This is the difference
+      # between testing RLS and testing nothing: FORCE ROW LEVEL SECURITY does
+      # not apply to a superuser, and `konku` is the image's bootstrap
+      # superuser (D-059). The harness refuses to run as a BYPASSRLS role, so
+      # getting this wrong fails loudly rather than passing vacuously.
+      TEST_DATABASE_URL: postgres://konku_app:ci_app_password@localhost:5432/konku?sslmode=disable
+      TEST_MIGRATION_DATABASE_URL: postgres://konku:konku@localhost:5432/konku?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # Read from go.mod so the toolchain cannot drift from the module.
+          go-version-file: go.mod
+          cache: true
+
+      # The migration creates konku_app as NOLOGIN with no password, because a
+      # credential in a migration is a credential in git. Migrations have not
+      # run yet at this point, so the role is created here and the migration's
+      # idempotent guard leaves it alone.
+      - name: create the application role
+        env:
+          PGPASSWORD: konku
+        run: |
+          psql -h localhost -U konku -d konku -v ON_ERROR_STOP=1 -c \
+            "DO \$\$ BEGIN
+               IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'konku_app') THEN
+                 CREATE ROLE konku_app LOGIN PASSWORD 'ci_app_password';
+               ELSE
+                 ALTER ROLE konku_app WITH LOGIN PASSWORD 'ci_app_password';
+               END IF;
+             END \$\$;"
+
+      - name: go vet
+        run: go vet ./...
+
+      # The one architectural rule (D-032). This step is the whole reason P0
+      # comes before everything else in `06`.
+      - name: internal/srs stays pure
+        run: make check-pure
+
+      - name: go test
+        run: go test ./...
+
+  sqlc:
+    name: sqlc drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # A prebuilt binary rather than `go install`: sqlc v1.31 requires Go
+      # 1.26 while this module is on 1.25, so `go install` would download a
+      # second toolchain on every run to build a tool we only ever execute.
+      #
+      # Pinned to the version that generated internal/store/gen. An unpinned
+      # install turns a sqlc release into a red build on an unrelated PR, and
+      # the diff it reports would be formatting rather than drift.
+      - uses: sqlc-dev/setup-sqlc@v4
+        with:
+          sqlc-version: "1.31.1"
+
+      # `sqlc diff` is `make sqlc && git diff --exit-code` without the
+      # write — it fails if the generated code does not match the queries.
+      # Reading the schema from migrations/ means no database is needed.
+      - name: generated code matches the queries
+        run: sqlc diff
+
+  web:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      - name: typecheck
+        run: npm run typecheck
+
+      # `npm run build` is `tsc -b && vite build`. It catches what typecheck
+      # cannot: a missing asset, a broken import that only resolves at bundle
+      # time, a Tailwind token referenced but never defined.
+      - name: build
+        run: npm run build
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Built but not pushed. Publishing is `06` P9, on a tag. The point here
+      # is that a broken Dockerfile is caught on the PR that broke it rather
+      # than on deploy day.
+      - name: docker build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
