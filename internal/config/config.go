@@ -24,7 +24,16 @@ type Config struct {
 	// to. Empty falls back to DatabaseURL, which is correct only where the two
 	// roles are the same.
 	MigrationDatabaseURL string
-	// SessionSecret signs session cookies. Must be set in production.
+	// SessionSecret is required outside dev and, as of 2026-08-09, is not
+	// read by anything.
+	//
+	// It does NOT sign session cookies: sessions are opaque 256-bit random
+	// identifiers stored server-side, so there is nothing signed and no key
+	// to invalidate (D-039). Rotating this logs nobody out — verified in
+	// docs/runbooks/secrets.md, which also records what does.
+	//
+	// Left in place rather than deleted because it is a required production
+	// variable and removing it is a deployment change, not a code change.
 	SessionSecret string
 	// AllowSignup gates public registration. Off by default: the correct
 	// default for a self-hosted box, and the MVP seeds its first account

@@ -521,7 +521,46 @@ locally, and `docker build` on a server is never required.
 
 ## P10 — Runbooks and the restore drill
 
-`todo` · ~3 h · needs P11
+`done` · ~3 h · needs P11
+
+All four written; three rehearsed. `PRD.md` §9 now carries a **measured** RTO
+of 2 h, down from a guessed 4 h — the drill showed the procedure is mechanical,
+and detection ("the operator notices", until `04-ship.md` S5 routes alerts) is
+what dominates the remaining budget.
+
+**The restore drill: 6 seconds**, end to end — dump, restore into an empty
+database, 15 RLS policies and the `konku_app` grants verified as surviving
+`pg_dump -Fc`, the app served the restored database, and a login against it
+succeeded. Six seconds is a floor for a 64 KB dump on a laptop, and
+`restore.md` says so rather than letting the number be quoted as an RTO.
+
+**The drill found a real bug on its first run.** `make db-dump` refused with
+`.../OME/Backups/konku is inside the repo` — because P11 wrote
+`KONKU_BACKUP_DIR=$HOME/...` into `.env.example`, and make **includes** `.env`
+rather than sourcing it, so `$H` expanded to nothing. Backups had silently
+stopped working for anyone who copied the example. Fixed to `${HOME}`, which is
+correct in both make and a shell, and the refusal message now names the trap.
+
+**`SESSION_SECRET` does not do what the acceptance criterion assumes.** It is
+loaded, required outside dev, and read by nothing. Sessions are opaque
+server-side identifiers (D-039), so there is no signing key to invalidate:
+
+| action | process | the existing session |
+|---|---|---|
+| restart with a new `SESSION_SECRET` | alive | **still valid (200)** |
+| `DELETE FROM auth_sessions` | alive | **revoked (401)** |
+
+So it does not crash — but it does not log anyone out either, and a runbook
+saying otherwise would have an operator believe stolen cookies were revoked
+when they were not. `secrets.md` documents what actually works and leaves
+"use it or remove it" as an explicit decision.
+
+**The rollback rehearsal covered the hard case**, a bad release that also
+migrated. Deploying an older image against a newer schema is caught:
+`/readyz` → `503 {"reason":"schema_mismatch"}` with
+`expected=6 actual=7` in the log. `rollback.md` splits the response by whether
+the migration was additive or destructive, because there is no safe generic
+answer.
 
 Write the runbooks now, not when they are needed — the moment they are needed
 is the moment nobody is thinking clearly (D-064). All four can be written and

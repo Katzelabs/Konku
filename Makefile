@@ -76,6 +76,10 @@ db-dump: ## Dump the dev database to $KONKU_BACKUP_DIR (pg_dump -Fc)
 	  echo "refusing: $$1 is inside the repo."; \
 	  echo "A dump in the working tree is one git clean away from gone."; \
 	  echo "Set KONKU_BACKUP_DIR to somewhere else."; \
+	  echo; \
+	  echo "If you wrote \$$HOME in .env: make *includes* .env rather than"; \
+	  echo "sourcing it, so \$$H expands to nothing and OME/... is left behind."; \
+	  echo "Write \$${HOME} instead — that works in make and in a shell."; \
 	  exit 1; \
 	}; \
 	dir="$(KONKU_BACKUP_DIR)"; \

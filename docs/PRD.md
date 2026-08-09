@@ -311,7 +311,7 @@ These are the numbers that say the service is being run rather than merely deplo
 | | Target |
 |---|---|
 | Availability | 99% monthly — ~7 h of downtime, planned or not |
-| RPO / RTO | 24 h / 4 h, proven by a **quarterly restore drill** (D-064) |
+| RPO / RTO | 24 h / **2 h**, proven by a **quarterly restore drill** (D-064) |
 | Unhandled 5xx | Below 0.1% of requests, alerting above it |
 | Time to detect an outage | The operator finds out before a user reports it |
 | Restore drill | Performed and **written down** every quarter, timed |
@@ -319,3 +319,9 @@ These are the numbers that say the service is being run rather than merely deplo
 | Cross-tenant leaks | Zero, backed by RLS and a tenancy test per resource |
 
 The one that matters most is the restore drill. Everything else degrades noisily; a backup that has never been restored fails silently, once, permanently.
+
+**RTO is now a measured number rather than a guess** (`06` P10). The first drill ran 2026-08-09 against dev compose: dump → restore into an empty database → policies and grants verified → the app served the restored database → login succeeded, in **6 seconds** for a 64 KB dump.
+
+Six seconds is a floor, not the target. What the drill establishes is that the *procedure* has no unknown steps in it, which is the part that costs an hour when it is missing. The 2 h target adds what the drill cannot rehearse on a laptop: noticing, fetching the dump from off-site, provisioning a database if the host is gone, and DNS or proxy work. It replaces 4 h because the procedure turned out to be written down and mechanical; it is not 30 min because **detection is currently "the operator notices"** — no alerts are routed until `04-ship.md` S5, and that is the dominant term.
+
+Re-measure against production once it exists, and revise this number rather than defending it.
