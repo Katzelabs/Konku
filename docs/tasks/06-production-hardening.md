@@ -286,7 +286,32 @@ login differs from the one after.
 
 ## P5 — Frontend tests
 
-`todo` · ~6 h · no deps
+`done` · ~6 h · no deps
+
+49 tests. Vitest + Testing Library + jsdom, `npm run test`.
+
+**The timezone is pinned in `vitest.config.ts`.** The bug hard rule 5 guards
+against — using `toISOString()` — only diverges from correct behaviour in a
+timezone where local 23:00 has already rolled over in UTC. CI runs on UTC,
+where a broken implementation and a correct one agree exactly, so an unpinned
+suite would have passed while testing nothing at all.
+
+**On the braces rule, the mechanism in CLAUDE.md is wrong.** It says the
+failing refetch "rejects, and the `mutate` callbacks are then skipped
+entirely". They are not skipped. `refetchQueries` wraps every fetch in
+`.catch(noop)` unless `throwOnError` is set, and the app does not set it, so
+the invalidate promise resolves either way. What actually happens is that
+`mutate`'s callbacks — and the mutation's own `isSuccess` — wait for the
+refetch and its full retry schedule to settle. Same symptom, different cause,
+and the rule is just as important. The wording is worth correcting.
+
+Two mechanisms (hard rule 9): a behavioural test that holds a refetch open and
+shows the coupling, and a source check over every shipped `queries.ts` so a
+*new* mutation written the wrong way fails without anyone remembering to test
+it. The source check uses a capture rather than a negative lookahead, because
+`=>\s*(?!\{)` looks correct and is not — `\s*` backtracks, the lookahead
+succeeds against a space, and every well-written mutation is reported as an
+offender.
 
 **There are currently zero.** Both of the last two shipped bugs lived here:
 the login rate limiter that was broken because nothing asserted a 429, and the
