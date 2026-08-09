@@ -22,6 +22,13 @@ import (
 	"github.com/Katzelabs/Konku/internal/web"
 )
 
+// version is stamped at build time with -ldflags "-X main.version=...".
+//
+// "dev" for anything built locally. It answers "what is actually running"
+// without shelling into the container, and it tags every Sentry event so a
+// regression points at a release rather than at a date (D-061, D-062).
+var version = "dev"
+
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
@@ -43,6 +50,12 @@ func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
+	}
+
+	// Unset rather than defaulted in config, so the build stamp wins and a
+	// deliberate SENTRY_RELEASE still overrides it.
+	if cfg.SentryRelease == "" {
+		cfg.SentryRelease = version
 	}
 
 	ctx := context.Background()
@@ -114,7 +127,7 @@ func run() error {
 		}
 	}()
 
-	slog.Info("listening", "port", cfg.Port, "dev", cfg.Dev)
+	slog.Info("listening", "port", cfg.Port, "dev", cfg.Dev, "version", version)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

@@ -31,7 +31,7 @@ KONKU_BACKUP_DIR ?= $(HOME)/Backups/konku
 # needs RESTORE_DB=konku CONFIRM=yes, typed on purpose.
 RESTORE_DB ?= konku_restore
 
-.PHONY: help setup dev dev-api dev-web build test test-integration sqlc sqlc-diff lint check check-pure migrate-up migrate-down db-up db-down db-dump db-restore clean
+.PHONY: help setup dev dev-api dev-web build test test-integration sqlc sqlc-diff lint check check-pure migrate-up migrate-down db-up db-down db-app-role db-dump db-restore release-verify clean
 
 help:
 	@grep -E '^[a-zA-Z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -206,6 +206,17 @@ migrate-up: ## Apply migrations
 
 migrate-down: ## Roll back the last migration
 	goose -dir migrations postgres "$$DATABASE_URL" down
+
+# Deploys are from an image built by CI and pinned by digest, never from
+# `docker build` on the box (D-061). This is how that image is checked before
+# it is trusted: pull it by digest, run it against the dev database, and
+# confirm it migrates and serves.
+#
+#   make release-verify                          build and check a local image
+#   make release-verify REF=ghcr.io/...@sha256:  check a published one
+#
+release-verify: ## Run a release image by digest against the dev database
+	@./scripts/verify-release.sh
 
 clean: ## Remove build output
 	rm -rf bin internal/web/dist/* web/node_modules

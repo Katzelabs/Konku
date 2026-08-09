@@ -1,0 +1,189 @@
+# A tag builds the image and pushes it to GHCR (D-061, 06 P9).
+#
+# Deploys are from tags, from an image built here and pinned by digest — never
+# `docker build` on the VPS, which makes "what is running in production"
+# unanswerable. The VPS half (pull by digest, roll out, roll back) is
+# `04-ship.md` S3; this workflow stops at a published, verified artifact.
+#
+# There is deliberately NO auto-deploy on merge, and none on tag either. The
+# gap between "the tests pass" and "I want this live" is where a solo
+# operator's judgement lives (D-061).
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  publish:
+    name: Build and publish
+    runs-on: ubuntu-latest
+
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          # The version tag is what a deploy names; `latest` exists for
+          # convenience only and is never what gets deployed, because a
+          # floating tag cannot be rolled back to.
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # Two architectures because the operator verifies the release by
+          # running it on an arm64 laptop and deploys it to an amd64 box. The
+          # Dockerfile cross-compiles rather than emulating, so this is cheap.
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The digest is the only identifier worth deploying: a tag can be moved,
+      # a digest cannot. This is what `04-ship.md` pins.
+      # A tag name is text somebody chose, and it reaches a shell here. It
+      # goes through the environment rather than being interpolated into the
+      # script, which is the difference between printing a odd tag name and
+      # running it.
+      - name: Report the digest
+        env:
+          TAG: ${{ github.ref_name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo "### Release $TAG"
+            echo ''
+            echo 'Deploy by digest, never by tag:'
+            echo ''
+            echo '```'
+            echo "${IMAGE}@${DIGEST}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  verify:
+    name: Verify the published image
+    needs: publish
+    runs-on: ubuntu-latest
+
+    # This job is the point of the whole workflow. Building an image proves it
+    # compiles; running the *published* artifact by digest against a real
+    # database proves it starts, migrates, and serves — which is what catches a
+    # missing embedded asset or a broken entrypoint before deploy day rather
+    # than during it.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: konku
+          POSTGRES_PASSWORD: konku
+          POSTGRES_DB: konku
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U konku -d konku"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create the application role
+        env:
+          PGPASSWORD: konku
+        run: |
+          psql -h localhost -U konku -d konku -v ON_ERROR_STOP=1 -c \
+            "DO \$\$ BEGIN
+               IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'konku_app') THEN
+                 CREATE ROLE konku_app LOGIN PASSWORD 'ci_app_password';
+               ELSE
+                 ALTER ROLE konku_app WITH LOGIN PASSWORD 'ci_app_password';
+               END IF;
+             END \$\$;"
+
+      # By digest, not by tag. Pulling the tag would verify whatever the tag
+      # points at now, which is not necessarily what was just built.
+      - name: Run the published image by digest
+        env:
+          DIGEST: ${{ needs.publish.outputs.digest }}
+        run: |
+          set -euo pipefail
+          IMAGE_REF="${IMAGE}@${DIGEST}"
+          echo "verifying $IMAGE_REF"
+
+          docker run -d --name konku-verify --network host \
+            -e DATABASE_URL='postgres://konku_app:ci_app_password@localhost:5432/konku?sslmode=disable' \
+            -e MIGRATION_DATABASE_URL='postgres://konku:konku@localhost:5432/konku?sslmode=disable' \
+            -e SESSION_SECRET='verify-only-secret' \
+            -e DEV=false \
+            -e METRICS_ADDR= \
+            "$IMAGE_REF"
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/readyz > /tmp/readyz.json; then
+              echo "ready: $(cat /tmp/readyz.json)"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "the published image never became ready"
+              docker logs konku-verify
+              exit 1
+            fi
+            sleep 2
+          done
+
+          # Ready means the database is reachable AND the schema matches what
+          # this binary migrated to, so a non-zero schema_version proves the
+          # migrations ran from inside the image.
+          grep -q '"status":"ok"' /tmp/readyz.json
+          # NOT `grep -qv`, which asks whether *some line* fails to match and
+          # is therefore true of any one-line body. This asserts absence.
+          if grep -q '"schema_version":0' /tmp/readyz.json; then
+            echo "schema_version is 0 — the image did not run its migrations"
+            exit 1
+          fi
+
+          # The embedded frontend has to be there too. A binary that serves
+          # the API but 404s the app is a broken release that /readyz cannot
+          # see (the .gitkeep gotcha, caught for real).
+          curl -fsS http://localhost:8080/ | grep -q '<div id="root">'
+          echo "the embedded frontend is served"
+
+          docker rm -f konku-verify

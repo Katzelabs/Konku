@@ -463,7 +463,45 @@ test, or a broken review flow cannot be merged.
 
 ## P9 — Build and publish the release artifact
 
-`todo` · ~2 h · needs P8
+`done` (local half) · `todo` (a real tag, which publishes to GHCR) · ~2 h ·
+needs P8
+
+`release.yml` builds on a `v*` tag, pushes to GHCR, then a **second job pulls
+the published image back by digest and runs it** against a Postgres service
+container. Building proves it compiles; running the artifact proves it starts,
+migrates and serves — which is what catches a missing embedded asset or a
+broken entrypoint before deploy day.
+
+**Multi-arch, cross-compiled rather than emulated.** The operator's laptop is
+arm64 and the VPS is amd64, and the release is verified by running it locally
+before it is deployed — so it has to exist for both. The Dockerfile pins both
+build stages to `$BUILDPLATFORM` and passes `GOOS`/`GOARCH`: the frontend
+bundle is architecture-independent and `CGO_ENABLED=0` makes the Go binary a
+straight target swap, so this costs almost nothing. Verified by extracting the
+binaries: `x86-64` and `ARM aarch64`, both statically linked.
+
+The binary is **stamped with the tag** (`-X main.version`), which the startup
+log reports and which becomes the default `SENTRY_RELEASE`. That is what makes
+a regression point at a release rather than at a date (D-062), without anyone
+remembering to set a variable at deploy time.
+
+`make release-verify` is the same check, runnable now. With no argument it
+builds, publishes to a throwaway local registry, pulls back **by digest** and
+runs against the dev database. With `REF=ghcr.io/...@sha256:...` it checks a
+published image — which is what `04-ship.md` runs before a deploy and
+`rollback.md` runs against the previous digest.
+
+Proven end to end locally, since a real tag needs a push:
+
+```
+==> Published localhost:5001/konku@sha256:8bc3d17e…
+      Platform: linux/amd64
+      Platform: linux/arm64
+==> Pulling by digest
+    /readyz -> {"schema_version":6,"status":"ok"}
+    / -> the embedded frontend is served
+    version -> "version":"local-verify"
+```
 
 The half of the release pipeline that needs no server (D-067):
 
