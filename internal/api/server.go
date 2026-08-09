@@ -5,9 +5,7 @@
 package api
 
 import (
-	"context"
 	"io/fs"
-	"log/slog"
 	"net/http"
 	"time"
 
@@ -22,28 +20,48 @@ import (
 // Server holds the dependencies handlers need. Dependency injection is a
 // struct with fields and a constructor — no framework (D-045).
 type Server struct {
-	cfg   config.Config
-	store *store.Store
-	auth  *auth.Service
-	dist  fs.FS
+	cfg     config.Config
+	store   *store.Store
+	auth    *auth.Service
+	dist    fs.FS
+	metrics *metrics
 }
 
 func NewServer(cfg config.Config, st *store.Store, au *auth.Service, dist fs.FS) *Server {
-	return &Server{cfg: cfg, store: st, auth: au, dist: dist}
+	return &Server{cfg: cfg, store: st, auth: au, dist: dist, metrics: newMetrics(st)}
 }
+
+// MetricsHandler serves the Prometheus registry.
+//
+// The caller mounts it on its own listener bound to localhost rather than on
+// the application router (D-062). Pool saturation and request latency are
+// operational data, and the surest way to keep them off the public internet is
+// for them never to be routable from it.
+func (s *Server) MetricsHandler() http.Handler { return s.metrics.handler() }
 
 func (s *Server) Routes() http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP) // trustworthy because Caddy sits in front
+	// Order matters: requestLogger is above Recoverer so a panic still
+	// produces a request log line with its status, and both are above the
+	// metrics middleware so a panicked request is counted as the 500 it is.
+	r.Use(requestLogger)
 	r.Use(middleware.Recoverer)
+	r.Use(s.metrics.middleware)
 	r.Use(middleware.Timeout(30 * time.Second))
 
 	loginLimit := newRateLimiter(10, 5*time.Minute)
 
+	// Operational endpoints, deliberately outside /api: they are not part of
+	// the product's API surface and nothing in the SPA calls them. Splitting
+	// liveness from readiness is D-062 — see health.go for why conflating them
+	// makes a database blip look like a dead container.
+	r.Get("/healthz", s.handleLive)
+	r.Get("/readyz", s.handleReady)
+
 	r.Route("/api", func(r chi.Router) {
-		r.Get("/health", s.handleHealth)
 
 		// Unauthenticated. Rate-limited because it is the only unauthenticated
 		// write path in the application (D-039).
@@ -156,22 +174,4 @@ func (s *Server) Routes() http.Handler {
 	r.NotFound(spaHandler(s.dist))
 
 	return r
-}
-
-// handleHealth pings the database rather than just returning ok. A health
-// check that cannot fail tells you nothing.
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-	defer cancel()
-
-	if err := s.store.Ping(ctx); err != nil {
-		slog.Error("health check failed", "error", err)
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
-			"status": "degraded",
-			"db":     "unreachable",
-		})
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "db": "ok"})
 }

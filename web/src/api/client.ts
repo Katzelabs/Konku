@@ -3,18 +3,27 @@
 export interface ApiErrorBody {
   code: string
   message: string
+  request_id?: string
 }
 
 export class ApiError extends Error {
   readonly code: string
   readonly status: number
+  /**
+   * The server's request ID for the failed call, when there is one.
+   *
+   * The same value is in the response header, in the error body, and in every
+   * log line for that request, so a screenshot maps to a log query (D-062).
+   */
+  readonly requestId?: string
 
-  constructor(status: number, body: ApiErrorBody) {
+  constructor(status: number, body: ApiErrorBody, requestId?: string) {
     // message is already user-facing Bahasa Indonesia from the server.
     super(body.message)
     this.name = 'ApiError'
     this.code = body.code
     this.status = status
+    this.requestId = body.request_id || requestId || undefined
   }
 }
 
@@ -43,7 +52,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // Non-JSON error (proxy, gateway). Keep the generic message.
     }
-    throw new ApiError(res.status, body)
+    // Read the header too: a 502 from Caddy never reaches a Go handler, so it
+    // has no error body, but it may still carry the ID.
+    throw new ApiError(res.status, body, res.headers.get('X-Request-Id') ?? undefined)
   }
 
   if (res.status === 204) return undefined as T

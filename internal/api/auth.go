@@ -89,6 +89,13 @@ func (s *Server) requireUser(next http.Handler) http.Handler {
 			writeError(w, http.StatusUnauthorized, CodeUnauthorized, msg)
 			return
 		}
+		// Report the user back up to the request logger, which cannot see the
+		// derived context created below. A user_id and a request ID are enough
+		// to debug and not enough to leak (rule 10, D-062).
+		if info := reqInfoFrom(r.Context()); info != nil {
+			info.userID = user.ID.String()
+		}
+
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userCtxKey, user)))
 	})
 }

@@ -14,6 +14,10 @@ import (
 type errorBody struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	// RequestID ties a screenshot to a log query (D-062). Omitted rather than
+	// sent empty, so a response from outside the middleware chain does not
+	// carry a field that looks like a lost ID.
+	RequestID string `json:"request_id,omitempty"`
 }
 
 type errorResponse struct {
@@ -55,16 +59,40 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	}
 }
 
+// requestIDOf reads the ID the logging middleware published on the response.
+//
+// Going through the header rather than the request is what keeps this change
+// to two functions: writeError has around a hundred call sites, and threading
+// an *http.Request through every one of them to carry a string would be a far
+// larger diff than the feature deserves.
+func requestIDOf(w http.ResponseWriter) string {
+	return w.Header().Get(requestIDHeader)
+}
+
 func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, errorResponse{Error: errorBody{Code: code, Message: message}})
+	writeJSON(w, status, errorResponse{Error: errorBody{
+		Code:      code,
+		Message:   message,
+		RequestID: requestIDOf(w),
+	}})
 }
 
 // writeInternal logs the real cause and returns a generic message. Internal
 // errors must never leak driver or query detail to the client.
+//
+// The log line and the response now share a request ID, which is the entire
+// point: the user can read theirs off the screen and it finds this line.
 func writeInternal(w http.ResponseWriter, err error) {
-	slog.Error("request failed", "error", err)
-	writeError(w, http.StatusInternalServerError, CodeInternal,
-		"Terjadi kesalahan di server. Coba lagi sebentar lagi.")
+	id := requestIDOf(w)
+	slog.Error("request failed", "request_id", id, "error", err)
+
+	msg := "Terjadi kesalahan di server. Coba lagi sebentar lagi."
+	if id != "" {
+		// Shown so a screenshot is actionable. It is a random opaque token —
+		// it identifies the request, not the person (rule 10).
+		msg += " Kode: " + id
+	}
+	writeError(w, http.StatusInternalServerError, CodeInternal, msg)
 }
 
 // writeNotFound is also the correct response for a resource owned by another
