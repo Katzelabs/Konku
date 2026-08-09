@@ -334,7 +334,35 @@ Vitest + Testing Library, on the parts where a bug is silent:
 
 ## P6 — End-to-end
 
-`todo` · ~5 h · needs P5
+`done` · ~5 h · needs P5
+
+Runs against the **built binary**, not the Vite dev server. That is the whole
+value of this tier: it exercises the embedded assets, the SPA fallback, the
+strict CSP and the origin check, none of which exist in front of `vite dev`. A
+suite run against the dev server would pass on a build that cannot serve
+itself. Two of the seven tests exist only for that — a console-error sweep
+across six routes, and a deep link returning the shell rather than a 404.
+
+`seed-user` gained **`-password-stdin`**, because e2e has no terminal to prompt
+at. It is a flag that says "read stdin", not a flag that carries the password,
+so the secret still never reaches `argv`, `ps` or shell history — the same
+shape as `docker login --password-stdin`. The unasked-for pipe is still
+refused; that check exists to catch an accident, and an explicit flag is not
+one.
+
+**A card written today is due tomorrow** (`srs.Intervals[0]` is 1), so the
+review screen cannot be reached through the UI alone on the day a card is
+created. The fixture moves the schedule forward rather than changing the
+design; everything from the review screen onwards is the real interface. The
+same applies to the timer: the shortest session is fifteen minutes, so the
+finished state is seeded and the *capture prompt* is what gets tested.
+
+**On the "breaking the review reveal makes it fail" criterion:** it takes
+breaking *both* gates. Recall-before-reveal has two independent mechanisms —
+the answer query is not enabled, and the element is not rendered — so
+defeating either one alone still leaves the answer genuinely invisible, and
+the suite still passes because nothing is actually wrong. With both defeated
+the answer appears before it is asked for, and `toBeHidden` catches it.
 
 Playwright, against the compose stack. The core loop only:
 

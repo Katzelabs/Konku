@@ -28,5 +28,7 @@ export default defineConfig({
     // shipped bugs lived here, so the suite covers the parts where a bug is
     // silent rather than the parts that are easy to render.
     include: ['src/**/*.test.{ts,tsx}'],
+    // e2e/ is Playwright's; its `test` is a different runner entirely.
+    exclude: ['e2e/**', 'node_modules/**'],
   },
 })

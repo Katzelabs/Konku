@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -30,6 +32,14 @@ const minPasswordLength = 12
 func seedUser(args []string) error {
 	fs := flag.NewFlagSet("seed-user", flag.ExitOnError)
 	email := fs.String("email", "", "email address for the account")
+	// Explicit opt-in for non-interactive use — automated setup and the e2e
+	// suite, which have no terminal to prompt at. Deliberately a flag that
+	// says "read stdin" rather than a flag that carries the password: the
+	// secret still never appears in argv, in `ps`, or in shell history. This
+	// is the same shape as `docker login --password-stdin`, for the same
+	// reason.
+	passwordStdin := fs.Bool("password-stdin", false,
+		"read the password from stdin instead of prompting")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -38,7 +48,7 @@ func seedUser(args []string) error {
 	}
 
 	// The password is never a flag: flags land in shell history and in `ps`.
-	password, err := promptPassword()
+	password, err := readPassword(*passwordStdin)
 	if err != nil {
 		return err
 	}
@@ -73,9 +83,31 @@ func seedUser(args []string) error {
 	return nil
 }
 
+// readPassword prompts, or reads one line from stdin when asked to.
+//
+// The unasked-for pipe is still refused. That check exists to catch an
+// accident — a script redirecting stdin without meaning to — and an explicit
+// -password-stdin is not an accident.
+func readPassword(fromStdin bool) (string, error) {
+	if fromStdin {
+		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return "", fmt.Errorf("seed-user: reading password from stdin: %w", err)
+		}
+		password := strings.TrimRight(line, "\r\n")
+		if len(password) < minPasswordLength {
+			return "", fmt.Errorf("seed-user: password must be at least %d characters", minPasswordLength)
+		}
+		return password, nil
+	}
+
+	return promptPassword()
+}
+
 func promptPassword() (string, error) {
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		return "", errors.New("seed-user: refusing to read a password from a pipe; run this interactively")
+		return "", errors.New("seed-user: refusing to read a password from a pipe; " +
+			"run this interactively, or pass -password-stdin if that is what you meant")
 	}
 
 	fmt.Print("Password: ")
