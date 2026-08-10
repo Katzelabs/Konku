@@ -53,6 +53,21 @@ jobs:
           --health-timeout 3s
           --health-retries 10
 
+      # The mail tests skip themselves unless MAILPIT_API_URL is set, exactly
+      # like the database ones, so without this container the whole send path
+      # would go untested while the job stayed green (07 L2). Same image and
+      # tag as docker-compose.yml.
+      mailpit:
+        image: axllent/mailpit:v1.27
+        ports:
+          - 1025:1025
+          - 8025:8025
+        options: >-
+          --health-cmd "/mailpit readyz"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
     env:
       # Tests connect as konku_app, NOT as the owner. This is the difference
       # between testing RLS and testing nothing: FORCE ROW LEVEL SECURITY does
@@ -61,6 +76,12 @@ jobs:
       # getting this wrong fails loudly rather than passing vacuously.
       TEST_DATABASE_URL: postgres://konku_app:ci_app_password@localhost:5432/konku?sslmode=disable
       TEST_MIGRATION_DATABASE_URL: postgres://konku:konku@localhost:5432/konku?sslmode=disable
+
+      # Without these the mail tests skip and `go test ./...` stays green while
+      # proving nothing about the send path (07 L2). Deliverability is still
+      # untested here and cannot be tested here — that is 04-ship S4 (D-067).
+      MAILPIT_API_URL: http://localhost:8025
+      MAILPIT_SMTP_URL: smtp://localhost:1025
 
     steps:
       - uses: actions/checkout@v4

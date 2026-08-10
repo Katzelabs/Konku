@@ -18,5 +18,33 @@ services:
       timeout: 3s
       retries: 10
 
+  # The SMTP catcher (07 L2). Everything in the mail flow except delivery to a
+  # real mailbox is testable against this: send, open, click, verify.
+  #
+  # Deliverability is the half that cannot be tested here (D-067) — SPF, DKIM
+  # and DMARC on a real sending domain are 04-ship S4, and the first real send
+  # carries its own risk. Mailpit proves the code, not the reputation.
+  #
+  # Dev profile so `docker compose up -d db` and CI's integration job are
+  # unaffected; `make mail-up` starts it.
+  mailpit:
+    image: axllent/mailpit:v1.27
+    profiles: ["dev"]
+    ports:
+      # SMTP, and the web UI where the message actually gets read.
+      - "1025:1025"
+      - "8025:8025"
+    environment:
+      # Nothing is ever delivered onward, so no message is worth keeping past
+      # the container.
+      MP_MAX_MESSAGES: 500
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   konku-dev-data:

@@ -770,18 +770,75 @@ before 04 in the first place.
 
 ---
 
+### D-068 — Resend over SMTP, on its own account and its own domain *(answers D-058's provider question)*
+
+`07` L2 said to decide the provider "with the flow in front of you, not
+before". This is that decision.
+
+**Resend, addressed with stdlib `net/smtp`.** Resend exposes a plain SMTP
+endpoint (`smtp.resend.com`, username the literal string `resend`, password an
+API key), so the transport is already in the standard library and D-065's "name
+the obligation this dependency discharges" test never has to be argued. An SDK
+for "send one templated message" is not a trade worth making.
+
+**Its own Resend account, not the one already serving another project.** The
+free tier allows exactly one custom domain, so sharing an account is not merely
+untidy, it is impossible without paying. But the domain limit is not the real
+argument — sender reputation and account suspension are shared blast radius,
+and two unrelated projects that lose signup together for one email reason is
+the coupling worth refusing. Volume is not a constraint at this scale: 3,000
+messages a month and 100 a day against verification and reset traffic is not
+close.
+
+**Its own domain, registered at cost, and deliberately not a cheap TLD.** A
+`.xyz` costs a dollar and a `.com` costs about ten, and the difference buys
+measurably worse delivery: `.xyz`, `.top`, `.club` and similar are filtered
+more aggressively, with Spamhaus reporting abuse rates above 40% of registered
+domains on some of them, and correct SPF/DKIM/DMARC does not fully compensate
+for TLD reputation. Saving nine dollars a year to raise the spam rate on the
+one message that gates account creation is a bad trade, and it lands exactly on
+the risk D-067 named. Mail sends from a subdomain (`mail.<domain>`) so
+transactional reputation stays separable from the apex.
+
+The domain is not an email cost. `04-ship.md` S1 needs a hostname for Caddy's
+TLS regardless — L2 only means buying it sooner, which is worth doing because
+DNS verification is wall-clock delay rather than work.
+
+**Rejected:**
+
+- **Sending from the other project's verified domain.** Free, and wrong twice:
+  verification mail from an unrelated brand reads as phishing to a recipient
+  and to a filter, and it couples the two projects' reputations permanently.
+- **Amazon SES.** Genuinely cheaper ($0.10 per 1,000) with effectively
+  unlimited verified domains, and the right answer at a third project. Not at
+  this one: 4–16 hours of setup and a support request to leave the sandbox, to
+  save a few dollars a year on traffic measured in dozens of messages a month.
+- **A free domain** (`.eu.org`, a community subdomain like `is-a.dev`). Shared
+  parent-domain reputation is the same defect as sharing the other project's
+  domain, without even the branding being right.
+
+**What this does not settle: deliverability.** Nothing here can be verified
+locally. L2 builds against a Mailpit catcher; the first real send is `04` S4
+and it carries its own risk (D-067).
+
+---
+
 ## Open questions
 
 None blocking. Deferred details, intentionally left until the feature is being built:
 
 - **Feynman grading output format** (D-036) — v0.3
 - **Progressive focus N** (D-037) — currently 5, tune against real session data
-- **Per-user settings have nowhere to live.** Progressive focus N, default timer duration, rota preference were constants under one user. Multi-tenant they are per-user, and there is no table or column for them. Needed alongside the domains UI, which shares the surface. **Now blocking** — D-058's account screen and D-066's export both need somewhere to hang.
 - **Do random exam draws include mastered cards?** (D-048) — currently yes.
+
+**Closed:** *per-user settings have nowhere to live* — `user_settings` lands in
+migration `00007` (`07` L1), carrying progressive focus N, default timer
+duration and the rota preference. The values are still the old constants; D-037
+remains open on tuning N, which is now per-account data rather than one
+person's.
 
 Opened by the production shift (D-057 – D-066):
 
-- **Which transactional email provider** (D-058). Needs to be one whose free tier survives a hobby-scale launch and whose deliverability does not put verification mail in spam — which is an outage that looks like a signup bug. Decide when writing the signup flow, not before.
 - **What bounds the cost of an open signup** (D-066). Quotas cap storage; they do not cap the number of accounts. Invite codes, a waitlist, and "open and watch" are all defensible; the answer depends on how the launch actually goes.
 - **The rate limiter is per-process** (`internal/api/ratelimit.go`). Correct for one container, wrong the moment there are two, and D-023 rejected Redis for a problem that did not exist yet. It exists once a second instance does — not before, and running two instances is not currently planned.
 - **How much of `GOALS.md` survives having other users.** It is written in the first person about one person's constraints, and D-057 promotes its rules to product constraints without rewriting it. Whether it becomes a product-principles document or stays a personal one that the principles cite is unresolved.

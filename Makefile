@@ -20,6 +20,11 @@ DATABASE_URL ?= postgres://konku_app:$(APP_DB_PASSWORD)@localhost:5433/konku?ssl
 MIGRATION_DATABASE_URL ?= postgres://konku:konku@localhost:5433/konku?sslmode=disable
 DEV ?= true
 
+# The dev SMTP catcher (07 L2). Mailpit accepts everything and delivers
+# nothing, which is the whole point locally — deliverability is 04-ship S4.
+MAILPIT_SMTP_URL ?= smtp://localhost:1025
+MAILPIT_API_URL ?= http://localhost:8025
+
 # Where dumps land. Deliberately outside the repo AND outside the Docker
 # volume: a backup that lives in the thing it is backing up is not a backup,
 # and `docker compose down -v` is the exact accident this guards against.
@@ -31,7 +36,7 @@ KONKU_BACKUP_DIR ?= $(HOME)/Backups/konku
 # needs RESTORE_DB=konku CONFIRM=yes, typed on purpose.
 RESTORE_DB ?= konku_restore
 
-.PHONY: help setup dev dev-api dev-web build test test-integration sqlc sqlc-diff lint check check-pure migrate-up migrate-down db-up db-down db-app-role db-dump db-restore release-verify clean
+.PHONY: help setup dev dev-api dev-web build test test-integration test-mail sqlc sqlc-diff lint check check-pure migrate-up migrate-down db-up db-down db-app-role db-dump db-restore mail-up mail-down release-verify clean
 
 help:
 	@grep -E '^[a-zA-Z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -45,6 +50,15 @@ db-up: ## Start the dev Postgres (port 5433)
 
 db-down: ## Stop the dev Postgres
 	docker compose down
+
+# The SMTP catcher (07 L2). Behind a compose profile so `make db-up` and CI's
+# integration job are unaffected by it.
+mail-up: ## Start the dev SMTP catcher (SMTP :1025, inbox on :8025)
+	docker compose --profile dev up -d mailpit
+	@echo "Mailpit inbox: http://localhost:8025"
+
+mail-down: ## Stop the dev SMTP catcher
+	docker compose --profile dev stop mailpit
 
 # The migration creates konku_app as NOLOGIN with no password, because a
 # credential in a migration is a credential in git. This gives it one.
@@ -235,6 +249,14 @@ test-integration: ## Run integration tests against the dev Postgres
 	TEST_DATABASE_URL="$(DATABASE_URL)" \
 	TEST_MIGRATION_DATABASE_URL="$(MIGRATION_DATABASE_URL)" \
 	go test ./internal/store/ ./internal/api/ -v
+
+# Separate from test-integration because it needs a different service. The mail
+# tests skip without MAILPIT_API_URL rather than failing, so `make test` stays
+# green on a machine with no catcher running.
+test-mail: mail-up ## Run the mail tests against the dev SMTP catcher
+	MAILPIT_API_URL="$(MAILPIT_API_URL)" \
+	MAILPIT_SMTP_URL="$(MAILPIT_SMTP_URL)" \
+	go test ./internal/mail/ -v
 
 sqlc: ## Regenerate type-safe Go from SQL
 	sqlc generate

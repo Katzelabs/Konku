@@ -52,6 +52,22 @@ type Config struct {
 	SentryRelease string
 	// SentryEnvironment separates the laptop from the box.
 	SentryEnvironment string
+	// SMTPURL is the mail transport: smtp://localhost:1025 for the dev catcher,
+	// smtps://resend:KEY@smtp.resend.com:465 in production (D-068).
+	//
+	// Empty means mail is not configured, which is normal on a box where
+	// signup is closed — the MVP's one account came from `konku seed-user` and
+	// never needed a message sent to it.
+	SMTPURL string
+	// MailFrom is the From header, e.g. "Konku <no-reply@mail.konku.app>".
+	// Sending is from a subdomain so transactional reputation stays separable
+	// from the apex (D-068).
+	MailFrom string
+	// PublicBaseURL is the origin the links in verification and reset mail are
+	// built against. It is NOT cosmetic: a wrong value sends every user to a
+	// host that cannot verify them, and the mail is already delivered by the
+	// time anyone notices.
+	PublicBaseURL string
 	// MetricsAddr is where /metrics is served, on its own listener.
 	//
 	// Bound to loopback by default and never to 0.0.0.0: pool saturation and
@@ -72,6 +88,9 @@ func Load() (Config, error) {
 		SentryDSN:            os.Getenv("SENTRY_DSN"),
 		SentryRelease:        env("SENTRY_RELEASE", "dev"),
 		SentryEnvironment:    env("SENTRY_ENVIRONMENT", "development"),
+		SMTPURL:              os.Getenv("SMTP_URL"),
+		MailFrom:             os.Getenv("MAIL_FROM"),
+		PublicBaseURL:        env("PUBLIC_BASE_URL", "http://localhost:5173"),
 		// LookupEnv, not env(): METRICS_ADDR is documented as "empty disables
 		// it", and env() returns its fallback for an empty value, so setting
 		// METRICS_ADDR= would have started the listener anyway.
@@ -92,6 +111,24 @@ func Load() (Config, error) {
 	if c.SessionSecret == "" && !c.Dev {
 		return Config{}, fmt.Errorf(
 			"SESSION_SECRET is required outside dev. Generate one with: openssl rand -base64 32")
+	}
+
+	// Open signup without mail is the one combination that must not start.
+	//
+	// Verification is required before an account is usable, and the reset link
+	// is the only recovery path there is (07 L3, L4). With no transport, every
+	// account created is unverifiable and unrecoverable — and the failure is
+	// silent from the operator's side, because signup itself returns 204 and
+	// the damage is a mailbox that stays empty.
+	if c.AllowSignup {
+		if c.SMTPURL == "" {
+			return Config{}, fmt.Errorf(
+				"ALLOW_SIGNUP=true requires SMTP_URL: an account that cannot be " +
+					"verified can never be recovered either")
+		}
+		if c.MailFrom == "" {
+			return Config{}, fmt.Errorf("ALLOW_SIGNUP=true requires MAIL_FROM")
+		}
 	}
 	return c, nil
 }
