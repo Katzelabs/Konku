@@ -27,7 +27,7 @@ const createSession = `-- name: CreateSession :one
 
 INSERT INTO auth_sessions (id, user_id, expires_at)
 VALUES ($1, $2, $3)
-RETURNING id, user_id, expires_at, created_at
+RETURNING id, user_id, expires_at, created_at, last_seen_at, user_agent, ip
 `
 
 type CreateSessionParams struct {
@@ -47,6 +47,9 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (A
 		&i.UserID,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.LastSeenAt,
+		&i.UserAgent,
+		&i.Ip,
 	)
 	return i, err
 }
@@ -54,7 +57,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (A
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (id, email, password_hash)
 VALUES ($1, $2, $3)
-RETURNING id, email, password_hash, created_at
+RETURNING id, email, password_hash, created_at, email_verified_at, deleted_at
 `
 
 type CreateUserParams struct {
@@ -76,6 +79,8 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Email,
 		&i.PasswordHash,
 		&i.CreatedAt,
+		&i.EmailVerifiedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -99,7 +104,7 @@ func (q *Queries) DeleteSession(ctx context.Context, id string) error {
 }
 
 const getActiveSession = `-- name: GetActiveSession :one
-SELECT auth_sessions.id, auth_sessions.user_id, auth_sessions.expires_at, auth_sessions.created_at, users.id, users.email, users.password_hash, users.created_at
+SELECT auth_sessions.id, auth_sessions.user_id, auth_sessions.expires_at, auth_sessions.created_at, auth_sessions.last_seen_at, auth_sessions.user_agent, auth_sessions.ip, users.id, users.email, users.password_hash, users.created_at, users.email_verified_at, users.deleted_at
 FROM auth_sessions
 JOIN users ON users.id = auth_sessions.user_id
 WHERE auth_sessions.id = $1
@@ -121,16 +126,21 @@ func (q *Queries) GetActiveSession(ctx context.Context, id string) (GetActiveSes
 		&i.AuthSession.UserID,
 		&i.AuthSession.ExpiresAt,
 		&i.AuthSession.CreatedAt,
+		&i.AuthSession.LastSeenAt,
+		&i.AuthSession.UserAgent,
+		&i.AuthSession.Ip,
 		&i.User.ID,
 		&i.User.Email,
 		&i.User.PasswordHash,
 		&i.User.CreatedAt,
+		&i.User.EmailVerifiedAt,
+		&i.User.DeletedAt,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, created_at FROM users WHERE email = $1
+SELECT id, email, password_hash, created_at, email_verified_at, deleted_at FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -141,12 +151,14 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.Email,
 		&i.PasswordHash,
 		&i.CreatedAt,
+		&i.EmailVerifiedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, created_at FROM users WHERE id = $1
+SELECT id, email, password_hash, created_at, email_verified_at, deleted_at FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
@@ -157,6 +169,8 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.Email,
 		&i.PasswordHash,
 		&i.CreatedAt,
+		&i.EmailVerifiedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }

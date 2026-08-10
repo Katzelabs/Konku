@@ -127,7 +127,7 @@ func TestEveryUserTableIsProtected(t *testing.T) {
 
 	// A sanity floor: if the query silently matched nothing, the invariant
 	// above would pass vacuously.
-	if seen < 14 {
+	if seen < 16 {
 		t.Errorf("only %d tables with user_id were checked; the schema has more, "+
 			"so this query is not seeing what it claims to", seen)
 	}

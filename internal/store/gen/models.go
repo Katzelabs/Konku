@@ -11,10 +11,23 @@ import (
 )
 
 type AuthSession struct {
-	ID        string    `json:"id"`
-	UserID    uuid.UUID `json:"user_id"`
-	ExpiresAt time.Time `json:"expires_at"`
-	CreatedAt time.Time `json:"created_at"`
+	ID         string    `json:"id"`
+	UserID     uuid.UUID `json:"user_id"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	CreatedAt  time.Time `json:"created_at"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+	UserAgent  *string   `json:"user_agent"`
+	Ip         *string   `json:"ip"`
+}
+
+type AuthToken struct {
+	ID        uuid.UUID  `json:"id"`
+	UserID    uuid.UUID  `json:"user_id"`
+	Kind      string     `json:"kind"`
+	TokenHash string     `json:"token_hash"`
+	ExpiresAt time.Time  `json:"expires_at"`
+	UsedAt    *time.Time `json:"used_at"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 type Card struct {
@@ -144,8 +157,19 @@ type ReviewLog struct {
 }
 
 type User struct {
-	ID           uuid.UUID `json:"id"`
-	Email        string    `json:"email"`
-	PasswordHash string    `json:"password_hash"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID              uuid.UUID  `json:"id"`
+	Email           string     `json:"email"`
+	PasswordHash    string     `json:"password_hash"`
+	CreatedAt       time.Time  `json:"created_at"`
+	EmailVerifiedAt *time.Time `json:"email_verified_at"`
+	DeletedAt       *time.Time `json:"deleted_at"`
+}
+
+type UserSetting struct {
+	UserID                 uuid.UUID `json:"user_id"`
+	DefaultDurationMinutes int32     `json:"default_duration_minutes"`
+	FocusStepN             int32     `json:"focus_step_n"`
+	RotaEnabled            bool      `json:"rota_enabled"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
 }
