@@ -101,6 +101,39 @@ func (s *Server) requireUser(next http.Handler) http.Handler {
 	})
 }
 
+// requireVerified blocks every data route for an account that has not
+// confirmed its address (07 L3).
+//
+// Placed inside requireUser rather than merged into it so that /auth/me and
+// /auth/logout stay reachable while unverified. That is not a loophole: those
+// two read the caller's own authentication state, which they have already
+// proven, and without them the client has no way to render a "check your mail"
+// screen or let the person sign out of it. Everything that touches stored
+// content is behind this.
+//
+// 403 and not 404. Hard rule 4's "a wrong owner gets not found" is about
+// another account's rows, where the status is itself information. Here the
+// caller is asking about their own account and already knows it exists, so the
+// honest answer is the useful one — and the client needs the code to show the
+// resend button.
+func (s *Server) requireVerified(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, ok := UserFrom(r.Context())
+		if !ok {
+			// Unreachable behind requireUser, and a 500 rather than a silent
+			// pass-through if the middleware order is ever changed.
+			writeInternal(w, r, errors.New("api: requireVerified ran outside requireUser"))
+			return
+		}
+		if user.EmailVerifiedAt == nil {
+			writeError(w, http.StatusForbidden, CodeEmailUnverified,
+				"Verifikasi alamat email kamu dulu ya. Cek kotak masuk untuk tautannya.")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 type loginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
@@ -109,6 +142,18 @@ type loginRequest struct {
 type userResponse struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`
+	// EmailVerified is what lets the client tell "signed in, nothing works
+	// yet" apart from a broken session. Without it the only signal is a 403 on
+	// the first data request, which reads as a bug.
+	EmailVerified bool `json:"emailVerified"`
+}
+
+func toUserResponse(u gen.User) userResponse {
+	return userResponse{
+		ID:            u.ID.String(),
+		Email:         u.Email,
+		EmailVerified: u.EmailVerifiedAt != nil,
+	}
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -157,7 +202,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	s.setSessionCookie(w, sessionID, expires)
-	writeJSON(w, http.StatusOK, userResponse{ID: user.ID.String(), Email: user.Email})
+	writeJSON(w, http.StatusOK, toUserResponse(user))
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -175,5 +220,5 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, CodeUnauthorized, "Belum masuk.")
 		return
 	}
-	writeJSON(w, http.StatusOK, userResponse{ID: user.ID.String(), Email: user.Email})
+	writeJSON(w, http.StatusOK, toUserResponse(user))
 }

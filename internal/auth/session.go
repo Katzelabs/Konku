@@ -119,12 +119,17 @@ func (s *Service) PurgeExpired(ctx context.Context) error {
 	return s.store.Q().DeleteExpiredSessions(ctx)
 }
 
-// CreateUser hashes the password and inserts the account. Used by the
-// seed-user command, and by signup once ALLOW_SIGNUP exists in v0.2.
+// CreateUser hashes the password and inserts the account, already verified.
 //
-// The account and its starter domains commit together (D-046). Domains are
-// per-user, so an account created without them would open onto an empty domain
-// picker with nothing to repair it.
+// This is the `konku seed-user` path, not the signup path — Signup is in
+// signup.go and creates an unverified account with a token. The difference in
+// verification state is deliberate: seed-user means the operator typed the
+// address at a shell, which is a stronger check than clicking a link in a
+// mailbox, and an account that cannot be verified cannot be recovered either.
+//
+// The account, its starter domains and its settings commit together (D-046,
+// 07 L1). Domains are per-user, so an account created without them would open
+// onto an empty domain picker with nothing to repair it.
 func (s *Service) CreateUser(ctx context.Context, email, password string) (gen.User, error) {
 	hash, err := Hash(password)
 	if err != nil {
@@ -137,17 +142,26 @@ func (s *Service) CreateUser(ctx context.Context, email, password string) (gen.U
 	// to a value the INSERT has not returned yet (D-059).
 	id := uuid.New()
 
+	now := time.Now()
+
 	var user gen.User
 	err = s.store.WithUserTx(ctx, id, func(q *gen.Queries) error {
 		user, err = q.CreateUser(ctx, gen.CreateUserParams{
-			ID:           id,
-			Email:        normalizeEmail(email),
-			PasswordHash: hash,
+			ID:              id,
+			Email:           normalizeEmail(email),
+			PasswordHash:    hash,
+			EmailVerifiedAt: &now,
 		})
 		if err != nil {
 			return fmt.Errorf("auth: creating user: %w", err)
 		}
-		return store.SeedDefaultDomains(ctx, q, user.ID)
+		if err := store.SeedDefaultDomains(ctx, q, user.ID); err != nil {
+			return err
+		}
+		if _, err := q.CreateUserSettings(ctx, user.ID); err != nil {
+			return fmt.Errorf("auth: creating user settings: %w", err)
+		}
+		return nil
 	})
 	if err != nil {
 		return gen.User{}, err

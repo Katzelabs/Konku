@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,6 +34,71 @@ type testApp struct {
 	// loopback listener rather than on srv (D-062). Tests reach it directly
 	// for the same reason: it is deliberately not routable from the app.
 	metrics http.Handler
+	// mail records what the server tried to send. The signup flow's whole
+	// point is that a token reaches a mailbox, so a test that cannot read the
+	// mailbox can only assert status codes (07 L3).
+	mail *fakeMailer
+}
+
+// sentMail is one message the server handed to the transport.
+type sentMail struct {
+	kind  string // "verification" or "reset"
+	to    string
+	token string
+}
+
+// fakeMailer stands in for internal/mail. The real transport has its own tests
+// against a live catcher; what matters here is which token went to which
+// address, which a catcher would make harder to read, not easier.
+type fakeMailer struct {
+	mu   sync.Mutex
+	sent []sentMail
+	// err, when set, is returned by every send. Signup must still succeed and
+	// still answer 204 when the provider is down — the account is already
+	// committed by then.
+	err error
+}
+
+func (m *fakeMailer) record(kind, to, token string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sent = append(m.sent, sentMail{kind: kind, to: to, token: token})
+	return m.err
+}
+
+func (m *fakeMailer) SendVerification(_ context.Context, to, token string) error {
+	return m.record("verification", to, token)
+}
+
+func (m *fakeMailer) SendPasswordReset(_ context.Context, to, token string) error {
+	return m.record("reset", to, token)
+}
+
+// lastTo returns the most recent message sent to an address.
+func (m *fakeMailer) lastTo(t *testing.T, to string) sentMail {
+	t.Helper()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := len(m.sent) - 1; i >= 0; i-- {
+		if m.sent[i].to == to {
+			return m.sent[i]
+		}
+	}
+	t.Fatalf("no mail was sent to that address; the server sent %d message(s)", len(m.sent))
+	return sentMail{}
+}
+
+// countTo reports how many messages went to an address.
+func (m *fakeMailer) countTo(to string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for _, s := range m.sent {
+		if s.to == to {
+			n++
+		}
+	}
+	return n
 }
 
 // migrationURL is the owner connection used for DDL. The application pool
@@ -80,14 +146,18 @@ func newApp(t *testing.T) *testApp {
 	}
 	requireRLSEnforcedRole(t, st)
 
-	cfg := config.Config{Dev: true, SessionTTL: time.Hour}
+	// AllowSignup is on so the signup route exists. Everything else in the
+	// suite predates it and is unaffected: the route is additive, and
+	// seed-user-style accounts are created verified.
+	cfg := config.Config{Dev: true, SessionTTL: time.Hour, AllowSignup: true}
 	svc := auth.NewService(st, cfg.SessionTTL)
+	mailer := &fakeMailer{}
 
-	app := api.NewServer(cfg, st, svc, web.FS())
+	app := api.NewServer(cfg, st, svc, mailer, web.FS())
 	srv := httptest.NewServer(app.Routes())
 	t.Cleanup(srv.Close)
 
-	return &testApp{srv: srv, store: st, auth: svc, ctx: ctx, metrics: app.MetricsHandler()}
+	return &testApp{srv: srv, store: st, auth: svc, ctx: ctx, metrics: app.MetricsHandler(), mail: mailer}
 }
 
 // testClient is one signed-in user.

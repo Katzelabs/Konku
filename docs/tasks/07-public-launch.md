@@ -23,7 +23,7 @@ bug.
 
 ## L1 — Schema and settings
 
-`todo` · ~3 h · no deps
+`done` · ~3 h · no deps · migration `00007_accounts_and_settings.sql`
 
 The tables the rest of this file needs, plus the open question that has been
 sitting in `DECISIONS.md` since schema v2.
@@ -45,13 +45,36 @@ were constants under one user, and both the account screen and the export need
 somewhere to hang.
 
 **Done when:** migration applies clean, and the tenancy suite (P7) covers the
-new tables.
+new tables. ✓ — `v7` applies to the `v6` schema and rolls back and reapplies;
+`TestEveryUserTableIsProtected`'s floor moved 14 → 16, so both new tables are
+proven to have forced RLS and a policy rather than passing vacuously.
+
+Three things settled while building it, worth knowing before L3, L5 and L7:
+
+- `auth_sessions.created_at` **already existed** (`00001`). L1 listed it
+  because the session screen needs it, not because it was missing.
+- **`auth_tokens.token_hash` is SHA-256, not argon2id.** The token is 256 bits
+  of CSPRNG output, so there is no weak input to slow an attacker against;
+  argon2 would cost every verification click ~100 ms to defend a space that
+  cannot be searched. Password hashing is slow because passwords are weak.
+- **Existing accounts are backfilled as verified**, from `created_at`. They were
+  created by `konku seed-user`, which is a stronger check than clicking a link.
+  Without the backfill, L3 ships and locks the only real account out, with no
+  way back in because the reset flow it would need is also L3.
+
+**Open, and L7's to answer:** `users.deleted_at` sits awkwardly against L7's
+"deletion is not soft" and its acceptance that no row referencing the old
+`user_id` remains. It is built as a marker for a deletion *request*, so lockout
+and purge can be separate — the account stops working the moment the user
+confirms, and the rows go when the job runs. If L7 decides delete should be one
+transaction, the column comes out.
 
 ---
 
 ## L2 — Mail
 
-`todo` · ~3 h · needs L1
+`done` (code) · `todo` (a real domain, and a Resend account to verify it
+against) · ~3 h · needs L1
 
 `internal/mail`, stdlib `net/smtp` against a transactional provider. An SDK
 for "send one templated message" is not a trade worth making (D-065).
@@ -66,18 +89,55 @@ the provider in production.
 
 **Deliverability is the risk, not the code, and it cannot be tested here**
 (D-067). SPF, DKIM and DMARC on a real sending domain are `04-ship.md` S4.
-Choosing a provider whose free tier survives a hobby launch is still this
-task's job — decide it here, with the flow in front of you (see the open
-question in `DECISIONS.md`).
+
+**The provider is decided: Resend, over SMTP, on its own account and its own
+domain (D-068).** Resend's SMTP endpoint is why `net/smtp` is enough. Its own
+account because the free tier allows one domain and because two projects should
+not lose signup together; its own `.com` because cheap TLDs are filtered harder
+than correct SPF/DKIM/DMARC can compensate for.
+
+**Buy the domain before starting this task.** DNS verification is wall-clock
+delay rather than work, and `04` S1 needs the hostname for Caddy regardless.
 
 **Done when:** signing up locally puts a verification mail in the catcher, and
-clicking its link verifies the account.
+clicking its link verifies the account. Half of that is L3's — signup does not
+exist yet. What is provable today, and is: `make test-mail` sends both messages
+through Mailpit and reads them back out of its API with working links in both
+MIME parts. CI runs the same thing against a Mailpit service container, so the
+send path is gated rather than merely runnable.
+
+Shipped: `internal/mail` (`mail.go`, `message.go`, `templates.go`),
+`SMTP_URL` / `MAIL_FROM` / `PUBLIC_BASE_URL` in config, Mailpit behind a
+compose `dev` profile, `make mail-up` / `make test-mail`.
+
+Four things settled while building it:
+
+- **`ALLOW_SIGNUP=true` without `SMTP_URL` and `MAIL_FROM` now refuses to
+  start.** Open signup with no transport creates accounts that can never be
+  verified and never be recovered, and the failure is silent from the
+  operator's side because signup itself succeeds. Asserted in
+  `internal/config/config_test.go`.
+- **No error in `internal/mail` carries the recipient address** (hard rule 10).
+  A rejected recipient is the natural place to write one, and the error reaches
+  the log the moment a handler logs it. There is a test whose only job is that.
+- **Both MIME parts always exist.** An HTML-only message is a well-known spam
+  signal, and deliverability is the whole risk here — so it is a test, not a
+  formatting preference.
+- **The copy has a non-punitive test.** Hard rule 6 applied to the surface
+  where guilt copy arrives disguised as urgency: expiry is stated once as a
+  fact, "abaikan saja email ini" reassures, and a small banned-words list keeps
+  countdown language out.
+
+**What remains before L3 can be finished end to end:** buy the domain, create
+the Resend account, verify the sending subdomain, and put the real
+`smtps://resend:…@smtp.resend.com:465` in the production environment. None of
+that is code, and the first real send is still `04` S4.
 
 ---
 
 ## L3 — Signup and verification
 
-`todo` · ~5 h · needs L2
+`done` · ~5 h · needs L2
 
 - `POST /api/auth/signup`, behind `ALLOW_SIGNUP` (still `false` at this point)
 - Creates the account **unverified**, seeds the five default domains the way
@@ -94,13 +154,73 @@ Signup and resend are unauthenticated write paths, so both go through
 `internal/api/ratelimit.go` alongside login.
 
 **Done when:** signing up twice with the same address does not leak that the
-first one exists, and an unverified account cannot read or write anything.
+first one exists, and an unverified account cannot read or write anything. ✓ —
+both are tests in `internal/api/signup_test.go`, the first asserting equal
+status, equal body *and* that no second message goes out, the second sweeping
+nine routes across every family and requiring 403 with `email_unverified`.
+
+Shipped: `POST /api/auth/signup`, `/auth/verify`, `/auth/resend-verification`,
+`requireVerified` around every data route, `auth.Signup` / `VerifyEmail` /
+`ResendVerification`, and the `auth_tokens` queries from L1.
+
+Decisions taken while building it:
+
+- **Two ways to create an account, and they differ in verification state.**
+  `konku seed-user` creates a *verified* account — the operator typed the
+  address at a shell, which is a stronger check than clicking a link. Signup
+  creates an unverified one. This is also what keeps the existing test suite
+  meaningful rather than blanket-verified.
+- **An unverified account can still log in**, and `/auth/me` and `/auth/logout`
+  stay reachable. Without that the client has no way to render "check your
+  mail" or let someone sign out of it. Everything touching stored content is
+  behind `requireVerified`, which is a route group, so a new route is covered
+  by default rather than when somebody remembers.
+- **403 with `email_unverified`, not 404.** Hard rule 4's not-found rule is
+  about another account's rows, where the status is itself information. Here
+  the caller is asking about their own account.
+- **Verify has its own, looser limiter (30/h) than signup and resend (5/h).**
+  It is the one route here that sends nothing, and guessing a 256-bit token is
+  not a threat a rate limit addresses — a tight limit would only punish a
+  shared office or household IP.
+- **A failed send does not fail signup.** The account is committed first, so a
+  500 would claim signup did not work when it did, and the retry hits the
+  taken-address path, which answers 204 and sends nothing. That is a dead end;
+  a logged failure plus a working resend is the recoverable shape.
+
+**The screens**, `web/src/features/auth/`: `SignupPage`, `VerifyPage`,
+`VerifyPendingPage`, a shared `AuthLayout`, and a signup link on `LoginPage`
+that only appears where signup is open. `App.tsx` routes them: `/verify` is
+checked before the session, because the link is opened from a mailbox and
+whoever clicks it may be signed out, unverified, or already done.
+
+`GET /api/auth/config` was added for one boolean — `allowSignup`. Without it
+the login screen must either show a link that 404s on a closed instance or hide
+one that works, and guessing from a failed POST means the user finds out after
+filling in the form.
+
+**Two copy rules the screens are tested against**, because both are easy to
+break by making the wording friendlier: signup may not say an account was
+*created* (it answers 204 for a taken address too), and resend may not say a
+message was *sent* (same). Both say what the response actually guarantees.
+
+**A real bug the tests caught, worth remembering.** Verification first used a
+mutation, and `main.tsx` wraps the app in `StrictMode` — which mounts,
+unmounts and remounts every component in development. A mutation's observer
+does not survive that, so the result of a send that had already succeeded was
+discarded and the page sat on its spinner forever. A dev-only hang, on the one
+screen a new account cannot get past. It is now a query keyed by the token:
+React Query shares the in-flight promise, so the double mount cannot spend the
+token twice, and the settled result is cached so the remount reads it.
+
+**Verified end to end against Mailpit**, not only in tests: signup → message in
+the catcher → the real link from the mail body → 204 → replay 400 → login
+reports `emailVerified: true` → `/api/notes` 200 → five seeded domains.
 
 ---
 
 ## L4 — Password reset
 
-`todo` · ~4 h · needs L2
+`done` · ~4 h · needs L2
 
 - `POST /api/auth/forgot` — **always 204**, known address or not. Same
   existence-leak reasoning as the not-found rule (D-039)
@@ -112,6 +232,44 @@ first one exists, and an unverified account cannot read or write anything.
 
 **Done when:** a used token fails, an expired token fails, a token for another
 account fails, and all three fail identically from the client's point of view.
+✓ — `TestResetTokensAllFailIdentically` is that sentence, with a fourth case:
+a genuine, live, unspent **verification** token, which is the closest thing to
+a valid token an attacker is legitimately handed. All four compare on status
+and on body with the request id redacted.
+
+Shipped: `POST /api/auth/forgot` and `/auth/reset`, `auth.RequestPasswordReset`
+and `ResetPassword`, the `DeleteSessionsForUser` and `UpdatePassword` queries,
+and two screens — `ForgotPasswordPage` and `ResetPasswordPage`, plus a "Lupa
+kata sandi?" link on login.
+
+Four decisions:
+
+- **The whole reset is one transaction**, so a rejected attempt — a too-short
+  password, say — leaves the link usable. Claim-then-write would strand
+  someone with a dead link *and* their old password, which is the worst of
+  both. `ClaimToken` was split so the claim can run inside a caller's
+  transaction; verification still claims on the pool.
+- **A successful reset also marks the address verified.** Clicking a link sent
+  to a mailbox proves exactly what the verification link proves. Without this,
+  an unverified account could complete a reset and still be locked out, with
+  the recovery path already spent.
+- **Reset is offered to unverified accounts**, for the same reason. Refusing
+  recovery to the accounts most likely to be stuck buys nothing.
+- **`/auth/reset` signs nobody in.** Every session dies, including the
+  caller's, and minting a fresh one from a link that may have been fetched by
+  a mail scanner would undo half the point. The cookie is cleared so the user
+  lands on the login screen rather than on a "session expired" error.
+
+**Reachability matches L3's rule:** `/auth/forgot` and `/auth/reset` are
+mounted regardless of `ALLOW_SIGNUP`. Recovery is not a registration feature —
+a closed instance still has accounts, and they still have people who forget
+passwords. `/auth/forgot` sends mail so it takes the tight limiter;
+`/auth/reset` sends none and takes the looser one, like verify.
+
+**Verified end to end against Mailpit:** signup → verify → login → `/notes` 200
+→ forgot → real link from the mail body → reset 204 → the old session answers
+401 → replay 400 → old password 401 → new password 200 → `/notes` 200 → forgot
+for an unregistered address 204.
 
 ---
 

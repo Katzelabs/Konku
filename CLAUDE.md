@@ -16,13 +16,17 @@ What that does **not** change: every constraint from `GOALS.md` — never puniti
 
 **The MVP is built.** Notes, cards as their own feature, shared categories, the scheduler, review with recall-before-reveal, exams with resumable attempts, per-user domains, the focus timer with capture-at-session-end, soft delete with a Terhapus view, argon2id auth with server-side sessions. `01`, `02` (superseded by D-055), `03` and `05` are all done. 22+ tests pass across unit and integration.
 
-**Next: `docs/tasks/06-production-hardening.md`**, then `07-public-launch.md` L1–L9, then `04-ship.md`, then `07` L10.
+**`06-production-hardening.md` is done** apart from two items that need the box itself: a real Sentry DSN (P3) and a real tag to publish to GHCR (P9). **`07` L1 is done** — migration `00007` adds `user_settings` and `auth_tokens`, verification and deletion-request columns on `users`, and the session-screen columns on `auth_sessions`.
+
+**`07` L2 is done** — `internal/mail` over stdlib `net/smtp`, Resend in production (D-068), Mailpit behind a compose `dev` profile for local and CI testing. **`07` L3 and L4 are done** — signup, verification, resend, password reset, `requireVerified` around every data route, and five signed-out screens.
+
+**Next: `07` L5–L9**, then `04-ship.md`, then `07` L10.
 
 **The order is deliberate and runs out of numeric sequence** (D-067). Almost nothing left needs the VPS — RLS, observability, security headers, the test pyramid, CI, signup, verification, reset, export, deletion and quotas are all local work against `docker-compose.yml`. What genuinely requires the box is short: the deploy itself, backups running there, **email deliverability** (SPF/DKIM/DMARC), the VPS half of the release pipeline, alert routing, phone access, and opening signup. So the local work happens first and `04-ship.md` becomes one careful afternoon.
 
 **Daily use is not deferred.** It starts now, on `make dev-web`, and continues throughout the hardening work. D-030's failure mode — months building a learning tool and none learning — is solved by *using the app*, not by deferring the work. If capture is not happening, fixing that outranks every task in `06`. Two consequences: the **local database is now real data and needs a dump** (`06` P11), and laptop-only use is a weaker test than the original gate, which is why `04` S6 still exists.
 
-What is genuinely missing right now, in case it looks otherwise: there is **no `.github/`**, **no frontend or e2e test of any kind**, no RLS, no request logging or metrics, no security-header middleware, and no signup/verification/reset. Those are `06` and `07`, and they are not optional before the app is public.
+What is genuinely missing right now, in case it looks otherwise: there is **no `internal/mail`**, no signup, no verification, no password reset, no export, no account deletion and no quotas. Those are `07` L2–L8, and they are not optional before the app is public. (`06` delivered the rest: CI, RLS, request logging and metrics, security headers, the frontend and e2e tiers, runbooks and a rehearsed restore.)
 
 Note: a card is addressed by its own uuid (`/api/review/{cardID}`). It used to take a note *and* an ID, because card IDs were unique only within the note they were parsed out of.
 
@@ -87,6 +91,8 @@ go run ./cmd/konku seed-user -email you@example.com
 **Observability.** New failure paths get a log line with the request ID and an actionable message, not a swallowed error. `slog` is already JSON to stdout. Handlers return the one error shape; internal detail goes to the log, never to the client (D-062).
 
 **Frontend.** Feature folders under `web/src/features/`. TanStack Query owns all server state; `useState`/Zustand only for genuine client state, which is essentially just the timer (D-044). A 401 from `/auth/me` is a normal "signed out" answer, not an error.
+
+**A one-shot action driven by the URL is a query keyed by that URL value, not a mutation** — even when it POSTs. `main.tsx` wraps the app in `StrictMode`, so in dev React mounts, unmounts and remounts everything, and a mutation's observer does not survive that: the result of a call that already succeeded is discarded and the screen sits on its spinner forever. Email verification shipped that way and hung on the one screen a new account cannot get past. Keying by the token fixes both halves — React Query shares the in-flight promise so the double mount cannot fire twice, and the settled result is cached so the remount reads it (`useVerifyToken`).
 
 A mutation's `onSuccess` must **never return the invalidate promise** — always braces: `onSuccess: () => { qc.invalidateQueries(...) }`. TanStack Query awaits whatever that callback returns before it runs the callbacks passed to `mutate`, so returning it makes them wait on a refetch. After a delete that refetch asks for the row just deleted, takes a 404 and rejects, and the `mutate` callbacks are then skipped entirely. The symptom is a dialog that will not close and a panel left open on something that no longer exists — the mutation itself succeeded, so nothing looks wrong on the server side.
 

@@ -261,7 +261,7 @@ func TestPanicRouteIsDevOnly(t *testing.T) {
 	// A production-configured server must not.
 	prod := httptest.NewServer(api.NewServer(
 		config.Config{Dev: false, SessionTTL: time.Hour},
-		app.store, app.auth, web.FS(),
+		app.store, app.auth, nil, web.FS(),
 	).Routes())
 	t.Cleanup(prod.Close)
 

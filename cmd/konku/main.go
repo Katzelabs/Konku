@@ -18,6 +18,7 @@ import (
 	"github.com/Katzelabs/Konku/internal/api"
 	"github.com/Katzelabs/Konku/internal/auth"
 	"github.com/Katzelabs/Konku/internal/config"
+	"github.com/Katzelabs/Konku/internal/mail"
 	"github.com/Katzelabs/Konku/internal/store"
 	"github.com/Katzelabs/Konku/internal/web"
 )
@@ -78,7 +79,19 @@ func run() error {
 	}
 	defer api.FlushSentry()
 
-	app := api.NewServer(cfg, st, auth.NewService(st, cfg.SessionTTL), web.FS())
+	// Mail is optional at startup and required for signup: config refuses to
+	// load with ALLOW_SIGNUP=true and no SMTP_URL, so a nil mailer here means
+	// signup is closed and the route is never mounted (07 L2, L3).
+	var mailer api.Mailer
+	if cfg.SMTPURL != "" {
+		sender, err := mail.New(cfg.SMTPURL, cfg.MailFrom, cfg.PublicBaseURL)
+		if err != nil {
+			return err
+		}
+		mailer = sender
+	}
+
+	app := api.NewServer(cfg, st, auth.NewService(st, cfg.SessionTTL), mailer, web.FS())
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,

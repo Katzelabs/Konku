@@ -12,6 +12,43 @@ import (
 	"github.com/google/uuid"
 )
 
+const claimAuthToken = `-- name: ClaimAuthToken :one
+UPDATE auth_tokens
+SET used_at = now()
+WHERE token_hash = $1
+  AND kind = $2
+  AND used_at IS NULL
+  AND expires_at > now()
+RETURNING id, user_id, kind, token_hash, expires_at, used_at, created_at
+`
+
+type ClaimAuthTokenParams struct {
+	TokenHash string `json:"token_hash"`
+	Kind      string `json:"kind"`
+}
+
+// Single-use and expiry are enforced here, in one statement, rather than by
+// reading the row and then updating it. Two concurrent clicks on the same link
+// cannot both win: the UPDATE matches once and the loser gets no rows.
+//
+// Every failure mode — unknown token, wrong kind, already used, expired —
+// returns no rows, so the caller cannot tell them apart and neither can the
+// client (07 L4).
+func (q *Queries) ClaimAuthToken(ctx context.Context, arg ClaimAuthTokenParams) (AuthToken, error) {
+	row := q.db.QueryRow(ctx, claimAuthToken, arg.TokenHash, arg.Kind)
+	var i AuthToken
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Kind,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.UsedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT count(*) FROM users
 `
@@ -21,6 +58,42 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const createAuthToken = `-- name: CreateAuthToken :one
+
+INSERT INTO auth_tokens (user_id, kind, token_hash, expires_at)
+VALUES ($1, $2, $3, $4)
+RETURNING id, user_id, kind, token_hash, expires_at, used_at, created_at
+`
+
+type CreateAuthTokenParams struct {
+	UserID    uuid.UUID `json:"user_id"`
+	Kind      string    `json:"kind"`
+	TokenHash string    `json:"token_hash"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// Verification and reset tokens (07 L1, L3, L4). The table stores a hash, never
+// the token: a leaked dump must not be a set of working links.
+func (q *Queries) CreateAuthToken(ctx context.Context, arg CreateAuthTokenParams) (AuthToken, error) {
+	row := q.db.QueryRow(ctx, createAuthToken,
+		arg.UserID,
+		arg.Kind,
+		arg.TokenHash,
+		arg.ExpiresAt,
+	)
+	var i AuthToken
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Kind,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.UsedAt,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const createSession = `-- name: CreateSession :one
@@ -55,15 +128,16 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (A
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (id, email, password_hash)
-VALUES ($1, $2, $3)
+INSERT INTO users (id, email, password_hash, email_verified_at)
+VALUES ($1, $2, $3, $4)
 RETURNING id, email, password_hash, created_at, email_verified_at, deleted_at
 `
 
 type CreateUserParams struct {
-	ID           uuid.UUID `json:"id"`
-	Email        string    `json:"email"`
-	PasswordHash string    `json:"password_hash"`
+	ID              uuid.UUID  `json:"id"`
+	Email           string     `json:"email"`
+	PasswordHash    string     `json:"password_hash"`
+	EmailVerifiedAt *time.Time `json:"email_verified_at"`
 }
 
 // The id is supplied rather than defaulted so the caller knows the identity
@@ -71,8 +145,19 @@ type CreateUserParams struct {
 // app.user_id has to be set before the INSERT for the users WITH CHECK policy
 // to pass and for the starter domains to be insertable in the same
 // transaction (D-046, D-059).
+//
+// email_verified_at is a parameter rather than a default because the two ways
+// an account can come into existence differ exactly there: `konku seed-user`
+// passes now(), since the operator typed the address at a shell and that is a
+// stronger check than clicking a link in a mailbox; public signup passes NULL
+// and sends the mail (07 L3).
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, createUser, arg.ID, arg.Email, arg.PasswordHash)
+	row := q.db.QueryRow(ctx, createUser,
+		arg.ID,
+		arg.Email,
+		arg.PasswordHash,
+		arg.EmailVerifiedAt,
+	)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -83,6 +168,38 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.DeletedAt,
 	)
 	return i, err
+}
+
+const createUserSettings = `-- name: CreateUserSettings :one
+INSERT INTO user_settings (user_id)
+VALUES ($1)
+RETURNING user_id, default_duration_minutes, focus_step_n, rota_enabled, created_at, updated_at
+`
+
+// One row per account, created with the account. Nothing above the store then
+// has to treat a missing settings row as "use the defaults" (07 L1).
+func (q *Queries) CreateUserSettings(ctx context.Context, userID uuid.UUID) (UserSetting, error) {
+	row := q.db.QueryRow(ctx, createUserSettings, userID)
+	var i UserSetting
+	err := row.Scan(
+		&i.UserID,
+		&i.DefaultDurationMinutes,
+		&i.FocusStepN,
+		&i.RotaEnabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const deleteExpiredAuthTokens = `-- name: DeleteExpiredAuthTokens :exec
+DELETE FROM auth_tokens WHERE expires_at <= now() OR used_at IS NOT NULL
+`
+
+// Spent and expired tokens are garbage. Swept opportunistically, like sessions.
+func (q *Queries) DeleteExpiredAuthTokens(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteExpiredAuthTokens)
+	return err
 }
 
 const deleteExpiredSessions = `-- name: DeleteExpiredSessions :exec
@@ -100,6 +217,20 @@ DELETE FROM auth_sessions WHERE id = $1
 
 func (q *Queries) DeleteSession(ctx context.Context, id string) error {
 	_, err := q.db.Exec(ctx, deleteSession, id)
+	return err
+}
+
+const deleteSessionsForUser = `-- name: DeleteSessionsForUser :exec
+DELETE FROM auth_sessions WHERE user_id = $1
+`
+
+// Every session, including the one making the request.
+//
+// A password reset is what someone does when they think their account is
+// compromised. A reset that leaves the attacker's session alive does nothing
+// at all, so this is the point of the feature rather than a tidy-up (07 L4).
+func (q *Queries) DeleteSessionsForUser(ctx context.Context, userID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteSessionsForUser, userID)
 	return err
 }
 
@@ -173,4 +304,31 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.DeletedAt,
 	)
 	return i, err
+}
+
+const markEmailVerified = `-- name: MarkEmailVerified :exec
+UPDATE users
+SET email_verified_at = now()
+WHERE id = $1 AND email_verified_at IS NULL
+`
+
+// Idempotent on purpose: a second click on the same link is a no-op rather
+// than a moved timestamp. The token is already spent by then anyway.
+func (q *Queries) MarkEmailVerified(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, markEmailVerified, id)
+	return err
+}
+
+const updatePassword = `-- name: UpdatePassword :exec
+UPDATE users SET password_hash = $2 WHERE id = $1
+`
+
+type UpdatePasswordParams struct {
+	ID           uuid.UUID `json:"id"`
+	PasswordHash string    `json:"password_hash"`
+}
+
+func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) error {
+	_, err := q.db.Exec(ctx, updatePassword, arg.ID, arg.PasswordHash)
+	return err
 }

@@ -26,6 +26,14 @@ type Querier interface {
 	// review_logs, which is the worst of both (D-051).
 	ArchiveExam(ctx context.Context, arg ArchiveExamParams) (Exam, error)
 	AttemptHasQuestion(ctx context.Context, arg AttemptHasQuestionParams) (bool, error)
+	// Single-use and expiry are enforced here, in one statement, rather than by
+	// reading the row and then updating it. Two concurrent clicks on the same link
+	// cannot both win: the UPDATE matches once and the loser gets no rows.
+	//
+	// Every failure mode — unknown token, wrong kind, already used, expired —
+	// returns no rows, so the caller cannot tell them apart and neither can the
+	// client (07 L4).
+	ClaimAuthToken(ctx context.Context, arg ClaimAuthTokenParams) (AuthToken, error)
 	// The card's categories.
 	ClearCardCategories(ctx context.Context, arg ClearCardCategoriesParams) error
 	ClearExamCards(ctx context.Context, arg ClearExamCardsParams) error
@@ -38,6 +46,9 @@ type Querier interface {
 	// from now(), for the same reason as focus_sessions.session_date: an attempt
 	// at 23:00 belongs to that day and the server may be in another timezone.
 	CreateAttempt(ctx context.Context, arg CreateAttemptParams) (ExamAttempt, error)
+	// Verification and reset tokens (07 L1, L3, L4). The table stores a hash, never
+	// the token: a leaked dump must not be a set of working links.
+	CreateAuthToken(ctx context.Context, arg CreateAuthTokenParams) (AuthToken, error)
 	// Cards are their own feature (D-055): rows created and edited directly, not
 	// parsed out of a note body. There is no note_id, and no ID to keep stable
 	// across a text edit — UPDATE keeps the uuid, so editing a card's wording can
@@ -70,7 +81,16 @@ type Querier interface {
 	// app.user_id has to be set before the INSERT for the users WITH CHECK policy
 	// to pass and for the starter domains to be insertable in the same
 	// transaction (D-046, D-059).
+	//
+	// email_verified_at is a parameter rather than a default because the two ways
+	// an account can come into existence differ exactly there: `konku seed-user`
+	// passes now(), since the operator typed the address at a shell and that is a
+	// stronger check than clicking a link in a mailbox; public signup passes NULL
+	// and sends the mail (07 L3).
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	// One row per account, created with the account. Nothing above the store then
+	// has to treat a missing settings row as "use the defaults" (07 L1).
+	CreateUserSettings(ctx context.Context, userID uuid.UUID) (UserSetting, error)
 	// Discards a run. The snapshot goes with it, but the answers stay in
 	// review_logs with exam_attempt_id set to NULL — retention evidence is not
 	// something a discarded practice run may erase (D-050).
@@ -87,8 +107,16 @@ type Querier interface {
 	// ACTION, so an exam that has ever been sat raises foreign_key_violation and
 	// the handler answers 409.
 	DeleteExam(ctx context.Context, arg DeleteExamParams) (int64, error)
+	// Spent and expired tokens are garbage. Swept opportunistically, like sessions.
+	DeleteExpiredAuthTokens(ctx context.Context) error
 	DeleteExpiredSessions(ctx context.Context) error
 	DeleteSession(ctx context.Context, id string) error
+	// Every session, including the one making the request.
+	//
+	// A password reset is what someone does when they think their account is
+	// compromised. A reset that leaves the attacker's session alive does nothing
+	// at all, so this is the point of the feature rather than a tidy-up (07 L4).
+	DeleteSessionsForUser(ctx context.Context, userID uuid.UUID) error
 	// Validation for an incoming domainId. The composite foreign key is what
 	// actually prevents a cross-tenant write (D-047); this exists only so the
 	// handler can answer with a 400 and Indonesian copy instead of letting a
@@ -205,6 +233,9 @@ type Querier interface {
 	// aggregation cannot drift apart between them.
 	ListNotes(ctx context.Context, arg ListNotesParams) ([]ListNotesRow, error)
 	ListRecentFocusSessions(ctx context.Context, arg ListRecentFocusSessionsParams) ([]FocusSession, error)
+	// Idempotent on purpose: a second click on the same link is a no-op rather
+	// than a moved timestamp. The token is already spent by then anyway.
+	MarkEmailVerified(ctx context.Context, id uuid.UUID) error
 	// The undo. card_schedules was never touched, so the review history comes back
 	// with the card.
 	RestoreCards(ctx context.Context, arg RestoreCardsParams) (int64, error)
@@ -241,6 +272,7 @@ type Querier interface {
 	UpdateDomain(ctx context.Context, arg UpdateDomainParams) (Domain, error)
 	UpdateExam(ctx context.Context, arg UpdateExamParams) (Exam, error)
 	UpdateNote(ctx context.Context, arg UpdateNoteParams) (Note, error)
+	UpdatePassword(ctx context.Context, arg UpdatePasswordParams) error
 	UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) (CardSchedule, error)
 }
 

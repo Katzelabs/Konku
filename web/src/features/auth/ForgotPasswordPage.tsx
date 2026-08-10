@@ -1,0 +1,94 @@
+import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
+import { MailCheck } from 'lucide-react'
+import { Button } from '../../components/ui/button'
+import { Card } from '../../components/ui/card'
+import { Input } from '../../components/ui/input'
+import { Label } from '../../components/ui/label'
+import { Notice } from '../../components/ui/notice'
+import { useForgotPassword } from './useAuth'
+import { AuthLayout } from './AuthLayout'
+
+export default function ForgotPasswordPage() {
+  const [email, setEmail] = useState('')
+  const forgot = useForgotPassword()
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault()
+    forgot.mutate(email)
+  }
+
+  /*
+   * The success copy is conditional, and has to be.
+   *
+   * The endpoint answers 204 whether or not the address has an account — an
+   * endpoint that answered differently would be a way to test who uses this
+   * app (D-039, D-066). So this screen cannot say "we sent you an email"; it
+   * says what is actually true, which is that a link is on its way *if* the
+   * address is registered.
+   */
+  if (forgot.isSuccess) {
+    return (
+      <AuthLayout title="Cek email kamu">
+        <Card className="flex flex-col items-center gap-4 p-6 text-center">
+          <span className="flex size-11 items-center justify-center rounded-full bg-muted text-secondary-fg">
+            <MailCheck className="size-5" />
+          </span>
+          <p className="text-sm text-secondary-fg">
+            Kalau <span className="font-medium text-surface-fg">{email}</span> terdaftar,
+            kami sudah mengirim tautan untuk mengatur ulang kata sandi ke sana.
+          </p>
+          <p className="text-sm text-muted-fg">
+            Tautannya berlaku 1 jam. Kalau belum masuk juga, cek folder spam.
+          </p>
+          <Button asChild variant="secondary" size="lg" className="mt-1 w-full">
+            <Link to="/login">Kembali ke halaman masuk</Link>
+          </Button>
+        </Card>
+      </AuthLayout>
+    )
+  }
+
+  return (
+    <AuthLayout
+      title="Lupa kata sandi"
+      subtitle="Kami kirimkan tautan untuk membuat kata sandi baru."
+    >
+      <Card className="p-6">
+        <form onSubmit={onSubmit} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              autoComplete="username"
+              autoFocus
+            />
+          </div>
+
+          {forgot.isError && <Notice role="alert">{forgot.error.message}</Notice>}
+
+          <Button
+            type="submit"
+            variant="primary"
+            size="lg"
+            disabled={forgot.isPending}
+            className="mt-2"
+          >
+            {forgot.isPending ? 'Mengirim…' : 'Kirim tautan'}
+          </Button>
+        </form>
+      </Card>
+
+      <p className="text-center text-sm text-muted-fg">
+        Ingat kata sandinya?{' '}
+        <Link to="/login" className="font-medium text-surface-fg underline underline-offset-4">
+          Masuk
+        </Link>
+      </p>
+    </AuthLayout>
+  )
+}

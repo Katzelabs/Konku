@@ -3,6 +3,11 @@ import { AppShell } from './components/layout/AppShell'
 import { Loading } from './components/ui/spinner'
 import { Notice } from './components/ui/notice'
 import LoginPage from './features/auth/LoginPage'
+import ForgotPasswordPage from './features/auth/ForgotPasswordPage'
+import ResetPasswordPage from './features/auth/ResetPasswordPage'
+import SignupPage from './features/auth/SignupPage'
+import VerifyPage from './features/auth/VerifyPage'
+import VerifyPendingPage from './features/auth/VerifyPendingPage'
 import { useMe } from './features/auth/useAuth'
 import CardsPage from './features/cards/CardsPage'
 import CardEditorPage from './features/cards/CardEditorPage'
@@ -56,7 +61,40 @@ export default function App() {
     )
   }
 
-  if (!user) return <LoginPage />
+  /*
+   * The verification link is checked before anything else about the session.
+   *
+   * It arrives in a mailbox, so whoever opens it may be signed out, signed in
+   * but unverified, or already verified and clicking an old message. Gating it
+   * behind the login screen would mean the most common case — clicking the
+   * link on a device that never signed in — lands on a form instead.
+   */
+  if (location.pathname === '/verify') return <VerifyPage />
+  if (location.pathname === '/reset-password') return <ResetPasswordPage />
+
+  if (!user) {
+    return (
+      <Routes>
+        <Route path="/signup" element={<SignupPage />} />
+        {/* Recovery is not a registration feature, so it is here whether or
+            not ALLOW_SIGNUP is on: a closed instance still has accounts, and
+            they still have people who forget passwords. */}
+        <Route path="/forgot" element={<ForgotPasswordPage />} />
+        {/* Any other path while signed out is the login screen, not a 404:
+            a deep link is where to return to after signing in. */}
+        <Route path="*" element={<LoginPage />} />
+      </Routes>
+    )
+  }
+
+  /*
+   * Signed in, but the address is not confirmed.
+   *
+   * Every data route answers 403 for this account (07 L3), so rendering the app
+   * shell would produce a screen of failed panels that reads as a bug. This is
+   * the one state where the whole app is replaced by an explanation.
+   */
+  if (!user.emailVerified) return <VerifyPendingPage email={user.email} />
 
   return (
     <TimerProvider>

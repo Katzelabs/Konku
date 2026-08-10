@@ -31,6 +31,15 @@ const (
 	CodeConflict     = "conflict"
 	CodeRateLimited  = "rate_limited"
 	CodeInternal     = "internal"
+
+	// The client branches on these two rather than on a message.
+	//
+	// CodeEmailUnverified is what turns a 403 into a "check your mail" screen
+	// with a working resend button, instead of a dead end that looks like a
+	// permissions bug. CodeInvalidToken covers unknown, spent and expired
+	// links, which are deliberately indistinguishable (07 L3, L4).
+	CodeEmailUnverified = "email_unverified"
+	CodeInvalidToken    = "invalid_token"
 )
 
 // maxRequestBody bounds every JSON body. A note is markdown typed by a human;

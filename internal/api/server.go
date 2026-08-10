@@ -23,12 +23,32 @@ type Server struct {
 	cfg     config.Config
 	store   *store.Store
 	auth    *auth.Service
+	mailer  Mailer
 	dist    fs.FS
 	metrics *metrics
+
+	// Per-address limiter for the unauthenticated mail-sending paths.
+	//
+	// It lives on the Server rather than in Routes because the key is the
+	// address in the request body, which only the handler has read. Per-IP
+	// limiting alone lets an attacker mailbomb one victim from many hosts, and
+	// per-address alone lets one host enumerate many victims — so both, and
+	// neither replaces the other (07 L3).
+	signupAddrLimit *rateLimiter
 }
 
-func NewServer(cfg config.Config, st *store.Store, au *auth.Service, dist fs.FS) *Server {
-	return &Server{cfg: cfg, store: st, auth: au, dist: dist, metrics: newMetrics(st)}
+func NewServer(cfg config.Config, st *store.Store, au *auth.Service, mailer Mailer, dist fs.FS) *Server {
+	return &Server{
+		cfg:     cfg,
+		store:   st,
+		auth:    au,
+		mailer:  mailer,
+		dist:    dist,
+		metrics: newMetrics(st),
+		// Three sends per address per hour. Generous for someone whose mail is
+		// slow to arrive, useless as a mailbomb.
+		signupAddrLimit: newRateLimiter(3, time.Hour),
+	}
 }
 
 // MetricsHandler serves the Prometheus registry.
@@ -60,6 +80,16 @@ func (s *Server) Routes() http.Handler {
 	r.Use(middleware.Timeout(30 * time.Second))
 
 	loginLimit := newRateLimiter(10, 5*time.Minute)
+	// Tighter than login and over a longer window: every request on these
+	// routes can cause a message to be sent to somebody, and the per-address
+	// limiter inside the handlers is the other half of that (07 L3).
+	signupLimit := newRateLimiter(5, time.Hour)
+	// Verification is limited separately and far more loosely, because it is
+	// the one route here that sends nothing. Guessing a token is not a threat
+	// a rate limit addresses — it is 256 bits of CSPRNG — so the only job of
+	// this limiter is hygiene, and a tight one would punish a shared IP where
+	// several people verify from the same office or household.
+	verifyLimit := newRateLimiter(30, time.Hour)
 
 	// Operational endpoints, deliberately outside /api: they are not part of
 	// the product's API surface and nothing in the SPA calls them. Splitting
@@ -70,10 +100,36 @@ func (s *Server) Routes() http.Handler {
 
 	r.Route("/api", func(r chi.Router) {
 
-		// Unauthenticated. Rate-limited because it is the only unauthenticated
-		// write path in the application (D-039).
+		// Unauthenticated write paths, all rate-limited by IP. Signup and
+		// resend are limited by address as well, inside their handlers (D-039,
+		// 07 L3).
 		r.With(loginLimit.middleware).Post("/auth/login", s.handleLogin)
 		r.Post("/auth/logout", s.handleLogout)
+
+		// What the login screen needs before anyone has signed in.
+		r.Get("/auth/config", s.handleAuthConfig)
+
+		// Signup is behind the flag; verify and resend are not.
+		//
+		// Closing signup must not strand an account created while it was open
+		// whose owner still has a live link in their mailbox — and resend is
+		// the only way back for one whose first mail never arrived. Neither
+		// creates an account, and both answer 204 for an address that does not
+		// have a pending verification, so leaving them mounted gives away
+		// nothing.
+		if s.cfg.AllowSignup {
+			r.With(signupLimit.middleware).Post("/auth/signup", s.handleSignup)
+		}
+		r.With(verifyLimit.middleware).Post("/auth/verify", s.handleVerify)
+		r.With(signupLimit.middleware).Post("/auth/resend-verification", s.handleResendVerification)
+
+		// Reset is mounted regardless of ALLOW_SIGNUP. Recovery is not a
+		// registration feature: a closed instance still has accounts, and
+		// they still have people who forget passwords. /auth/forgot sends
+		// mail so it takes the signup limiter; /auth/reset sends none and
+		// takes the looser one, for the same reason verify does (07 L4).
+		r.With(signupLimit.middleware).Post("/auth/forgot", s.handleForgotPassword)
+		r.With(verifyLimit.middleware).Post("/auth/reset", s.handleResetPassword)
 
 		// Everything else requires a user. Keeping authenticated routes inside
 		// an explicit group is why chi was chosen over stdlib: "all of /api
@@ -94,91 +150,104 @@ func (s *Server) Routes() http.Handler {
 				})
 			}
 
-			// Deleting is soft on both resources, so both carry a restore and
-			// both lists take ?deleted=true for the Terhapus view. The bulk
-			// pair serves the selection bar; a static segment cannot collide
-			// with {id}, which chi resolves ahead of the wildcard anyway.
-			r.Route("/notes", func(r chi.Router) {
-				r.Get("/", s.handleListNotes)
-				r.Post("/", s.handleCreateNote)
-				r.Post("/bulk-delete", s.handleDeleteNotes)
-				r.Post("/bulk-restore", s.handleRestoreNotes)
-				r.Get("/{id}", s.handleGetNote)
-				r.Patch("/{id}", s.handleUpdateNote)
-				r.Delete("/{id}", s.handleDeleteNote)
-				r.Post("/{id}/restore", s.handleRestoreNote)
-			})
+			// Everything that touches stored content also requires a verified
+			// address (07 L3). /auth/me and /auth/logout stay above this line
+			// on purpose: they report the caller's own authentication state,
+			// which is what the client needs to render "check your mail" and
+			// to sign out of it.
+			//
+			// A group rather than a check in each handler, for the same reason
+			// requireUser is a group: "all of /api except these" is a security
+			// boundary, and one that a new route joins by default.
+			r.Group(func(r chi.Router) {
+				r.Use(s.requireVerified)
 
-			// Cards are their own resource with their own CRUD (D-055). This
-			// list also serves the picker for a fixed exam's questions —
-			// filters make one endpoint enough for both.
-			r.Route("/cards", func(r chi.Router) {
-				r.Get("/", s.handleListCards)
-				r.Post("/", s.handleCreateCard)
-				r.Post("/bulk-delete", s.handleDeleteCards)
-				r.Post("/bulk-restore", s.handleRestoreCards)
-				r.Get("/{id}", s.handleGetCard)
-				r.Patch("/{id}", s.handleUpdateCard)
-				r.Delete("/{id}", s.handleDeleteCard)
-				r.Post("/{id}/restore", s.handleRestoreCard)
-			})
+				// Deleting is soft on both resources, so both carry a restore and
+				// both lists take ?deleted=true for the Terhapus view. The bulk
+				// pair serves the selection bar; a static segment cannot collide
+				// with {id}, which chi resolves ahead of the wildcard anyway.
+				r.Route("/notes", func(r chi.Router) {
+					r.Get("/", s.handleListNotes)
+					r.Post("/", s.handleCreateNote)
+					r.Post("/bulk-delete", s.handleDeleteNotes)
+					r.Post("/bulk-restore", s.handleRestoreNotes)
+					r.Get("/{id}", s.handleGetNote)
+					r.Patch("/{id}", s.handleUpdateNote)
+					r.Delete("/{id}", s.handleDeleteNote)
+					r.Post("/{id}/restore", s.handleRestoreNote)
+				})
 
-			// One shared vocabulary across notes and cards. Deletion only
-			// succeeds for a category nothing references; archiving is the
-			// normal path (D-051).
-			r.Route("/categories", func(r chi.Router) {
-				r.Get("/", s.handleListCategories)
-				r.Post("/", s.handleCreateCategory)
-				r.Patch("/{id}", s.handleUpdateCategory)
-				r.Delete("/{id}", s.handleDeleteCategory)
-				r.Post("/{id}/archive", s.handleArchiveCategory)
-				r.Post("/{id}/unarchive", s.handleUnarchiveCategory)
-			})
+				// Cards are their own resource with their own CRUD (D-055). This
+				// list also serves the picker for a fixed exam's questions —
+				// filters make one endpoint enough for both.
+				r.Route("/cards", func(r chi.Router) {
+					r.Get("/", s.handleListCards)
+					r.Post("/", s.handleCreateCard)
+					r.Post("/bulk-delete", s.handleDeleteCards)
+					r.Post("/bulk-restore", s.handleRestoreCards)
+					r.Get("/{id}", s.handleGetCard)
+					r.Patch("/{id}", s.handleUpdateCard)
+					r.Delete("/{id}", s.handleDeleteCard)
+					r.Post("/{id}/restore", s.handleRestoreCard)
+				})
 
-			// A card is addressed by its own uuid. It used to take a note and
-			// an ID together, because card IDs were unique only within the
-			// note they were parsed out of (D-055).
-			r.Route("/review", func(r chi.Router) {
-				r.Get("/due", s.handleDueCards)
-				r.Get("/{cardID}/answer", s.handleCardAnswer)
-				r.Post("/{cardID}", s.handleRate)
-			})
+				// One shared vocabulary across notes and cards. Deletion only
+				// succeeds for a category nothing references; archiving is the
+				// normal path (D-051).
+				r.Route("/categories", func(r chi.Router) {
+					r.Get("/", s.handleListCategories)
+					r.Post("/", s.handleCreateCategory)
+					r.Patch("/{id}", s.handleUpdateCategory)
+					r.Delete("/{id}", s.handleDeleteCategory)
+					r.Post("/{id}/archive", s.handleArchiveCategory)
+					r.Post("/{id}/unarchive", s.handleUnarchiveCategory)
+				})
 
-			r.Get("/sessions", s.handleListSessions)
-			r.Post("/sessions", s.handleCreateSession)
+				// A card is addressed by its own uuid. It used to take a note and
+				// an ID together, because card IDs were unique only within the
+				// note they were parsed out of (D-055).
+				r.Route("/review", func(r chi.Router) {
+					r.Get("/due", s.handleDueCards)
+					r.Get("/{cardID}/answer", s.handleCardAnswer)
+					r.Post("/{cardID}", s.handleRate)
+				})
 
-			// Domains are per-user and editable (D-046). Deletion only
-			// succeeds for a domain nothing references; archiving is the
-			// normal path (D-051).
-			// Exams are practice tests over existing cards (D-048). Attempts
-			// hang off /attempts rather than nesting under the exam: an
-			// attempt is addressed on its own once it has started.
-			r.Route("/exams", func(r chi.Router) {
-				r.Get("/", s.handleListExams)
-				r.Post("/", s.handleCreateExam)
-				r.Get("/{id}", s.handleGetExam)
-				r.Patch("/{id}", s.handleUpdateExam)
-				r.Delete("/{id}", s.handleDeleteExam)
-				r.Post("/{id}/archive", s.handleArchiveExam)
-				r.Put("/{id}/cards", s.handleSetExamCards)
-				r.Post("/{id}/attempts", s.handleStartAttempt)
-			})
+				r.Get("/sessions", s.handleListSessions)
+				r.Post("/sessions", s.handleCreateSession)
 
-			r.Route("/attempts/{attemptID}", func(r chi.Router) {
-				r.Get("/", s.handleGetAttempt)
-				r.Delete("/", s.handleDeleteAttempt)
-				r.Post("/finish", s.handleFinishAttempt)
-				r.Get("/{cardID}/answer", s.handleAttemptAnswer)
-				r.Post("/{cardID}", s.handleAnswerQuestion)
-			})
+				// Domains are per-user and editable (D-046). Deletion only
+				// succeeds for a domain nothing references; archiving is the
+				// normal path (D-051).
+				// Exams are practice tests over existing cards (D-048). Attempts
+				// hang off /attempts rather than nesting under the exam: an
+				// attempt is addressed on its own once it has started.
+				r.Route("/exams", func(r chi.Router) {
+					r.Get("/", s.handleListExams)
+					r.Post("/", s.handleCreateExam)
+					r.Get("/{id}", s.handleGetExam)
+					r.Patch("/{id}", s.handleUpdateExam)
+					r.Delete("/{id}", s.handleDeleteExam)
+					r.Post("/{id}/archive", s.handleArchiveExam)
+					r.Put("/{id}/cards", s.handleSetExamCards)
+					r.Post("/{id}/attempts", s.handleStartAttempt)
+				})
 
-			r.Route("/domains", func(r chi.Router) {
-				r.Get("/", s.handleListDomains)
-				r.Post("/", s.handleCreateDomain)
-				r.Patch("/{id}", s.handleUpdateDomain)
-				r.Delete("/{id}", s.handleDeleteDomain)
-				r.Post("/{id}/archive", s.handleArchiveDomain)
-				r.Post("/{id}/unarchive", s.handleUnarchiveDomain)
+				r.Route("/attempts/{attemptID}", func(r chi.Router) {
+					r.Get("/", s.handleGetAttempt)
+					r.Delete("/", s.handleDeleteAttempt)
+					r.Post("/finish", s.handleFinishAttempt)
+					r.Get("/{cardID}/answer", s.handleAttemptAnswer)
+					r.Post("/{cardID}", s.handleAnswerQuestion)
+				})
+
+				r.Route("/domains", func(r chi.Router) {
+					r.Get("/", s.handleListDomains)
+					r.Post("/", s.handleCreateDomain)
+					r.Patch("/{id}", s.handleUpdateDomain)
+					r.Delete("/{id}", s.handleDeleteDomain)
+					r.Post("/{id}/archive", s.handleArchiveDomain)
+					r.Post("/{id}/unarchive", s.handleUnarchiveDomain)
+				})
 			})
 		})
 
