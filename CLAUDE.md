@@ -20,7 +20,9 @@ What that does **not** change: every constraint from `GOALS.md` — never puniti
 
 **`07` L2 is done** — `internal/mail` over stdlib `net/smtp`, Resend in production (D-068), Mailpit behind a compose `dev` profile for local and CI testing. The app is served at `konkuapp.katzeapps.com` and sends as `konku@katzeapps.com`; `katzeapps.com` is shared across projects, verified once with Resend, and carries **transactional mail only**. **`07` L3 and L4 are done** — signup, verification, resend, password reset, `requireVerified` around every data route, and five signed-out screens.
 
-**Next: `07` L5–L9**, then `04-ship.md`, then `07` L10.
+**`07` L5 is done** — migration `00008` adds `auth_sessions.public_id`, and the sessions screen lists and revokes logins. The raw session id is the credential and never leaves the server; the list addresses sessions by `public_id` and computes "is this the current one" in SQL.
+
+**Next: `07` L6–L9**, then `04-ship.md`, then `07` L10.
 
 **The order is deliberate and runs out of numeric sequence** (D-067). Almost nothing left needs the VPS — RLS, observability, security headers, the test pyramid, CI, signup, verification, reset, export, deletion and quotas are all local work against `docker-compose.yml`. What genuinely requires the box is short: the deploy itself, backups running there, **email deliverability** (SPF/DKIM/DMARC), the VPS half of the release pipeline, alert routing, phone access, and opening signup. So the local work happens first and `04-ship.md` becomes one careful afternoon.
 

@@ -75,6 +75,8 @@ type Querier interface {
 	// Auth sessions are server-side so logout actually revokes access (D-039).
 	// The table is auth_sessions, not sessions, because focus sessions and exam
 	// attempts both wanted that name (D-052).
+	// user_agent and ip are what make the sessions screen readable (07 L5). Both
+	// are nullable: a client that sends no User-Agent still gets a session.
 	CreateSession(ctx context.Context, arg CreateSessionParams) (AuthSession, error)
 	// The id is supplied rather than defaulted so the caller knows the identity
 	// before the row exists. Account creation runs inside WithUserTx, and
@@ -110,7 +112,15 @@ type Querier interface {
 	// Spent and expired tokens are garbage. Swept opportunistically, like sessions.
 	DeleteExpiredAuthTokens(ctx context.Context) error
 	DeleteExpiredSessions(ctx context.Context) error
+	// Everything except the caller's own session, which is what "sign out
+	// everywhere else" means. Revoking the current one too would log the user out
+	// of the screen they are using to do it.
+	DeleteOtherSessionsForUser(ctx context.Context, arg DeleteOtherSessionsForUserParams) error
 	DeleteSession(ctx context.Context, id string) error
+	// Scoped by user_id in the WHERE, never fetch-then-check (hard rule 4). A
+	// public_id belonging to someone else affects no rows, and the handler turns
+	// that into 404 rather than 403 (D-039).
+	DeleteSessionForUser(ctx context.Context, arg DeleteSessionForUserParams) (int64, error)
 	// Every session, including the one making the request.
 	//
 	// A password reset is what someone does when they think their account is
@@ -233,6 +243,16 @@ type Querier interface {
 	// aggregation cannot drift apart between them.
 	ListNotes(ctx context.Context, arg ListNotesParams) ([]ListNotesRow, error)
 	ListRecentFocusSessions(ctx context.Context, arg ListRecentFocusSessionsParams) ([]FocusSession, error)
+	// Newest activity first, which is the order the screen reads in.
+	//
+	// Deliberately does NOT select id: that column is the credential, and a list
+	// endpoint that returned it would hand every live session of the account to
+	// any script on the page (migration 00008).
+	//
+	// "Which of these is the one asking" is answered here, as a boolean, rather
+	// than by handing the ids to Go and comparing there. The credential then never
+	// leaves Postgres at all, so no future refactor can serialise it by accident.
+	ListSessionsForUser(ctx context.Context, arg ListSessionsForUserParams) ([]ListSessionsForUserRow, error)
 	// Idempotent on purpose: a second click on the same link is a no-op rather
 	// than a moved timestamp. The token is already spent by then anyway.
 	MarkEmailVerified(ctx context.Context, id uuid.UUID) error
@@ -259,6 +279,12 @@ type Querier interface {
 	// Already-deleted ids simply do not match, which makes a repeated request a
 	// no-op rather than a way to push deleted_at forward.
 	SoftDeleteNotes(ctx context.Context, arg SoftDeleteNotesParams) (int64, error)
+	// Bumped at most once per interval, not on every request.
+	//
+	// The caller decides when to call this from the last_seen_at it already has,
+	// so the common case costs nothing. The predicate is repeated here anyway:
+	// two requests arriving together would otherwise both write.
+	TouchSession(ctx context.Context, arg TouchSessionParams) error
 	UnarchiveCategory(ctx context.Context, arg UnarchiveCategoryParams) (Category, error)
 	UnarchiveDomain(ctx context.Context, arg UnarchiveDomainParams) (Domain, error)
 	// No content matching anywhere: the uuid identifies the card and the text is

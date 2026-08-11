@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -44,11 +45,30 @@ func NewSessionID() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
+// Client is what the sessions screen shows about where a login came from
+// (07 L5). Both fields are best-effort: a request with no User-Agent still
+// produces a session.
+type Client struct {
+	UserAgent string
+	IP        string
+}
+
+func (c Client) ptrs() (*string, *string) {
+	var ua, ip *string
+	if c.UserAgent != "" {
+		ua = &c.UserAgent
+	}
+	if c.IP != "" {
+		ip = &c.IP
+	}
+	return ua, ip
+}
+
 // Login verifies credentials and starts a session.
 //
 // It always runs a password verification, even when the email is unknown, so
 // the response time does not reveal whether an account exists.
-func (s *Service) Login(ctx context.Context, email, password string) (gen.User, string, time.Time, error) {
+func (s *Service) Login(ctx context.Context, email, password string, client Client) (gen.User, string, time.Time, error) {
 	var zero gen.User
 
 	user, err := s.store.Q().GetUserByEmail(ctx, normalizeEmail(email))
@@ -75,8 +95,9 @@ func (s *Service) Login(ctx context.Context, email, password string) (gen.User, 
 	}
 	expires := time.Now().Add(s.ttl)
 
+	ua, ip := client.ptrs()
 	if _, err := s.store.Q().CreateSession(ctx, gen.CreateSessionParams{
-		ID: id, UserID: user.ID, ExpiresAt: expires,
+		ID: id, UserID: user.ID, ExpiresAt: expires, UserAgent: ua, Ip: ip,
 	}); err != nil {
 		return zero, "", time.Time{}, fmt.Errorf("auth: creating session: %w", err)
 	}
@@ -100,7 +121,75 @@ func (s *Service) Resolve(ctx context.Context, sessionID string) (gen.User, erro
 		}
 		return gen.User{}, fmt.Errorf("auth: resolving session: %w", err)
 	}
+
+	// "Last seen" would be a write on every single request if it were written
+	// unconditionally, on a pool capped at 10 connections for the sake of every
+	// other project on the box (D-028). Throttling it to once per interval
+	// makes the common case cost nothing and the screen no less useful — the
+	// number it shows is a coarse "when was this session last used", and five
+	// minutes of resolution is more than that question needs.
+	//
+	// A failure here is logged by the caller's error path, not returned: the
+	// request is authenticated either way, and refusing it because a
+	// bookkeeping write failed would turn a cosmetic problem into an outage.
+	if cutoff := time.Now().Add(-lastSeenInterval); row.AuthSession.LastSeenAt.Before(cutoff) {
+		if err := s.store.Q().TouchSession(ctx, gen.TouchSessionParams{
+			ID: sessionID, LastSeenAt: cutoff,
+		}); err != nil {
+			slog.Warn("could not update session last_seen_at",
+				"user_id", row.User.ID.String(), "error", err)
+		}
+	}
+
 	return row.User, nil
+}
+
+// lastSeenInterval is how stale last_seen_at may get before a request pays for
+// an update. See Resolve.
+const lastSeenInterval = 5 * time.Minute
+
+// ListSessions returns the account's live sessions, newest activity first.
+//
+// The raw session ids are deliberately not part of the result: each one is the
+// credential itself, so the query selects public_id instead (migration 00008)
+// and answers "is this the one asking" as a boolean computed in Postgres.
+func (s *Service) ListSessions(ctx context.Context, userID uuid.UUID, currentSessionID string) ([]gen.ListSessionsForUserRow, error) {
+	rows, err := s.store.Q().ListSessionsForUser(ctx, gen.ListSessionsForUserParams{
+		UserID: userID, CurrentSessionID: currentSessionID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("auth: listing sessions: %w", err)
+	}
+	return rows, nil
+}
+
+// RevokeSession deletes one of the account's sessions by its public handle.
+//
+// Reports whether anything was deleted, so the handler can answer 404 for a
+// handle that is not this user's. Scoping is in the WHERE clause: a wrong owner
+// gets not found, never forbidden (hard rule 4, D-039).
+func (s *Service) RevokeSession(ctx context.Context, userID, publicID uuid.UUID) (bool, error) {
+	n, err := s.store.Q().DeleteSessionForUser(ctx, gen.DeleteSessionForUserParams{
+		UserID: userID, PublicID: publicID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("auth: revoking session: %w", err)
+	}
+	return n > 0, nil
+}
+
+// RevokeOtherSessions signs the account out everywhere except here.
+//
+// Everywhere *else* rather than everywhere: revoking the current session too
+// would sign the user out of the screen they are using to do it, which reads
+// as a bug rather than as a feature working.
+func (s *Service) RevokeOtherSessions(ctx context.Context, userID uuid.UUID, currentSessionID string) error {
+	if err := s.store.Q().DeleteOtherSessionsForUser(ctx, gen.DeleteOtherSessionsForUserParams{
+		UserID: userID, ID: currentSessionID,
+	}); err != nil {
+		return fmt.Errorf("auth: revoking other sessions: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) Logout(ctx context.Context, sessionID string) error {

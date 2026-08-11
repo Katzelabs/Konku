@@ -8,6 +8,7 @@ import { Label } from '../../components/ui/label'
 import { PageHeader } from '../../components/ui/page-header'
 import { ToggleGroup, ToggleGroupItem } from '../../components/ui/toggle-group'
 import { useLogout, useMe } from '../auth/useAuth'
+import { ActiveSessions } from './ActiveSessions'
 import { useTheme, type Theme } from './useTheme'
 
 /**
@@ -37,7 +38,7 @@ export default function SettingsPage() {
 
       <Section
         title="Akun"
-        description="Akun dibuat lewat `konku seed-user`. Tidak ada pendaftaran publik (D-039)."
+        description="Email dan sesi kamu."
       >
         <Card className="flex flex-col gap-4 p-5">
           <div className="flex flex-col gap-1.5">
@@ -68,6 +69,13 @@ export default function SettingsPage() {
             </Button>
           </div>
         </Card>
+      </Section>
+
+      <Section
+        title="Perangkat yang masuk"
+        description="Tempat akun ini sedang dipakai. Akhiri yang tidak kamu kenali."
+      >
+        <ActiveSessions />
       </Section>
 
       <Section

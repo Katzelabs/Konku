@@ -285,17 +285,59 @@ for an unregistered address 204.
 
 ## L5 — Active sessions screen
 
-`todo` · ~3 h · needs L1
+`done` · ~3 h · needs L1 · migration `00008_session_public_id.sql`
 
 List where the account is signed in — last seen, user agent, approximate
 location — and revoke one or all. Server-side sessions (D-039) make this a
 query rather than a feature; the columns arrive in L1.
 
 Pair it with the session-ID rotation from P4, which is what makes the list
-trustworthy.
+trustworthy. ✓ — P4 already rotates on login and revokes the credential
+presented with it.
 
 **Done when:** revoking a session from one browser signs the other one out on
-its next request.
+its next request. ✓ — `TestRevokingASessionSignsTheOtherBrowserOut`, which also
+asserts the revoking session is untouched.
+
+Shipped: `GET /api/auth/sessions`, `DELETE /api/auth/sessions/{id}`,
+`DELETE /api/auth/sessions` (everywhere else), and the
+`Perangkat yang masuk` section in Pengaturan.
+
+**The design problem this task actually contained, which the plan did not
+anticipate:** `auth_sessions.id` *is* the credential — sessions are opaque
+256-bit strings stored server-side, so the primary key and the cookie value are
+the same string. A screen that lists sessions has to name them, and naming them
+by id would put every live credential of the account into a JSON response
+readable by any script on the page, undoing the reason the cookie is HttpOnly.
+
+Migration `00008` adds `public_id`, a handle that is not a credential. The
+query goes further and never selects `id` at all: "which of these is the one
+asking" is computed in Postgres as a boolean, so the credential does not enter
+Go and cannot be serialised by a later refactor. `TestTheSessionListNeverCarriesTheCredential`
+greps the raw response body for the caller's cookie value.
+
+Three smaller decisions:
+
+- **`last_seen_at` is written at most once every five minutes**, not per
+  request. Unconditional would be a write on every authenticated request
+  against a pool capped at 10 for the sake of every other project on the box
+  (D-028), to make a field whose whole job is "roughly when was this last
+  used" slightly sharper. A failure to write it is logged, never returned —
+  refusing an authenticated request because a bookkeeping write failed turns a
+  cosmetic problem into an outage.
+- **No geolocation.** L5 said "approximate location"; that needs a GeoIP
+  database, which is a dependency, a licence and a refresh cadence (D-065) for
+  a field that exists to answer "do I recognise this?" — which the address and
+  the browser name already answer. The IP is shown as-is. Revisit if a real
+  user ever asks.
+- **The User-Agent is parsed in the client, with substring checks**, not by a
+  library and not on the server. Same reasoning, and it keeps the stored value
+  honest: the raw header is what is kept, bounded at 400 characters because it
+  is attacker-controlled on an unauthenticated route.
+
+Mounted under `/api/auth/sessions` because `/api/sessions` has been the focus
+timer's since `03`. "Session" genuinely names two unrelated things in this
+product, which is what D-052 renamed the table for.
 
 ---
 

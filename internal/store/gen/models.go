@@ -18,6 +18,7 @@ type AuthSession struct {
 	LastSeenAt time.Time `json:"last_seen_at"`
 	UserAgent  *string   `json:"user_agent"`
 	Ip         *string   `json:"ip"`
+	PublicID   uuid.UUID `json:"public_id"`
 }
 
 type AuthToken struct {

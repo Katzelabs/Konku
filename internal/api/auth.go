@@ -181,7 +181,16 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	user, sessionID, expires, err := s.auth.Login(r.Context(), req.Email, req.Password)
+	// Recorded so the sessions screen can say where a login came from (07 L5).
+	// The User-Agent is bounded because it is an attacker-controlled header on
+	// an unauthenticated route, and an unbounded one is a row as large as the
+	// request allows. RealIP has already resolved the proxy headers.
+	client := auth.Client{
+		UserAgent: truncate(r.UserAgent(), maxUserAgent),
+		IP:        clientKey(r),
+	}
+
+	user, sessionID, expires, err := s.auth.Login(r.Context(), req.Email, req.Password, client)
 	if err != nil {
 		if errors.Is(err, auth.ErrInvalidCredentials) {
 			// One message for both unknown-email and wrong-password: telling

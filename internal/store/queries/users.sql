@@ -42,9 +42,52 @@ SELECT count(*) FROM users;
 -- attempts both wanted that name (D-052).
 
 -- name: CreateSession :one
-INSERT INTO auth_sessions (id, user_id, expires_at)
-VALUES ($1, $2, $3)
+-- user_agent and ip are what make the sessions screen readable (07 L5). Both
+-- are nullable: a client that sends no User-Agent still gets a session.
+INSERT INTO auth_sessions (id, user_id, expires_at, user_agent, ip)
+VALUES ($1, $2, $3, $4, $5)
 RETURNING *;
+
+-- name: ListSessionsForUser :many
+-- Newest activity first, which is the order the screen reads in.
+--
+-- Deliberately does NOT select id: that column is the credential, and a list
+-- endpoint that returned it would hand every live session of the account to
+-- any script on the page (migration 00008).
+--
+-- "Which of these is the one asking" is answered here, as a boolean, rather
+-- than by handing the ids to Go and comparing there. The credential then never
+-- leaves Postgres at all, so no future refactor can serialise it by accident.
+SELECT public_id,
+       (id = sqlc.arg(current_session_id)) AS is_current,
+       created_at, last_seen_at, user_agent, ip, expires_at
+FROM auth_sessions
+WHERE user_id = sqlc.arg(user_id) AND expires_at > now()
+ORDER BY last_seen_at DESC;
+
+-- name: TouchSession :exec
+-- Bumped at most once per interval, not on every request.
+--
+-- The caller decides when to call this from the last_seen_at it already has,
+-- so the common case costs nothing. The predicate is repeated here anyway:
+-- two requests arriving together would otherwise both write.
+UPDATE auth_sessions
+SET last_seen_at = now()
+WHERE id = $1 AND last_seen_at < $2;
+
+-- name: DeleteSessionForUser :execrows
+-- Scoped by user_id in the WHERE, never fetch-then-check (hard rule 4). A
+-- public_id belonging to someone else affects no rows, and the handler turns
+-- that into 404 rather than 403 (D-039).
+DELETE FROM auth_sessions
+WHERE user_id = $1 AND public_id = $2;
+
+-- name: DeleteOtherSessionsForUser :exec
+-- Everything except the caller's own session, which is what "sign out
+-- everywhere else" means. Revoking the current one too would log the user out
+-- of the screen they are using to do it.
+DELETE FROM auth_sessions
+WHERE user_id = $1 AND id <> $2;
 
 -- name: GetActiveSession :one
 -- Expiry is enforced here rather than in Go, so an expired session can never

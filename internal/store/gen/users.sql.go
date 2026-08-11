@@ -98,22 +98,32 @@ func (q *Queries) CreateAuthToken(ctx context.Context, arg CreateAuthTokenParams
 
 const createSession = `-- name: CreateSession :one
 
-INSERT INTO auth_sessions (id, user_id, expires_at)
-VALUES ($1, $2, $3)
-RETURNING id, user_id, expires_at, created_at, last_seen_at, user_agent, ip
+INSERT INTO auth_sessions (id, user_id, expires_at, user_agent, ip)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, user_id, expires_at, created_at, last_seen_at, user_agent, ip, public_id
 `
 
 type CreateSessionParams struct {
 	ID        string    `json:"id"`
 	UserID    uuid.UUID `json:"user_id"`
 	ExpiresAt time.Time `json:"expires_at"`
+	UserAgent *string   `json:"user_agent"`
+	Ip        *string   `json:"ip"`
 }
 
 // Auth sessions are server-side so logout actually revokes access (D-039).
 // The table is auth_sessions, not sessions, because focus sessions and exam
 // attempts both wanted that name (D-052).
+// user_agent and ip are what make the sessions screen readable (07 L5). Both
+// are nullable: a client that sends no User-Agent still gets a session.
 func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (AuthSession, error) {
-	row := q.db.QueryRow(ctx, createSession, arg.ID, arg.UserID, arg.ExpiresAt)
+	row := q.db.QueryRow(ctx, createSession,
+		arg.ID,
+		arg.UserID,
+		arg.ExpiresAt,
+		arg.UserAgent,
+		arg.Ip,
+	)
 	var i AuthSession
 	err := row.Scan(
 		&i.ID,
@@ -123,6 +133,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (A
 		&i.LastSeenAt,
 		&i.UserAgent,
 		&i.Ip,
+		&i.PublicID,
 	)
 	return i, err
 }
@@ -211,6 +222,24 @@ func (q *Queries) DeleteExpiredSessions(ctx context.Context) error {
 	return err
 }
 
+const deleteOtherSessionsForUser = `-- name: DeleteOtherSessionsForUser :exec
+DELETE FROM auth_sessions
+WHERE user_id = $1 AND id <> $2
+`
+
+type DeleteOtherSessionsForUserParams struct {
+	UserID uuid.UUID `json:"user_id"`
+	ID     string    `json:"id"`
+}
+
+// Everything except the caller's own session, which is what "sign out
+// everywhere else" means. Revoking the current one too would log the user out
+// of the screen they are using to do it.
+func (q *Queries) DeleteOtherSessionsForUser(ctx context.Context, arg DeleteOtherSessionsForUserParams) error {
+	_, err := q.db.Exec(ctx, deleteOtherSessionsForUser, arg.UserID, arg.ID)
+	return err
+}
+
 const deleteSession = `-- name: DeleteSession :exec
 DELETE FROM auth_sessions WHERE id = $1
 `
@@ -218,6 +247,27 @@ DELETE FROM auth_sessions WHERE id = $1
 func (q *Queries) DeleteSession(ctx context.Context, id string) error {
 	_, err := q.db.Exec(ctx, deleteSession, id)
 	return err
+}
+
+const deleteSessionForUser = `-- name: DeleteSessionForUser :execrows
+DELETE FROM auth_sessions
+WHERE user_id = $1 AND public_id = $2
+`
+
+type DeleteSessionForUserParams struct {
+	UserID   uuid.UUID `json:"user_id"`
+	PublicID uuid.UUID `json:"public_id"`
+}
+
+// Scoped by user_id in the WHERE, never fetch-then-check (hard rule 4). A
+// public_id belonging to someone else affects no rows, and the handler turns
+// that into 404 rather than 403 (D-039).
+func (q *Queries) DeleteSessionForUser(ctx context.Context, arg DeleteSessionForUserParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteSessionForUser, arg.UserID, arg.PublicID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteSessionsForUser = `-- name: DeleteSessionsForUser :exec
@@ -235,7 +285,7 @@ func (q *Queries) DeleteSessionsForUser(ctx context.Context, userID uuid.UUID) e
 }
 
 const getActiveSession = `-- name: GetActiveSession :one
-SELECT auth_sessions.id, auth_sessions.user_id, auth_sessions.expires_at, auth_sessions.created_at, auth_sessions.last_seen_at, auth_sessions.user_agent, auth_sessions.ip, users.id, users.email, users.password_hash, users.created_at, users.email_verified_at, users.deleted_at
+SELECT auth_sessions.id, auth_sessions.user_id, auth_sessions.expires_at, auth_sessions.created_at, auth_sessions.last_seen_at, auth_sessions.user_agent, auth_sessions.ip, auth_sessions.public_id, users.id, users.email, users.password_hash, users.created_at, users.email_verified_at, users.deleted_at
 FROM auth_sessions
 JOIN users ON users.id = auth_sessions.user_id
 WHERE auth_sessions.id = $1
@@ -260,6 +310,7 @@ func (q *Queries) GetActiveSession(ctx context.Context, id string) (GetActiveSes
 		&i.AuthSession.LastSeenAt,
 		&i.AuthSession.UserAgent,
 		&i.AuthSession.Ip,
+		&i.AuthSession.PublicID,
 		&i.User.ID,
 		&i.User.Email,
 		&i.User.PasswordHash,
@@ -306,6 +357,67 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 	return i, err
 }
 
+const listSessionsForUser = `-- name: ListSessionsForUser :many
+SELECT public_id,
+       (id = $1) AS is_current,
+       created_at, last_seen_at, user_agent, ip, expires_at
+FROM auth_sessions
+WHERE user_id = $2 AND expires_at > now()
+ORDER BY last_seen_at DESC
+`
+
+type ListSessionsForUserParams struct {
+	CurrentSessionID string    `json:"current_session_id"`
+	UserID           uuid.UUID `json:"user_id"`
+}
+
+type ListSessionsForUserRow struct {
+	PublicID   uuid.UUID `json:"public_id"`
+	IsCurrent  bool      `json:"is_current"`
+	CreatedAt  time.Time `json:"created_at"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+	UserAgent  *string   `json:"user_agent"`
+	Ip         *string   `json:"ip"`
+	ExpiresAt  time.Time `json:"expires_at"`
+}
+
+// Newest activity first, which is the order the screen reads in.
+//
+// Deliberately does NOT select id: that column is the credential, and a list
+// endpoint that returned it would hand every live session of the account to
+// any script on the page (migration 00008).
+//
+// "Which of these is the one asking" is answered here, as a boolean, rather
+// than by handing the ids to Go and comparing there. The credential then never
+// leaves Postgres at all, so no future refactor can serialise it by accident.
+func (q *Queries) ListSessionsForUser(ctx context.Context, arg ListSessionsForUserParams) ([]ListSessionsForUserRow, error) {
+	rows, err := q.db.Query(ctx, listSessionsForUser, arg.CurrentSessionID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSessionsForUserRow{}
+	for rows.Next() {
+		var i ListSessionsForUserRow
+		if err := rows.Scan(
+			&i.PublicID,
+			&i.IsCurrent,
+			&i.CreatedAt,
+			&i.LastSeenAt,
+			&i.UserAgent,
+			&i.Ip,
+			&i.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markEmailVerified = `-- name: MarkEmailVerified :exec
 UPDATE users
 SET email_verified_at = now()
@@ -316,6 +428,27 @@ WHERE id = $1 AND email_verified_at IS NULL
 // than a moved timestamp. The token is already spent by then anyway.
 func (q *Queries) MarkEmailVerified(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, markEmailVerified, id)
+	return err
+}
+
+const touchSession = `-- name: TouchSession :exec
+UPDATE auth_sessions
+SET last_seen_at = now()
+WHERE id = $1 AND last_seen_at < $2
+`
+
+type TouchSessionParams struct {
+	ID         string    `json:"id"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+}
+
+// Bumped at most once per interval, not on every request.
+//
+// The caller decides when to call this from the last_seen_at it already has,
+// so the common case costs nothing. The predicate is repeated here anyway:
+// two requests arriving together would otherwise both write.
+func (q *Queries) TouchSession(ctx context.Context, arg TouchSessionParams) error {
+	_, err := q.db.Exec(ctx, touchSession, arg.ID, arg.LastSeenAt)
 	return err
 }
 

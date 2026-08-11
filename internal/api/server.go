@@ -215,6 +215,15 @@ func (s *Server) Routes() http.Handler {
 				r.Get("/sessions", s.handleListSessions)
 				r.Post("/sessions", s.handleCreateSession)
 
+				// Logins, not study time. Under /auth because /sessions has
+				// meant the focus timer's since 03, and "sessions" genuinely
+				// names two unrelated things here (07 L5, D-052).
+				r.Route("/auth/sessions", func(r chi.Router) {
+					r.Get("/", s.handleListAuthSessions)
+					r.Delete("/", s.handleRevokeOtherAuthSessions)
+					r.Delete("/{id}", s.handleRevokeAuthSession)
+				})
+
 				// Domains are per-user and editable (D-046). Deletion only
 				// succeeds for a domain nothing references; archiving is the
 				// normal path (D-051).

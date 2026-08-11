@@ -167,6 +167,67 @@ export function useResendVerification() {
   })
 }
 
+export interface AuthSession {
+  /**
+   * A public handle, never the session id.
+   *
+   * The session id is the credential (D-039), so the API deliberately never
+   * sends it — if it did, every live session of the account would be readable
+   * by any script on this page.
+   */
+  id: string
+  /** The session making this request. Revoking it is a logout. */
+  current: boolean
+  createdAt: string
+  lastSeen: string
+  userAgent?: string
+  ip?: string
+}
+
+export const authSessionsQueryKey = ['auth', 'sessions'] as const
+
+/** Where the account is signed in (07 L5). */
+export function useAuthSessions() {
+  return useQuery({
+    queryKey: authSessionsQueryKey,
+    queryFn: () => api.get<AuthSession[]>('/auth/sessions'),
+  })
+}
+
+/**
+ * Sign out one session.
+ *
+ * Revoking the current one is a logout, so the cache is cleared in that case:
+ * cached notes and due cards belong to a session that no longer exists.
+ */
+export function useRevokeAuthSession() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (session: AuthSession) => api.del<void>(`/auth/sessions/${session.id}`),
+    onSuccess: (_data, session) => {
+      // Braces, never a returned promise: returning the invalidate would make
+      // the mutate callbacks wait on a refetch (see CLAUDE.md).
+      if (session.current) {
+        qc.clear()
+        qc.setQueryData(meQueryKey, null)
+        return
+      }
+      qc.invalidateQueries({ queryKey: authSessionsQueryKey })
+    },
+  })
+}
+
+/** Sign out everywhere except here. */
+export function useRevokeOtherAuthSessions() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.del<void>('/auth/sessions'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: authSessionsQueryKey })
+    },
+  })
+}
+
 export function useLogout() {
   const qc = useQueryClient()
   return useMutation({
