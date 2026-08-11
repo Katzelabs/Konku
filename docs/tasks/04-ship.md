@@ -113,7 +113,16 @@ That number is the RTO in `PRD.md` §9.
 catcher cannot test, and it is the item in this whole plan most likely to
 surprise you (D-067):
 
-- SPF, DKIM and DMARC on the sending domain
+The domain is `katzeapps.com`, already registered and verified with Resend
+(D-068). Konku sends as `konku@katzeapps.com`.
+
+- SPF, DKIM and DMARC on `katzeapps.com` — set once, shared by every project
+  on it, which is why the DMARC policy is worth getting right rather than
+  leaving at `p=none` forever
+- `SMTP_URL`, `MAIL_FROM` and `PUBLIC_BASE_URL` set in the production
+  environment. `PUBLIC_BASE_URL` must match `KONKU_HOST`
+  (`https://konkuapp.katzeapps.com`) — every link in every message is built
+  against it, and a wrong value is only discovered after delivery
 - A real verification mail to a **Gmail** address, and a real reset mail
 - Check the spam folder before declaring victory
 

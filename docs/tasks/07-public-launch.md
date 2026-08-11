@@ -73,8 +73,8 @@ transaction, the column comes out.
 
 ## L2 — Mail
 
-`done` (code) · `todo` (a real domain, and a Resend account to verify it
-against) · ~3 h · needs L1
+`done` · ~3 h · needs L1 · sending domain `katzeapps.com`, registered and
+verified with Resend
 
 `internal/mail`, stdlib `net/smtp` against a transactional provider. An SDK
 for "send one templated message" is not a trade worth making (D-065).
@@ -128,10 +128,20 @@ Four things settled while building it:
   fact, "abaikan saja email ini" reassures, and a small banned-words list keeps
   countdown language out.
 
-**What remains before L3 can be finished end to end:** buy the domain, create
-the Resend account, verify the sending subdomain, and put the real
-`smtps://resend:…@smtp.resend.com:465` in the production environment. None of
-that is code, and the first real send is still `04` S4.
+**The sending identity is settled** (D-068): `katzeapps.com`, one domain shared
+across every project and verified once with Resend, with projects separated by
+the local part rather than by subdomain. Konku sends as
+`konku@katzeapps.com` and is served at `konkuapp.katzeapps.com`.
+
+That domain sends **transactional mail only**. Every project on it shares one
+sender reputation and one DMARC policy, so a campaign from any of them
+degrades the message that gates account creation here — and the symptom is new
+accounts that look stuck with nothing wrong in the logs.
+
+**What remains is not code:** put the real
+`smtps://resend:…@smtp.resend.com:465`, `MAIL_FROM` and `PUBLIC_BASE_URL` in
+the production environment, and confirm SPF, DKIM and DMARC. The first real
+send is `04` S4 and still carries its own risk.
 
 ---
 

@@ -18,7 +18,7 @@ What that does **not** change: every constraint from `GOALS.md` — never puniti
 
 **`06-production-hardening.md` is done** apart from two items that need the box itself: a real Sentry DSN (P3) and a real tag to publish to GHCR (P9). **`07` L1 is done** — migration `00007` adds `user_settings` and `auth_tokens`, verification and deletion-request columns on `users`, and the session-screen columns on `auth_sessions`.
 
-**`07` L2 is done** — `internal/mail` over stdlib `net/smtp`, Resend in production (D-068), Mailpit behind a compose `dev` profile for local and CI testing. **`07` L3 and L4 are done** — signup, verification, resend, password reset, `requireVerified` around every data route, and five signed-out screens.
+**`07` L2 is done** — `internal/mail` over stdlib `net/smtp`, Resend in production (D-068), Mailpit behind a compose `dev` profile for local and CI testing. The app is served at `konkuapp.katzeapps.com` and sends as `konku@katzeapps.com`; `katzeapps.com` is shared across projects, verified once with Resend, and carries **transactional mail only**. **`07` L3 and L4 are done** — signup, verification, resend, password reset, `requireVerified` around every data route, and five signed-out screens.
 
 **Next: `07` L5–L9**, then `04-ship.md`, then `07` L10.
 

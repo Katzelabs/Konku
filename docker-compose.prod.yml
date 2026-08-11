@@ -11,6 +11,19 @@ services:
       SESSION_SECRET: ${SESSION_SECRET}
       ALLOW_SIGNUP: "false"
       DEV: "false"
+
+      # Mail (07 L2, D-068). Resend over SMTP on 465 — smtps, not smtp:
+      # net/smtp refuses to send the API key over an unencrypted connection.
+      #
+      # These are required before ALLOW_SIGNUP can become "true" (07 L10):
+      # config refuses to start without them, because an account that cannot
+      # be verified can never be recovered either.
+      SMTP_URL: ${SMTP_URL}              # smtps://resend:re_...@smtp.resend.com:465
+      MAIL_FROM: ${MAIL_FROM}            # Konku <konku@katzeapps.com>
+      # Must match KONKU_HOST. Every verification and reset link is built
+      # against it, and a wrong value is only discovered after the mail has
+      # already been delivered.
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}  # https://konkuapp.katzeapps.com
     networks:
       - shared
     labels:

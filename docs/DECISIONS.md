@@ -781,41 +781,56 @@ API key), so the transport is already in the standard library and D-065's "name
 the obligation this dependency discharges" test never has to be argued. An SDK
 for "send one templated message" is not a trade worth making.
 
-**Its own Resend account, not the one already serving another project.** The
-free tier allows exactly one custom domain, so sharing an account is not merely
-untidy, it is impossible without paying. But the domain limit is not the real
-argument — sender reputation and account suspension are shared blast radius,
-and two unrelated projects that lose signup together for one email reason is
-the coupling worth refusing. Volume is not a constraint at this scale: 3,000
-messages a month and 100 a day against verification and reset traffic is not
-close.
+**One shared `.com`, one Resend account, all projects.** `katzeapps.com` is
+registered and verified with Resend; Konku sends as `konku@katzeapps.com` and
+is served at `konkuapp.katzeapps.com`. Other projects get their own local part
+and their own subdomain on the same domain.
 
-**Its own domain, registered at cost, and deliberately not a cheap TLD.** A
-`.xyz` costs a dollar and a `.com` costs about ten, and the difference buys
-measurably worse delivery: `.xyz`, `.top`, `.club` and similar are filtered
-more aggressively, with Spamhaus reporting abuse rates above 40% of registered
-domains on some of them, and correct SPF/DKIM/DMARC does not fully compensate
-for TLD reputation. Saving nine dollars a year to raise the spam rate on the
-one message that gates account creation is a bad trade, and it lands exactly on
-the risk D-067 named. Mail sends from a subdomain (`mail.<domain>`) so
-transactional reputation stays separable from the apex.
+This is the amendment: the first version of this decision argued for a
+*separate* domain and a *separate* Resend account per project, on the grounds
+that sender reputation and account suspension are shared blast radius. That
+argument is still true and is now an accepted cost rather than a refused one,
+because the thing it was protecting against is speculative and the thing it
+cost was real — the free tier allows exactly one custom domain, so a domain
+per project means paying $20/mo for Pro or juggling an account per project.
+One domain for everything makes the free tier fit permanently, and puts SPF,
+DKIM and DMARC in one place instead of one place per project.
 
-The domain is not an email cost. `04-ship.md` S1 needs a hostname for Caddy's
-TLS regardless — L2 only means buying it sooner, which is worth doing because
-DNS verification is wall-clock delay rather than work.
+**What that costs, stated plainly, because it is the part that will bite if it
+ever bites:** every project on `katzeapps.com` shares one sender reputation and
+one DMARC policy. If another project ever sends bulk or marketing mail from
+this domain, Konku's verification mail is what degrades — and the symptom is
+new accounts that appear stuck with nothing wrong in the logs (D-067). The rule
+that follows: **this domain sends transactional mail only.** Anything
+resembling a campaign gets its own domain, not a new local part here.
+
+**Not a cheap TLD, and that part stands.** `.xyz`, `.top`, `.club` and similar
+are filtered more aggressively — Spamhaus reports abuse rates above 40% of
+registered domains on some of them — and correct SPF/DKIM/DMARC does not fully
+compensate for TLD reputation. Saving nine dollars a year to raise the spam
+rate on the one message that gates account creation is a bad trade.
+
+**Sending from the apex rather than a `mail.` subdomain** follows from sharing:
+a per-project subdomain would mean a separate Resend domain entry per project,
+which is the limit this decision exists to stay under. The separation between
+projects is the local part.
+
+The domain was never only an email cost. `04-ship.md` S1 needs a hostname for
+Caddy's TLS regardless.
 
 **Rejected:**
 
-- **Sending from the other project's verified domain.** Free, and wrong twice:
-  verification mail from an unrelated brand reads as phishing to a recipient
-  and to a filter, and it couples the two projects' reputations permanently.
+- **A domain per project.** The clean answer on reputation, and it does not
+  survive contact with the pricing: one custom domain on the free tier means
+  either $20/mo or an account per project, to isolate a risk that only
+  materialises if one of these projects starts sending mail it should not.
+  Revisit if that ever happens — the migration is DNS and one env var.
 - **Amazon SES.** Genuinely cheaper ($0.10 per 1,000) with effectively
-  unlimited verified domains, and the right answer at a third project. Not at
-  this one: 4–16 hours of setup and a support request to leave the sandbox, to
-  save a few dollars a year on traffic measured in dozens of messages a month.
+  unlimited verified domains, which would have made per-project domains free.
+  Not chosen: 4–16 hours of setup and a support request to leave the sandbox,
+  against traffic measured in dozens of messages a month.
 - **A free domain** (`.eu.org`, a community subdomain like `is-a.dev`). Shared
-  parent-domain reputation is the same defect as sharing the other project's
-  domain, without even the branding being right.
+  parent-domain reputation, with none of the branding being right.
 
 **What this does not settle: deliverability.** Nothing here can be verified
 locally. L2 builds against a Mailpit catcher; the first real send is `04` S4
