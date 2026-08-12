@@ -26,7 +26,7 @@ export function MobileBottomNav({ due }: { due: number }) {
               cn(
                 'flex flex-1 flex-col items-center gap-1 py-2 text-[10px] transition-colors',
                 isActive
-                  ? 'font-semibold text-primary'
+                  ? 'font-semibold text-primary-ink'
                   : 'text-muted-fg hover:text-surface-fg',
               )
             }

@@ -277,7 +277,7 @@ export default function StyleGuide() {
                 <span className="text-xs text-subtle-fg">4 kartu</span>
               </CardFooter>
             </Card>
-            <Card className="border-primary bg-accent">
+            <Card className="border-primary-ink bg-accent">
               <CardHeader>
                 <CardTitle className="text-accent-fg">Terpilih</CardTitle>
                 <CardDescription className="text-accent-fg/70">

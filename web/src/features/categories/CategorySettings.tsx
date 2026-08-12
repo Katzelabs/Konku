@@ -113,7 +113,7 @@ function NewCategoryForm({ onDone }: { onDone: () => void }) {
   const pending = create.isPending || update.isPending
 
   return (
-    <Card className="border-primary">
+    <Card className="border-primary-ink">
       <form onSubmit={submit} className="flex flex-col gap-4 p-4">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="new-category">Nama kategori</Label>
@@ -230,7 +230,7 @@ function EditCategoryForm({
 
   return (
     <li>
-      <Card className="border-primary">
+      <Card className="border-primary-ink">
         <form onSubmit={submit} className="flex flex-col gap-4 p-4">
           <Input
             autoFocus

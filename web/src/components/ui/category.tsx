@@ -184,7 +184,7 @@ export function CategoryPicker({
               type="button"
               onClick={() => void commit()}
               disabled={creating}
-              className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm text-primary transition-colors hover:bg-muted disabled:opacity-60"
+              className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm text-primary-ink transition-colors hover:bg-muted disabled:opacity-60"
             >
               <Plus className="size-3.5 shrink-0" />
               <span className="truncate">Tambah “{query.trim()}”</span>

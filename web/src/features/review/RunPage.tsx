@@ -255,7 +255,7 @@ function ChoiceQuestion({
                   // green one — the palette has no success colour on purpose
                   // (D-054). A wrong pick is merely dimmed: getting it wrong is
                   // the ordinary case the whole schedule is built around.
-                  isCorrect && 'border-primary bg-primary/10 text-card-fg',
+                  isCorrect && 'border-primary-ink bg-primary/10 text-card-fg',
                   isWrongPick && 'border-border bg-muted text-muted-fg line-through',
                 )}
               >

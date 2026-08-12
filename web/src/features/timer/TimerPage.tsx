@@ -251,11 +251,11 @@ function TimerRing({
           strokeDasharray={circumference}
           strokeDashoffset={circumference * (1 - progress)}
           className={cn(
-            'stroke-primary transition-[stroke-dashoffset,stroke] duration-(--animate-duration-calm) ease-(--ease-quiet)',
+            'stroke-primary-ink transition-[stroke-dashoffset,stroke] duration-(--animate-duration-calm) ease-(--ease-quiet)',
             // Paused reads as "waiting", not as an error. The arc steps back
             // rather than changing colour — there is no warning tone in this
             // palette and pausing is not something to be warned about.
-            dimmed && 'stroke-primary/35',
+            dimmed && 'stroke-primary-ink/35',
           )}
         />
       </svg>

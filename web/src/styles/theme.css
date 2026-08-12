@@ -6,11 +6,17 @@
   palette class (`bg-slate-900`, `text-red-500`) is a bug in this file, not a
   shortcut — see docs/DESIGN.md.
 
-  Values are derived from the Figma mockup (Geist, indigo-600 accent, a grey
-  ink scale). What the mockup got *wrong* — the streak, the daily target, the
-  red grading buttons — is recorded in DECISIONS.md D-054 and deliberately has
-  no token here. You cannot paint a punitive UI with this palette without
-  going out of your way, which is the point (hard rule 6).
+  Values come from the Figma mockup: Geist, indigo-600 accent, a grey ink
+  scale. The dark neutrals are tinted toward that indigo — see the note above
+  `.dark`. What the mockup got *wrong* — the streak, the daily target, the red
+  grading buttons — is recorded in DECISIONS.md D-054 and deliberately has no
+  token here. You cannot paint a punitive UI with this palette without going
+  out of your way, which is the point (hard rule 6).
+
+  Colours are `oklch`. The first number is perceptual lightness, which is what
+  the contrast targets in docs/DESIGN.md §7 are expressed against — in hex those
+  targets were invisible, and the palette drifted below AA twice before anyone
+  measured it. Read the L, and you can see roughly where a colour lands.
 */
 
 @import 'tailwindcss';
@@ -26,90 +32,174 @@
 
 :root {
   /* ---- surfaces ------------------------------------------------------- */
-  --surface: #f9fafb; /* page background */
-  --surface-fg: #111827;
-  --card: #ffffff; /* panels, list rows, the editor */
-  --card-fg: #111827;
-  --popover: #ffffff;
-  --popover-fg: #111827;
+  /* The light neutrals are unchanged from the Figma scale, restated in oklch.
+     They are still blue-tinted (hue ~264) while the accent is magenta; at a
+     chroma of 0.002-0.03 on near-white surfaces that reads as grey, so the
+     hue mismatch that matters in dark does not surface here. */
+  --surface: oklch(0.985 0.002 247.8); /* page background */
+  --surface-fg: oklch(0.21 0.032 264.7);
+  --card: oklch(1 0 0); /* panels, list rows, the editor */
+  --card-fg: oklch(0.21 0.032 264.7);
+  --popover: oklch(1 0 0);
+  --popover-fg: oklch(0.21 0.032 264.7);
 
   /* ---- accent --------------------------------------------------------- */
-  --primary: #4f46e5;
-  --primary-fg: #ffffff;
+  /* indigo-600. 6.3:1 both as a fill under a white label and as link text, so
+     on a white page one value does both jobs and `--primary-ink` is simply the
+     same colour. Only dark has to split them — see the note above `.dark`. */
+  --primary: oklch(0.511 0.23 277);
+  --primary-fg: oklch(1 0 0);
+  --primary-ink: oklch(0.511 0.23 277);
   /* The tinted state: active nav item, selected note, callout blocks. */
-  --accent: #eef2ff;
-  --accent-fg: #4f46e5;
+  /* indigo-50. Chroma is 0.017 rather than 0.018 because the mockup's #eef2ff
+     sits exactly on the blue ceiling and the extra thousandth clips out of
+     sRGB; the rendered difference is one unit of blue. */
+  --accent: oklch(0.962 0.017 272.3);
+  --accent-fg: oklch(0.511 0.23 277); /* 5.6:1 on the tint */
 
   /* ---- quiet surfaces ------------------------------------------------- */
-  --secondary: #ffffff; /* outline buttons — the border carries them */
-  --secondary-fg: #374151;
-  --muted: #f3f4f6;
-  --muted-fg: #6b7280;
-  --subtle-fg: #9ca3af; /* timestamps, counts, metadata */
+  --secondary: oklch(1 0 0); /* outline buttons — the border carries them */
+  --secondary-fg: oklch(0.373 0.031 259.7);
+  --muted: oklch(0.967 0.003 264.5);
+  --muted-fg: oklch(0.551 0.023 264.4);
+  --subtle-fg: oklch(0.714 0.019 261.3); /* timestamps, counts, metadata */
 
   /* ---- reading -------------------------------------------------------- */
   /* Note bodies sit slightly softer than headings. Long-form prose at full
-     #111827 reads as shouting over a whole screen of text. */
-  --reading-fg: #374151;
+     `surface-fg` reads as shouting over a whole screen of text. */
+  --reading-fg: oklch(0.373 0.031 259.7);
 
   /* ---- lines and focus ------------------------------------------------ */
-  --border: #e5e7eb;
-  --input: #e5e7eb;
-  --ring: #4f46e5;
+  --border: oklch(0.928 0.006 264.5);
+  --input: oklch(0.928 0.006 264.5);
+  --ring: oklch(0.511 0.23 277);
 
   /* ---- focus session -------------------------------------------------- */
   /* The timer pill and focus mode. Dark in both themes on purpose: it is the
      one surface that should feel like the rest of the app stepped back. */
-  --focus: #111827;
-  --focus-fg: #ffffff;
-  --focus-muted-fg: #9ca3af;
+  --focus: oklch(0.21 0.032 264.7);
+  --focus-fg: oklch(1 0 0);
+  --focus-muted-fg: oklch(0.714 0.019 261.3);
 
   /* ---- destructive ---------------------------------------------------- */
   /* Reserved for irreversible data actions: deleting a note, deleting a
      domain. It must never reach a review outcome, an empty state, a missed
      day, or an exam score. There is deliberately no `success` counterpart —
      nothing in this product is a pass/fail. */
-  --destructive: #dc2626;
-  --destructive-fg: #ffffff;
-  --destructive-muted: #fef2f2;
+  --destructive: oklch(0.577 0.215 27.3);
+  --destructive-fg: oklch(1 0 0);
+  --destructive-muted: oklch(0.971 0.013 17.4);
+
+  /* ---- elevation ------------------------------------------------------ */
+  /* The system is border-first: a panel is a border, not a shadow. These are
+     only for things that genuinely float above the page. They are per-theme
+     because a dark shadow on a dark page is not elevation — see `.dark`. */
+  --elevation-float: 0 8px 24px -6px rgb(17 24 39 / 0.18);
+  --elevation-dialog: 0 16px 48px -12px rgb(17 24 39 / 0.28);
 }
 
+/*
+  Dark is authored against measured contrast, not by darkening the light scale.
+  Three rules it follows and the previous version did not:
+
+  1. The page is not pure black. #030712 put every foreground above 15:1, which
+     is the halation that makes light-on-dark tiring, and it smears on OLED
+     while scrolling. Headings land ~15:1 and prose ~11:1 on purpose — light
+     text on dark optically gains weight, so it needs *less* contrast than
+     dark-on-light to read as equally strong, not more.
+  2. `secondary`, `muted` and `border` are three different values. They were
+     all #1f2937, so a quiet fill and a dividing line were the same colour and
+     a border-first system had no visible borders (1.21:1 against `card`).
+  3. `primary` is lighter here and carries a *dark* label. No single indigo can
+     be both readable text on `card` (needs L >= 0.216) and a fill under white
+     (needs L <= 0.183); flipping the label resolves it with one token instead
+     of splitting the role in two.
+
+  The neutrals are **mauve-slate: hue 292, about 15 degrees warm of the indigo
+  accent at 277.** Not the accent's own hue, and that offset is the whole
+  point. Tinted to 277 they become a blue-grey, which is where this palette
+  started and what reads clinical at night — dark mode is the surface this
+  product exists to be read on. Pushed the other way, to a brown-warm grey,
+  they sit near-opposite indigo on the wheel and the accent stops belonging to
+  the palette. Both were tried. 292 is close enough to relate and far enough to
+  stay warm.
+
+  A magenta preset (shadcn, hue 325) was fitted here and rejected on comfort:
+  magenta and pink read as high-energy at any chroma, which is the wrong
+  register for a surface you sit in front of for an hour. Note that indigo is
+  *more* saturated than the magenta it replaced — 0.230 against 0.190 — so this
+  is a hue judgement, not a chroma one. Do not "calm" it by desaturating.
+
+  What the preset was good for is on record in docs/DESIGN.md §7: its own
+  values failed eight of nine contrast checks, including 2.1:1 for `primary`
+  used as text, and its `--accent` means "hover fill" where this palette means
+  "the selected note". Take a preset's hue; re-solve its values.
+*/
 .dark {
-  --surface: #030712;
-  --surface-fg: #f9fafb;
-  --card: #111827;
-  --card-fg: #f9fafb;
-  --popover: #111827;
-  --popover-fg: #f9fafb;
+  --surface: oklch(0.179 0.008 292);
+  --surface-fg: oklch(0.932 0.006 292); /* 15.4:1 on surface */
+  --card: oklch(0.216 0.009 292);
+  --card-fg: oklch(0.932 0.006 292); /* 14.3:1 on card */
+  --popover: oklch(0.239 0.01 292); /* a step above card: menus read as floating */
+  --popover-fg: oklch(0.932 0.006 292);
 
-  --primary: #6366f1;
-  --primary-fg: #ffffff;
-  --accent: #1e1b4b;
-  --accent-fg: #a5b4fc;
+  /* Rule 3's split, resolved the other way: white label, so the fill darkens.
+     5.1:1 under white and 3.4:1 against `card`, which is the floor for the
+     button's own shape.
 
-  --secondary: #1f2937;
-  --secondary-fg: #e5e7eb;
-  --muted: #1f2937;
-  --muted-fg: #9ca3af;
-  --subtle-fg: #6b7280;
+     `--primary-ink` is the same accent drawn *on* a surface instead of *as*
+     one. indigo-400's exact coordinates: 5.8:1 as text on `card`, 4.2:1 as a
+     border on `accent`. The L is a ceiling, not a preference — at this chroma
+     and hue oklch(0.705 0.158 277) falls outside sRGB, and browsers clip
+     rather than refuse, so an out-of-gamut token silently renders as a colour
+     nobody measured. */
+  --primary: oklch(0.553 0.2 277);
+  --primary-fg: oklch(1 0 0);
+  --primary-ink: oklch(0.679 0.158 277);
+  /* #1e1b4b sat at 1.11:1 against card — the selected note and the active nav
+     item were tinted with a colour that did not render. */
+  --accent: oklch(0.324 0.06 280);
+  --accent-fg: oklch(0.782 0.104 277); /* 6.3:1 on accent */
 
-  --reading-fg: #d1d5db;
+  --secondary: oklch(0.253 0.011 292);
+  --secondary-fg: oklch(0.889 0.007 292); /* 11.4:1 */
+  --muted: oklch(0.253 0.011 292);
+  --muted-fg: oklch(0.729 0.012 292); /* 7.3:1 */
+  --subtle-fg: oklch(0.644 0.013 292); /* 5.3:1 — was 3.6:1, below AA at 12px */
 
-  --border: #1f2937;
-  --input: #374151;
-  --ring: #6366f1;
+  --reading-fg: oklch(0.846 0.008 292); /* 10.9:1 — below headings, deliberately */
+
+  --border: oklch(0.369 0.014 292); /* a line you can actually see */
+  --input: oklch(0.438 0.016 292); /* controls sit louder than panel edges */
+  --ring: oklch(0.679 0.158 277); /* the ring has to beat the border it sits on */
 
   /* Lighter than the page, not darker — on a dark background the focus pill
      has to step forward the same way it steps back on a light one. Two steps
-     up from `card`, not one: shadow-float is a dark shadow and contributes
-     nothing here, so separation has to come from the fill alone. */
-  --focus: #374151;
-  --focus-fg: #f9fafb;
-  --focus-muted-fg: #9ca3af;
+     up from `card`, not one, because most of the separation still has to come
+     from the fill; `shadow-float` now carries a top highlight here rather than
+     only a shadow, but it is a hairline, not elevation on its own. */
+  --focus: oklch(0.392 0.014 325);
+  --focus-fg: oklch(0.959 0.006 325); /* 8.5:1 */
+  --focus-muted-fg: oklch(0.799 0.01 325); /* the timer's seconds; was 4.1:1 */
 
-  --destructive: #ef4444;
-  --destructive-fg: #ffffff;
-  --destructive-muted: #1f1315;
+  /* The preset's dark red is 2.9:1 under white — the delete button's own label
+     would fail. This one is 4.8:1 and still reads as red. Hue 22 keeps it well
+     clear of the magenta, which matters more than usual now that the accent is
+     itself a warm colour: `destructive` must never be mistaken for the accent. */
+  --destructive: oklch(0.569 0.15 22);
+  --destructive-fg: oklch(1 0 0);
+  --destructive-muted: oklch(0.263 0.03 22); /* was indistinguishable from card */
+
+  /* A drop shadow cast onto a near-black page moves nothing. Here elevation is
+     carried by the lighter fill (`popover` above `card` above `surface`) plus
+     a hairline catching light on the top edge, which is what a raised surface
+     actually does. The shadow stays only to darken the ground immediately
+     under the panel. This is the general form of the trick `--focus` already
+     had to describe in prose. */
+  --elevation-float:
+    0 8px 24px -6px rgb(0 0 0 / 0.6), inset 0 1px 0 rgb(255 255 255 / 0.06);
+  --elevation-dialog:
+    0 16px 48px -12px rgb(0 0 0 / 0.7), inset 0 1px 0 rgb(255 255 255 / 0.06);
 }
 
 @theme inline {
@@ -122,6 +212,7 @@
 
   --color-primary: var(--primary);
   --color-primary-fg: var(--primary-fg);
+  --color-primary-ink: var(--primary-ink);
   --color-accent: var(--accent);
   --color-accent-fg: var(--accent-fg);
 
@@ -144,6 +235,9 @@
   --color-destructive: var(--destructive);
   --color-destructive-fg: var(--destructive-fg);
   --color-destructive-muted: var(--destructive-muted);
+
+  --shadow-float: var(--elevation-float);
+  --shadow-dialog: var(--elevation-dialog);
 }
 
 @theme {
@@ -165,11 +259,8 @@
   --radius-lg: 0.75rem; /* cards, panels */
   --radius-xl: 1rem; /* dialogs */
 
-  /* ---- elevation ------------------------------------------------------ */
-  /* The system is border-first: a panel is a border, not a shadow. Shadows
-     are only for things that genuinely float above the page. */
-  --shadow-float: 0 8px 24px -6px rgb(17 24 39 / 0.18);
-  --shadow-dialog: 0 16px 48px -12px rgb(17 24 39 / 0.28);
+  /* Elevation is per-theme and lives with the colours above, mapped into
+     `shadow-float` / `shadow-dialog` in the `@theme inline` block. */
 
   /* ---- motion --------------------------------------------------------- */
   /* Nothing bounces and nothing celebrates. Motion here exists to show where

@@ -28,7 +28,7 @@ export function ToggleGroupItem({
       className={cn(
         'rounded-md border px-3 py-1.5 text-sm transition-colors duration-(--animate-duration-quick) ease-(--ease-quiet)',
         selected
-          ? 'border-primary bg-accent font-medium text-accent-fg'
+          ? 'border-primary-ink bg-accent font-medium text-accent-fg'
           : 'border-border bg-card text-muted-fg hover:bg-muted hover:text-surface-fg',
         className,
       )}

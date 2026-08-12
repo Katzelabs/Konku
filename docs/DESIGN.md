@@ -53,16 +53,30 @@ system does not have, add it to the system.
 The exception is **domain and category colours**, which are user data — an
 arbitrary `#RRGGBB` the user picked in Pengaturan (D-074). Those arrive as
 inline `style` on `<DomainDot>` and nowhere else. The system palette is
-deliberately low-chroma so that those dots are the most saturated thing on any
-screen.
+deliberately low-chroma so that those dots out-saturate it.
+
+**One amendment, from measuring rather than changing anything.** `primary` is
+chroma 0.230 (light) / 0.158 (dark); the domain swatches run 0.022–0.097. So
+the primary *is* louder than user data — the only token that is, and it always
+has been: `indigo-600` was in the original mockup. The rule held in spirit
+because `primary` appears **once per view and never inside a list**, so it
+never competes with the dots row by row. Every other token stays below the
+swatches. If a `PageHeader` action above a tagged list ever reads as shouting
+over the dots beneath it, drop `primary`'s chroma rather than inventing a
+quieter variant.
 
 ---
 
 ## 3. Tokens
 
-Derived from the Figma mockup: Geist, `indigo-600` accent, a grey ink scale.
-Light values on `:root`, dark on `.dark`, mapped into Tailwind via
-`@theme inline`.
+Geist, `indigo-600` accent and a grey ink scale, from the Figma mockup. Light
+values on `:root`, dark on `.dark`, mapped into Tailwind via `@theme inline`.
+
+Colours are **`oklch`**, not hex. The first number is perceptual lightness, so
+the contrast targets below are legible directly in the value — in hex they were
+invisible, and the dark palette drifted below AA twice before anyone measured
+it. `oklch` is also what shadcn presets ship in, which makes the next one a
+re-solve rather than a translation.
 
 ### Colour
 
@@ -71,7 +85,8 @@ Light values on `:root`, dark on `.dark`, mapped into Tailwind via
 | `surface` / `surface-fg` | The page. |
 | `card` / `card-fg` | Panels, list rows, the editor. |
 | `popover` / `popover-fg` | Dialogs, menus. |
-| `primary` / `primary-fg` | The one action a screen wants. **One per view.** |
+| `primary` / `primary-fg` | The one action a screen wants, **as a fill**. One per view. |
+| `primary-ink` | The same accent drawn *on* a surface: link text, `border-primary-ink`, the timer arc. |
 | `accent` / `accent-fg` | Selected/active: current nav item, open note, callouts. |
 | `secondary` / `secondary-fg` | Outline buttons — the border carries them. |
 | `muted` / `muted-fg` | Quiet fills and secondary text. |
@@ -80,6 +95,24 @@ Light values on `:root`, dark on `.dark`, mapped into Tailwind via
 | `border` / `input` / `ring` | Lines and focus. |
 | `focus` / `focus-fg` / `focus-muted-fg` | The focus-session surface. |
 | `destructive` / `destructive-fg` / `destructive-muted` | **Deleting data only.** |
+
+**Why `primary` splits in two.** On a white page one indigo does both jobs —
+`#4f46e5` is 6.3:1 under a white label *and* 6.3:1 as link text. On a dark page
+no single value can be, and the arithmetic is worth keeping because it settles
+the argument every time it comes back:
+
+- readable as text on `card` → luminance **≥ 0.220**
+- readable under a white label → luminance **≤ 0.183**
+
+So dark gets a darker fill (white label, 5.1:1) and a lighter ink (text on
+card, 5.8:1). In light mode the two tokens hold the same value, which is the
+honest way to say the split only exists where it is forced.
+
+**Which one a component wants is not about the CSS property.** Anything drawn
+*on* a surface takes `primary-ink` — that includes `border-` and `stroke-`, not
+just `text-`, because a border on a card is a mark on a surface exactly like a
+letter is. `bg-primary` is the only fill. The one exception is `Checkbox`, whose
+border matches its own fill rather than the page.
 
 Two absences are deliberate:
 
@@ -267,6 +300,86 @@ applies before first paint, which a server round-trip could not do.
 
 Any new component must look right in both. `/design` has its own local toggle,
 which is where you check.
+
+**Dark is authored against measured contrast, not by darkening the light
+scale.** The first version was, and it shipped metadata at 3.6:1 (below AA at
+12px), borders at 1.21:1 in a border-first system, a selected-row tint at
+1.11:1 that did not render at all, and a delete button whose own white label
+failed. Those are the numbers a new token has to clear:
+
+| Role | Target against its background |
+|---|---|
+| Headings (`surface-fg`, `card-fg`) | 14–16:1. **Not more** — pure white on near-black is the halation that makes dark mode tiring, and light text optically gains weight, so it needs *less* contrast than dark-on-light, not more. |
+| Prose (`reading-fg`) | ~10–11:1, below headings |
+| Secondary (`muted-fg`) | ≥ 7:1 |
+| Metadata (`subtle-fg`) | ≥ 4.5:1 — it is 12px, so it is the *hardest* text in the app, not the least important |
+| Borders | ≥ 1.6:1 for panel edges, ≥ 2:1 for controls |
+| Any fill under a label | ≥ 4.5:1 for the label itself |
+
+**The dark neutrals are warm and the light ones are cool.** That divergence is
+deliberate, not drift: a cool dark page reads clinical, and dark mode is the one
+this product is most often *read* on.
+
+**Warm here means mauve-slate, not brown.** The dark neutrals sit at hue 292,
+chroma 0.006–0.016 — about 15° *warm of* the indigo accent at 277, not on it.
+The offset is the point, and both ways past it were tried and rejected:
+
+- Tinted **to 277**, matching the accent exactly, they become a blue-grey. That
+  is where this palette started, and it reads clinical — wrong for the surface
+  the product exists to be read on.
+- Pushed to a **brown-warm** grey, they sit near-opposite indigo on the wheel.
+  The accent stops belonging to the palette and starts sitting on top of it.
+
+So: **when an accent clashes with its neutrals, move the neutrals — but land
+near the accent's hue, not on it.** The accent itself cannot move far, because
+amber reads as a warning and there is no warning here (§3), and clay or rose
+lands on top of `destructive`, which is reserved for deleting data.
+
+**A magenta preset was fitted here and rejected on comfort.** Worth recording
+why, because the obvious lever was the wrong one: indigo is *more* saturated
+than the magenta it replaced — chroma 0.230 against 0.190. Magenta and pink
+read as high-energy at any chroma. That is a hue property, so desaturating does
+not fix it and only produces a muddy accent.
+
+### Taking a shadcn preset
+
+The hue came from one. **The values did not, and should not.** That preset's
+`.dark` block measures:
+
+| | Preset | Required |
+|---|---|---|
+| body text on background | 18.9:1 | 14–16 |
+| card vs background | 1.13:1 | separation |
+| selected state vs card | 1.15:1 | ≥1.3 |
+| white on `destructive` | 2.9:1 | ≥4.5 |
+| **`primary` as text** | **2.1:1** | ≥4.5 |
+
+The last one is the trap: shadcn's dark `primary` is a *dark* magenta meant
+only as a fill under a light label, and `text-primary` is a link in three
+places here — so the pair is inverted (light fill, dark ink) as described
+above. Its `--accent` is a neutral grey, too, because in shadcn `accent` means
+the hover fill while here it means the **selected note**; pasting it in
+re-breaks selection visibility.
+
+Presets also carry tokens this product has no use for. `--chart-1..5` are
+dropped: there are no charts, and D-066 rules out the cross-account aggregation
+they would draw. `--sidebar-*` are dropped: the sidebar is built from `surface`
+and `card`. That is thirteen tokens nothing would ever read.
+
+**So: take the hue, re-solve the values.** `oklch` makes that a solve rather
+than a guess — fix hue and chroma, then find the L that lands each role on its
+target below.
+
+Two structural rules fall out of it. **`secondary`, `muted` and `border` must be
+three different values** — they were all `#1f2937`, so a quiet fill and a
+dividing line were the same colour. And **`primary` carries a dark label in
+dark mode**: no single indigo is both readable as text on `card` and readable
+under white as a fill, so the label flips rather than the role splitting in two.
+
+Elevation is per-theme (`--elevation-float` / `--elevation-dialog`). A drop
+shadow cast onto a near-black page moves nothing, so in dark the ladder is
+carried by the fill — `popover` above `card` above `surface` — plus a hairline
+on the top edge, with the shadow only darkening the ground beneath.
 
 ---
 

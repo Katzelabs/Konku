@@ -99,7 +99,7 @@ const components: ComponentProps<typeof ReactMarkdown>['components'] = {
 
   blockquote: ({ node, ...props }) => (
     <blockquote
-      className="rounded-r-md border-l-2 border-primary bg-accent py-2 pl-4 text-reading text-accent-fg [&>p]:text-accent-fg"
+      className="rounded-r-md border-l-2 border-primary-ink bg-accent py-2 pl-4 text-reading text-accent-fg [&>p]:text-accent-fg"
       {...props}
     />
   ),
@@ -122,7 +122,7 @@ const components: ComponentProps<typeof ReactMarkdown>['components'] = {
 
   a: ({ node, ...props }) => (
     <a
-      className="text-primary underline underline-offset-2 hover:no-underline"
+      className="text-primary-ink underline underline-offset-2 hover:no-underline"
       // Notes carry source links (D-013) and those are external by nature.
       // noreferrer is not decoration: without it the target learns where the
       // click came from, and this is a private knowledge base.
