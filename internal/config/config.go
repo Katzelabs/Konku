@@ -49,6 +49,12 @@ type Config struct {
 	SentryDSN string
 	// SentryRelease tags every event, so a regression points at a deploy
 	// rather than at a date (D-062).
+	//
+	// Deliberately has **no default here**. main.go fills it from the version
+	// stamped into the binary at build time, and it can only do that if an
+	// unset variable arrives empty. Defaulting it to "dev" in this file made
+	// that fallback dead code and tagged every production event `release=dev`
+	// — which is precisely the failure the release tag exists to prevent.
 	SentryRelease string
 	// SentryEnvironment separates the laptop from the box.
 	SentryEnvironment string
@@ -98,7 +104,7 @@ func Load() (Config, error) {
 		AllowSignup:          env("ALLOW_SIGNUP", "false") == "true",
 		Dev:                  env("DEV", "false") == "true",
 		SentryDSN:            os.Getenv("SENTRY_DSN"),
-		SentryRelease:        env("SENTRY_RELEASE", "dev"),
+		SentryRelease:        os.Getenv("SENTRY_RELEASE"),
 		SentryEnvironment:    env("SENTRY_ENVIRONMENT", "development"),
 		SMTPURL:              os.Getenv("SMTP_URL"),
 		MaxNotes:             envInt("MAX_NOTES", 5_000),

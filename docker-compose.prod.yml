@@ -7,10 +7,35 @@ services:
     image: konku:latest
     restart: unless-stopped
     environment:
-      DATABASE_URL: ${DATABASE_URL}      # postgres://konku:...@postgres:5432/konku
+      # Two principals, and the difference matters (D-059).
+      #
+      # DATABASE_URL is konku_app: the non-owner role FORCE ROW LEVEL SECURITY
+      # actually applies to, with no DDL rights at all.
+      DATABASE_URL: ${DATABASE_URL}      # postgres://konku_app:...@postgres:5432/konku
+      # MIGRATION_DATABASE_URL is the owner, used once at startup and then
+      # closed. **Required here**: leaving it unset falls back to DATABASE_URL,
+      # which cannot run DDL — and migrations run at startup with a failure
+      # that is fatal by design, so the container would not survive its first
+      # boot on a fresh database.
+      MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL}  # postgres://konku:...@postgres:5432/konku
       SESSION_SECRET: ${SESSION_SECRET}
       ALLOW_SIGNUP: "false"
       DEV: "false"
+
+      # Error tracking (06 P3).
+      #
+      # SENTRY_RELEASE is deliberately absent: the binary carries the version
+      # stamped at build time, and setting this would override it with
+      # something that has to be kept in sync by hand. An event should point at
+      # the release that produced it (D-062).
+      SENTRY_DSN: ${SENTRY_DSN}
+      SENTRY_ENVIRONMENT: production
+
+      # /metrics on its own listener (D-062). Bound inside the container and
+      # never published in `ports`, so it is reachable from the box and not
+      # from the internet — a separate socket cannot be exposed by a Caddy
+      # misconfiguration the way a route on the main mux can.
+      METRICS_ADDR: 127.0.0.1:9090
 
       # Mail (07 L2, D-068). Resend over SMTP on 465 — smtps, not smtp:
       # net/smtp refuses to send the API key over an unencrypted connection.

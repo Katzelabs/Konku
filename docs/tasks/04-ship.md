@@ -51,8 +51,18 @@ CREATE ROLE konku_app LOGIN PASSWORD '...';       -- the running app (06 P1)
 - `pgvector` image from day one even though nothing uses vectors until v1.3 —
   installing it later on a shared instance means coordinated downtime across
   every project on the box (D-025)
-- Deploy `docker-compose.prod.yml`, set `KONKU_HOST`, `DATABASE_URL`,
-  `SESSION_SECRET` (`openssl rand -base64 32`), `SENTRY_DSN`, `SMTP_URL`
+- Deploy `docker-compose.prod.yml`. The variables it expects, all of them:
+  `KONKU_HOST`, `DATABASE_URL` (as **`konku_app`**),
+  **`MIGRATION_DATABASE_URL`** (as the owner `konku`),
+  `SESSION_SECRET` (`openssl rand -base64 32`), `SENTRY_DSN`, `SMTP_URL`,
+  `MAIL_FROM`, `PUBLIC_BASE_URL`
+- **`MIGRATION_DATABASE_URL` is not optional here.** Unset, it falls back to
+  `DATABASE_URL` — which is the role with no DDL rights — and migrations run
+  at startup with a failure that is fatal by design. The container would not
+  survive its first boot
+- `PUBLIC_BASE_URL` must equal `https://$KONKU_HOST`. Every link in every
+  message is built against it, and a wrong value is only discovered after the
+  mail has been delivered (S4)
 - `ALLOW_SIGNUP=false`, `DEV=false`
 - Create your account with `konku seed-user`
 - Migrations run themselves at startup

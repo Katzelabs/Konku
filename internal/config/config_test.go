@@ -62,12 +62,47 @@ func TestSignupRequiresMail(t *testing.T) {
 	}
 }
 
+// The release tag has to arrive empty when unset, or the build stamp cannot
+// win.
+//
+// This defaulted to "dev" here, which made main.go's fallback dead code and
+// tagged every production Sentry event `release=dev` — so a regression pointed
+// at nothing, which is the one thing the release tag exists to prevent (D-062).
+func TestSentryReleaseIsEmptyUnlessSet(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://konku@localhost:5433/konku")
+	t.Setenv("DEV", "true")
+	// Cleared explicitly: `make` exports .env into the test environment, so a
+	// developer with SENTRY_RELEASE set locally would otherwise see this pass
+	// or fail depending on their own machine.
+	t.Setenv("SENTRY_RELEASE", "")
+
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.SentryRelease != "" {
+		t.Errorf("SentryRelease = %q with the variable unset, want empty so the "+
+			"build stamp can fill it", c.SentryRelease)
+	}
+
+	// And an explicit value still wins over the stamp.
+	t.Setenv("SENTRY_RELEASE", "v1.2.3")
+	c, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.SentryRelease != "v1.2.3" {
+		t.Errorf("SentryRelease = %q, want the explicit value", c.SentryRelease)
+	}
+}
+
 func TestPublicBaseURLDefaultsToTheDevServer(t *testing.T) {
 	// A wrong value here sends every user to a host that cannot verify them,
 	// and the mail is already delivered by the time anyone notices. The default
 	// is the Vite origin because that is where the links have to land locally.
 	t.Setenv("DATABASE_URL", "postgres://konku@localhost:5433/konku")
 	t.Setenv("DEV", "true")
+	t.Setenv("PUBLIC_BASE_URL", "")
 
 	c, err := Load()
 	if err != nil {
