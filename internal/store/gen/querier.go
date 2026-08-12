@@ -127,6 +127,19 @@ type Querier interface {
 	// compromised. A reset that leaves the attacker's session alive does nothing
 	// at all, so this is the point of the feature rather than a tidy-up (07 L4).
 	DeleteSessionsForUser(ctx context.Context, userID uuid.UUID) error
+	// The whole account, in one statement (07 L7).
+	//
+	// Every one of the sixteen tables carrying user_id references users(id) ON
+	// DELETE CASCADE, so this removes the notes, cards, schedules, review history,
+	// focus sessions, domains, categories, exams, attempts, settings, sessions and
+	// tokens with it. Deliberately relying on the constraints rather than deleting
+	// each table by hand: a hand-written list is a list someone forgets to add to,
+	// and the failure mode is orphaned rows nobody ever looks at again.
+	//
+	// Not soft, and there is no tombstone. The row holds the unique constraint on
+	// the address, so keeping it would mean the address could never be used again
+	// — and an account that can be brought back is one that was not deleted.
+	DeleteUser(ctx context.Context, id uuid.UUID) error
 	// Validation for an incoming domainId. The composite foreign key is what
 	// actually prevents a cross-tenant write (D-047); this exists only so the
 	// handler can answer with a 400 and Indonesian copy instead of letting a

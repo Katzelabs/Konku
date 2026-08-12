@@ -12,10 +12,13 @@ import (
 
 // RequestPasswordReset mints a reset token for an address.
 //
-// Returns ErrNothingToSend for an address that is not registered or whose
-// account is pending deletion, so the handler can answer the same 204 in every
-// case. The endpoint must not reveal which addresses have accounts — the same
-// reasoning as the not-found rule and as signup (D-039).
+// Returns ErrNothingToSend for an address that is not registered, so the
+// handler can answer the same 204 either way. The endpoint must not reveal
+// which addresses have accounts — the same reasoning as the not-found rule and
+// as signup (D-039).
+//
+// There is no "pending deletion" state to check for: deletion is immediate and
+// total (07 L7), so a deleted account is simply an address nobody has.
 //
 // Deliberately available to an *unverified* account too. Reset is a recovery
 // path, and refusing it to the accounts most likely to be stuck — someone who
@@ -29,9 +32,6 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) (gen.U
 			return gen.User{}, "", ErrNothingToSend
 		}
 		return gen.User{}, "", fmt.Errorf("auth: looking up user: %w", err)
-	}
-	if user.DeletedAt != nil {
-		return gen.User{}, "", ErrNothingToSend
 	}
 
 	var raw string

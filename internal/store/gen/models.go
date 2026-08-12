@@ -163,7 +163,6 @@ type User struct {
 	PasswordHash    string     `json:"password_hash"`
 	CreatedAt       time.Time  `json:"created_at"`
 	EmailVerifiedAt *time.Time `json:"email_verified_at"`
-	DeletedAt       *time.Time `json:"deleted_at"`
 }
 
 type UserSetting struct {

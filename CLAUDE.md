@@ -24,7 +24,9 @@ What that does **not** change: every constraint from `GOALS.md` — never puniti
 
 **`07` L6 is done** — `internal/export` builds the whole archive: notes and cards as markdown with YAML frontmatter, everything else as JSON, credentials never. `GET /api/export`.
 
-**Next: `07` L7–L9**, then `04-ship.md`, then `07` L10.
+**`07` L7 is done** — `DELETE /api/account` removes the account and everything it owns in one cascading statement. Not soft, no tombstone: migration `00009` drops `users.deleted_at`, which L1 had left open for this task. It is the only endpoint that re-authenticates.
+
+**Next: `07` L8–L9**, then `04-ship.md`, then `07` L10.
 
 **The order is deliberate and runs out of numeric sequence** (D-067). Almost nothing left needs the VPS — RLS, observability, security headers, the test pyramid, CI, signup, verification, reset, export, deletion and quotas are all local work against `docker-compose.yml`. What genuinely requires the box is short: the deploy itself, backups running there, **email deliverability** (SPF/DKIM/DMARC), the VPS half of the release pipeline, alert routing, phone access, and opening signup. So the local work happens first and `04-ship.md` becomes one careful afternoon.
 

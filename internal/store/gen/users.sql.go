@@ -141,7 +141,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (A
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (id, email, password_hash, email_verified_at)
 VALUES ($1, $2, $3, $4)
-RETURNING id, email, password_hash, created_at, email_verified_at, deleted_at
+RETURNING id, email, password_hash, created_at, email_verified_at
 `
 
 type CreateUserParams struct {
@@ -176,7 +176,6 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.PasswordHash,
 		&i.CreatedAt,
 		&i.EmailVerifiedAt,
-		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -284,8 +283,29 @@ func (q *Queries) DeleteSessionsForUser(ctx context.Context, userID uuid.UUID) e
 	return err
 }
 
+const deleteUser = `-- name: DeleteUser :exec
+DELETE FROM users WHERE id = $1
+`
+
+// The whole account, in one statement (07 L7).
+//
+// Every one of the sixteen tables carrying user_id references users(id) ON
+// DELETE CASCADE, so this removes the notes, cards, schedules, review history,
+// focus sessions, domains, categories, exams, attempts, settings, sessions and
+// tokens with it. Deliberately relying on the constraints rather than deleting
+// each table by hand: a hand-written list is a list someone forgets to add to,
+// and the failure mode is orphaned rows nobody ever looks at again.
+//
+// Not soft, and there is no tombstone. The row holds the unique constraint on
+// the address, so keeping it would mean the address could never be used again
+// — and an account that can be brought back is one that was not deleted.
+func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUser, id)
+	return err
+}
+
 const getActiveSession = `-- name: GetActiveSession :one
-SELECT auth_sessions.id, auth_sessions.user_id, auth_sessions.expires_at, auth_sessions.created_at, auth_sessions.last_seen_at, auth_sessions.user_agent, auth_sessions.ip, auth_sessions.public_id, users.id, users.email, users.password_hash, users.created_at, users.email_verified_at, users.deleted_at
+SELECT auth_sessions.id, auth_sessions.user_id, auth_sessions.expires_at, auth_sessions.created_at, auth_sessions.last_seen_at, auth_sessions.user_agent, auth_sessions.ip, auth_sessions.public_id, users.id, users.email, users.password_hash, users.created_at, users.email_verified_at
 FROM auth_sessions
 JOIN users ON users.id = auth_sessions.user_id
 WHERE auth_sessions.id = $1
@@ -316,13 +336,12 @@ func (q *Queries) GetActiveSession(ctx context.Context, id string) (GetActiveSes
 		&i.User.PasswordHash,
 		&i.User.CreatedAt,
 		&i.User.EmailVerifiedAt,
-		&i.User.DeletedAt,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, created_at, email_verified_at, deleted_at FROM users WHERE email = $1
+SELECT id, email, password_hash, created_at, email_verified_at FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -334,13 +353,12 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.PasswordHash,
 		&i.CreatedAt,
 		&i.EmailVerifiedAt,
-		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, created_at, email_verified_at, deleted_at FROM users WHERE id = $1
+SELECT id, email, password_hash, created_at, email_verified_at FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
@@ -352,7 +370,6 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.PasswordHash,
 		&i.CreatedAt,
 		&i.EmailVerifiedAt,
-		&i.DeletedAt,
 	)
 	return i, err
 }

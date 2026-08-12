@@ -228,6 +228,27 @@ export function useRevokeOtherAuthSessions() {
   })
 }
 
+/**
+ * Delete the account and everything in it (07 L7).
+ *
+ * Takes the password because the server requires it: a session is enough
+ * authority to read and write notes, not to destroy the account irreversibly.
+ *
+ * On success the whole cache is cleared — every row it holds belongs to an
+ * account that no longer exists — and the user is reported as signed out,
+ * which drops the app back to the login screen.
+ */
+export function useDeleteAccount() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (password: string) => api.del<void>('/account', { password }),
+    onSuccess: () => {
+      qc.clear()
+      qc.setQueryData(meQueryKey, null)
+    },
+  })
+}
+
 export function useLogout() {
   const qc = useQueryClient()
   return useMutation({

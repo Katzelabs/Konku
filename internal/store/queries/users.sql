@@ -115,6 +115,21 @@ DELETE FROM auth_sessions WHERE user_id = $1;
 -- name: UpdatePassword :exec
 UPDATE users SET password_hash = $2 WHERE id = $1;
 
+-- name: DeleteUser :exec
+-- The whole account, in one statement (07 L7).
+--
+-- Every one of the sixteen tables carrying user_id references users(id) ON
+-- DELETE CASCADE, so this removes the notes, cards, schedules, review history,
+-- focus sessions, domains, categories, exams, attempts, settings, sessions and
+-- tokens with it. Deliberately relying on the constraints rather than deleting
+-- each table by hand: a hand-written list is a list someone forgets to add to,
+-- and the failure mode is orphaned rows nobody ever looks at again.
+--
+-- Not soft, and there is no tombstone. The row holds the unique constraint on
+-- the address, so keeping it would mean the address could never be used again
+-- — and an account that can be brought back is one that was not deleted.
+DELETE FROM users WHERE id = $1;
+
 -- Verification and reset tokens (07 L1, L3, L4). The table stores a hash, never
 -- the token: a leaked dump must not be a set of working links.
 

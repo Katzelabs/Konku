@@ -62,12 +62,13 @@ Three things settled while building it, worth knowing before L3, L5 and L7:
   Without the backfill, L3 ships and locks the only real account out, with no
   way back in because the reset flow it would need is also L3.
 
-**Open, and L7's to answer:** `users.deleted_at` sits awkwardly against L7's
-"deletion is not soft" and its acceptance that no row referencing the old
-`user_id` remains. It is built as a marker for a deletion *request*, so lockout
-and purge can be separate — the account stops working the moment the user
-confirms, and the rows go when the job runs. If L7 decides delete should be one
-transaction, the column comes out.
+**`users.deleted_at` was left open here for L7, and L7 removed it**
+(migration `00009`). It had been built as a marker for a deletion *request*, so
+that lockout and purge could be separate steps. They do not need to be: all
+sixteen tables carrying `user_id` cascade from `users`, so an account leaves in
+one statement inside one transaction, and there is no window to lock out. A
+tombstoned row would also have held the unique constraint on the address
+forever, which L7's acceptance explicitly rules out.
 
 ---
 
@@ -410,7 +411,7 @@ whole archive finds nothing.
 
 ## L7 — Account deletion
 
-`todo` · ~3 h · needs L6
+`done` · ~3 h · needs L6 · migration `00009_drop_users_deleted_at.sql`
 
 Self-service, offering the export first. Deletion means deletion within 30
 days, including from backups as they age out (D-066).
@@ -421,7 +422,47 @@ that was not deleted, and that is the one place in this app where the
 soft-delete instinct is wrong.
 
 **Done when:** a deleted account's email can sign up again, and no row
-referencing the old `user_id` remains.
+referencing the old `user_id` remains. ✓ — both clauses are tests, and the
+second checks **every table carrying a `user_id`, discovered from the
+catalogue** rather than from a list somebody maintains. A table added later
+without a cascade fails there instead of leaving rows nobody looks at again.
+
+Shipped: `DELETE /api/account`, `auth.DeleteAccount`, the `DeleteUser` query,
+and the `Hapus akun` section in Pengaturan.
+
+**`users.deleted_at` is gone** (migration `00009`). L1 built it as a marker for
+a deletion *request*, so lockout and purge could be separate, and flagged it as
+this task's to settle. It is not needed: all sixteen tables carrying `user_id`
+reference `users(id) ON DELETE CASCADE`, so the account leaves in one statement
+inside one transaction and there is no window to lock out. A tombstone would
+also have held the unique constraint on the address forever, which the
+acceptance above rules out. The 30 days in D-066 is about backups aging out,
+not a grace period — nothing in the live database waits.
+
+Two decisions beyond the brief:
+
+- **The password is required**, making this the only endpoint in the app that
+  re-authenticates. A session is enough authority to read and write notes; it
+  is not enough to destroy an account irreversibly, and the gap matters most
+  on a borrowed laptop or with a stolen cookie. `api.del` grew an optional
+  body so the password travels in it rather than in a query string, where it
+  would land in logs and browser history.
+- **The export is offered inside the confirmation dialog**, not merely
+  elsewhere on the page. Someone who has decided to leave will not go hunting
+  for it, and the one moment they might still want it is the moment before it
+  is gone. This is why L7 depends on L6 rather than the other way round.
+
+The copy states permanence and stops there. Hard rule 6 holds here too: the
+honest thing is to say plainly that this cannot be undone, not to make somebody
+feel bad for leaving. There is a test for the absence of guilt copy. This is
+also the one screen where the `destructive` token is right — a delete that
+cannot be undone is the case it was reserved for (D-054).
+
+**Verified end to end**, not only in tests: an account was signed up, verified,
+given a note, a card, a review and a focus session, then deleted. A wrong
+password was refused and left the account working; the correct one returned
+204; every session went dead; and a sweep across all sixteen `user_id` tables
+found **zero** orphaned rows.
 
 ---
 

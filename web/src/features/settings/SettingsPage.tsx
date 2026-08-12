@@ -9,6 +9,7 @@ import { PageHeader } from '../../components/ui/page-header'
 import { ToggleGroup, ToggleGroupItem } from '../../components/ui/toggle-group'
 import { useLogout, useMe } from '../auth/useAuth'
 import { ActiveSessions } from './ActiveSessions'
+import { DeleteAccount } from './DeleteAccount'
 import { ExportData } from './ExportData'
 import { useTheme, type Theme } from './useTheme'
 
@@ -96,6 +97,13 @@ export default function SettingsPage() {
         <Card className="p-5">
           <ThemePicker />
         </Card>
+      </Section>
+
+      <Section
+        title="Hapus akun"
+        description="Kalau kamu mau berhenti. Unduh datanya dulu kalau perlu."
+      >
+        <DeleteAccount />
       </Section>
 
       <Section title="Domain">

@@ -116,7 +116,7 @@ func (s *Service) ResendVerification(ctx context.Context, email string) (gen.Use
 		}
 		return gen.User{}, "", fmt.Errorf("auth: looking up user: %w", err)
 	}
-	if user.EmailVerifiedAt != nil || user.DeletedAt != nil {
+	if user.EmailVerifiedAt != nil {
 		return gen.User{}, "", ErrNothingToSend
 	}
 

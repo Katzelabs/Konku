@@ -220,6 +220,13 @@ func (s *Server) Routes() http.Handler {
 				// can follow is the whole interaction.
 				r.Get("/export", s.handleExport)
 
+				// Irreversible, and the only endpoint that re-authenticates
+				// (07 L7). Inside requireVerified with everything else: an
+				// unverified account has nothing to delete but its own row,
+				// and letting it through would be a second deletion path to
+				// keep correct.
+				r.Delete("/account", s.handleDeleteAccount)
+
 				// Logins, not study time. Under /auth because /sessions has
 				// meant the focus timer's since 03, and "sessions" genuinely
 				// names two unrelated things here (07 L5, D-052).
