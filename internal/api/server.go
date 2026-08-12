@@ -215,6 +215,11 @@ func (s *Server) Routes() http.Handler {
 				r.Get("/sessions", s.handleListSessions)
 				r.Post("/sessions", s.handleCreateSession)
 
+				// Everything the account owns, as one archive (07 L6). GET
+				// rather than POST: it creates nothing and a link the browser
+				// can follow is the whole interaction.
+				r.Get("/export", s.handleExport)
+
 				// Logins, not study time. Under /auth because /sessions has
 				// meant the focus timer's since 03, and "sessions" genuinely
 				// names two unrelated things here (07 L5, D-052).

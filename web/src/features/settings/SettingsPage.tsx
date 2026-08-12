@@ -9,18 +9,22 @@ import { PageHeader } from '../../components/ui/page-header'
 import { ToggleGroup, ToggleGroupItem } from '../../components/ui/toggle-group'
 import { useLogout, useMe } from '../auth/useAuth'
 import { ActiveSessions } from './ActiveSessions'
+import { ExportData } from './ExportData'
 import { useTheme, type Theme } from './useTheme'
 
 /**
  * Settings.
  *
- * Two of these sections are real and one is deliberately thin. Domains and the
- * theme work end to end; there is no per-user *preferences* section because
- * there is nowhere to put one — progressive-focus N, the default timer
- * duration and the rota preference were constants under a single user and have
- * no table now that the model is multi-tenant (the open question in
- * DECISIONS.md). Inventing that table for a theme would have been the wrong
- * first reason to add it, so the theme lives in localStorage instead.
+ * The theme stays in localStorage rather than in `user_settings`, even though
+ * that table now exists (07 L1). It is a property of this screen on this
+ * device, not of the account — the same person on a phone at night and a
+ * laptop at noon wants different answers, and syncing it would make one of
+ * those wrong.
+ *
+ * There is still no *preferences* section for progressive-focus N, the default
+ * timer duration or the rota toggle. The column exists for each; no screen
+ * reads them yet, and adding one is its own task rather than a side effect of
+ * the export landing.
  *
  * Not here, from the mockup and rejected in D-054: avatar upload, a display
  * name, push notification toggles, CSV export, and a daily review target.
@@ -69,6 +73,13 @@ export default function SettingsPage() {
             </Button>
           </div>
         </Card>
+      </Section>
+
+      <Section
+        title="Data kamu"
+        description="Semua yang tersimpan di akun ini, dalam satu arsip."
+      >
+        <ExportData />
       </Section>
 
       <Section

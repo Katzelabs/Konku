@@ -343,17 +343,68 @@ product, which is what D-052 renamed the table for.
 
 ## L6 — Export everything
 
-`todo` · ~5 h · needs L1
+`done` · ~5 h · needs L1
 
 Notes and cards as markdown, the rest — schedules, review history, sessions,
 domains, categories, exams and attempts — as JSON. One archive.
 
-This is what makes "no lock-in" true rather than a claim, it is a legal
-expectation, and the git vault export (D-026) is most of the work already
-except that cards now need their own representation too (D-055).
+This is what makes "no lock-in" true rather than a claim, and it is a legal
+expectation.
+
+**Correction to this task as written:** it claimed "the git vault export
+(D-026) is most of the work already". It was not. D-026 was decided in v0.2 and
+never built — there was no vault export code of any kind, so this was
+greenfield rather than a port.
 
 **Done when:** the archive contains every row the account owns, and opening
-the notes folder in Obsidian works.
+the notes folder in Obsidian works. ✓ —
+`TestExportContainsEveryRowTheAccountOwns` states the first clause literally:
+it counts rows per table in the database, counts entries in the corresponding
+JSON file, and requires the two to match. A table added later and forgotten in
+the export fails there, rather than being discovered by somebody who has
+already deleted their account.
+
+Shipped: `internal/export`, `GET /api/export`, and the `Data kamu` section in
+Pengaturan.
+
+```
+README.md                  what the archive is, in Indonesian
+notes/<slug>.md            one file per note, YAML frontmatter
+notes/terhapus/<slug>.md   soft-deleted notes
+cards/<slug>.md            one file per card
+cards/terhapus/<slug>.md   soft-deleted cards
+data/*.json                everything else, one file per table
+```
+
+Decisions:
+
+- **Soft-deleted notes and cards are in the archive**, in their own folder. A
+  deleted row is still one the account owns, and an export that quietly dropped
+  it would be the silent disappearance this product exists to prevent — but a
+  deleted note reappearing as a live one in a vault is its own kind of loss, so
+  it does not go in the folder someone opens in Obsidian.
+- **`auth_sessions` and `auth_tokens` are deliberately absent**, and the README
+  says so. A session id is a live credential and a token hash is the shadow of
+  one; neither is content the user wrote, and an archive gets emailed around
+  and dropped in cloud storage. `password_hash` never leaves either, which is
+  why the export queries name their columns instead of using `SELECT *`.
+- **Everything is read before a single byte is written.** A streaming export
+  has already sent 200 and half a file by the time a query fails, so the user
+  receives a truncated archive that looks complete. Reading first means a
+  failure is an ordinary error response.
+- **The frontmatter is hand-written YAML**, not a library (D-065), and every
+  value is quoted and escaped — a note titled `Bab 3: "Ingatan"` must not
+  produce a file Obsidian refuses to parse. There is a test for exactly that
+  title.
+- **Filenames are deduplicated.** Two notes may share a title, and a title may
+  be empty or entirely punctuation. Silent loss inside the archive that exists
+  to prevent silent loss would be a particularly bad bug.
+
+**Verified against a real archive**, not only in tests: signed up, wrote a note
+with a domain and a category, made a card, reviewed it, logged a focus session,
+downloaded the zip, unzipped it and read the files. 18 files, correct
+frontmatter, and a `grep` for `password_hash|argon2|token_hash` across the
+whole archive finds nothing.
 
 ---
 

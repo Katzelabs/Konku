@@ -141,6 +141,45 @@ type Querier interface {
 	// card was parsed out of, which is exactly the join D-055 removed — and why
 	// cards.domain_id had to exist before note_id could go.
 	DrawRandomCards(ctx context.Context, arg DrawRandomCardsParams) ([]uuid.UUID, error)
+	ExportCardCategories(ctx context.Context, userID uuid.UUID) ([]ExportCardCategoriesRow, error)
+	// The part that cannot be reconstructed from the notes: where each card sits
+	// in the rotation.
+	ExportCardSchedules(ctx context.Context, userID uuid.UUID) ([]ExportCardSchedulesRow, error)
+	ExportCards(ctx context.Context, userID uuid.UUID) ([]ExportCardsRow, error)
+	ExportCategories(ctx context.Context, userID uuid.UUID) ([]ExportCategoriesRow, error)
+	ExportDomains(ctx context.Context, userID uuid.UUID) ([]ExportDomainsRow, error)
+	ExportExamAttemptCards(ctx context.Context, userID uuid.UUID) ([]ExportExamAttemptCardsRow, error)
+	ExportExamAttempts(ctx context.Context, userID uuid.UUID) ([]ExportExamAttemptsRow, error)
+	ExportExamCards(ctx context.Context, userID uuid.UUID) ([]ExportExamCardsRow, error)
+	ExportExams(ctx context.Context, userID uuid.UUID) ([]ExportExamsRow, error)
+	ExportFocusSessions(ctx context.Context, userID uuid.UUID) ([]ExportFocusSessionsRow, error)
+	ExportNoteCategories(ctx context.Context, userID uuid.UUID) ([]ExportNoteCategoriesRow, error)
+	ExportNotes(ctx context.Context, userID uuid.UUID) ([]ExportNotesRow, error)
+	// The retention history, which is the one dataset here that cannot be
+	// recreated after the fact (D-029). Oldest first, so the file reads as a
+	// timeline.
+	ExportReviewLogs(ctx context.Context, userID uuid.UUID) ([]ExportReviewLogsRow, error)
+	// Everything an account owns (07 L6).
+	//
+	// Three rules run through this file:
+	//
+	//   1. **Explicit columns, never `SELECT *`.** notes.tsv is a generated
+	//      tsvector that means nothing outside Postgres, and users.password_hash
+	//      must not leave the server under any circumstance. A `*` here would put
+	//      both in the archive the first time someone adds a column.
+	//   2. **No filters beyond the tenancy predicate.** Soft-deleted notes and
+	//      cards are still rows the account owns, and an export that quietly drops
+	//      them is the silent disappearance this whole product exists to prevent.
+	//      The archive separates them into their own folder instead.
+	//   3. **Every query is scoped by user_id in the WHERE clause** (hard rule 4).
+	//      RLS backs this up; it does not replace it.
+	//
+	// auth_sessions and auth_tokens are deliberately absent. A session id is a
+	// live credential and a token hash is the shadow of one — neither is content
+	// the user wrote, and putting them in a file that gets emailed around is a way
+	// to lose an account, not a way to own your data.
+	ExportUser(ctx context.Context, id uuid.UUID) (ExportUserRow, error)
+	ExportUserSettings(ctx context.Context, userID uuid.UUID) (UserSetting, error)
 	// The counts are recomputed here rather than accepted from the client. total
 	// is how many questions the attempt drew, so an abandoned run scores against
 	// everything it was asked, not only what it answered.
