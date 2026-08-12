@@ -28,13 +28,15 @@ What that does **not** change: every constraint from `GOALS.md` — never puniti
 
 **`07` L8 is done** — per-account caps on notes (5.000), cards (20.000) and write rate (300/min), all configurable, with `konku_quota_rejections_total` in the metrics. Body size was already bounded.
 
-**Next: `07` L9**, then `04-ship.md`, then `07` L10.
+**`07` L9 is done** — `/privacy` and `/terms` written against what the code actually stores, with a coverage test that fails when a new feature stores something the policy does not mention. The status page is decided (email primary, a static page off the VPS secondary) but hosting it is `04` S5.
+
+**`07` L1–L9 are complete. Next: `04-ship.md`**, then `07` L10.
 
 **The order is deliberate and runs out of numeric sequence** (D-067). Almost nothing left needs the VPS — RLS, observability, security headers, the test pyramid, CI, signup, verification, reset, export, deletion and quotas are all local work against `docker-compose.yml`. What genuinely requires the box is short: the deploy itself, backups running there, **email deliverability** (SPF/DKIM/DMARC), the VPS half of the release pipeline, alert routing, phone access, and opening signup. So the local work happens first and `04-ship.md` becomes one careful afternoon.
 
 **Daily use is not deferred.** It starts now, on `make dev-web`, and continues throughout the hardening work. D-030's failure mode — months building a learning tool and none learning — is solved by *using the app*, not by deferring the work. If capture is not happening, fixing that outranks every task in `06`. Two consequences: the **local database is now real data and needs a dump** (`06` P11), and laptop-only use is a weaker test than the original gate, which is why `04` S6 still exists.
 
-What is genuinely missing right now, in case it looks otherwise: there is **no privacy policy and no terms**, no status page, and **signup is still closed** (`ALLOW_SIGNUP=false`). Those are `07` L9 and L10, and they are not optional before the app is public. Everything else in `06` and `07` L1–L8 has landed.
+What is genuinely missing right now, in case it looks otherwise: **the app has never been deployed**, there is no status page, and **signup is still closed** (`ALLOW_SIGNUP=false`). Those are `04-ship.md` and `07` L10. Everything else in `06` and `07` L1–L9 has landed.
 
 Note: a card is addressed by its own uuid (`/api/review/{cardID}`). It used to take a note *and* an ID, because card IDs were unique only within the note they were parsed out of.
 

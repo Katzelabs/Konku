@@ -43,7 +43,26 @@ cost of the failure is not a bug report, it is a disclosure.
 For everything else, the bar is: **would a user rather have heard it from us?**
 Downtime they noticed, yes. Downtime at 04:00 that nobody hit, no.
 
-Say, in Bahasa Indonesia, on whatever channel exists:
+### The channel
+
+**Email to the affected accounts is the primary channel**, and it is the one
+the privacy policy commits to. It reaches people who are not watching, it needs
+no infrastructure that is not already there, and the account list is exactly
+the audience. Use `internal/mail`'s transport; there is no bulk sender and
+there does not need to be at this size.
+
+**The status page is the secondary channel, and it must not live on the box it
+reports on.** An app that is down cannot serve the page saying it is down, and
+a status page on the same VPS is decoration. A static page published from the
+repo — GitHub Pages on `Katzelabs/Konku` — is enough and costs nothing.
+Standing it up is `04-ship.md` S5; until it exists, email is the whole channel
+and that is an acceptable state for an instance with a handful of accounts.
+
+The two are not alternatives. Email is what people receive; the status page is
+what they find when they go looking mid-outage, which is the moment they cannot
+receive anything from us.
+
+Say, in Bahasa Indonesia, on whatever channel is available:
 
 - what happened, in one sentence, without jargon
 - whether their data was affected, explicitly — including "no" when it is no

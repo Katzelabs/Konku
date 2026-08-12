@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { GraduationCap } from 'lucide-react'
 
 /**
@@ -30,6 +31,21 @@ export function AuthLayout({
           </div>
         </div>
         {children}
+
+        {/*
+          On every signed-out screen, because the moment someone most needs to
+          know what is stored about them is before they hand any of it over
+          (07 L9).
+        */}
+        <p className="text-center text-xs text-muted-fg">
+          <Link to="/privacy" className="underline underline-offset-4">
+            Kebijakan Privasi
+          </Link>
+          {' · '}
+          <Link to="/terms" className="underline underline-offset-4">
+            Ketentuan Layanan
+          </Link>
+        </p>
       </div>
     </main>
   )

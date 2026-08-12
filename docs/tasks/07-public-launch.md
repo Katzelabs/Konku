@@ -533,7 +533,7 @@ first seeding assertion.
 
 ## L9 — Policy, status, and incident path
 
-`todo` · ~3 h · no deps
+`done` (the documents) · `todo` (hosting the status page, `04` S5) · ~3 h · no deps
 
 - **Privacy policy and terms** describing *this* product: what is stored
   (email, password hash, everything you write), for how long, shared with
@@ -545,7 +545,46 @@ first seeding assertion.
   breaks, it gets written down
 
 **Done when:** both documents exist, and someone who has not seen the code
-could read the privacy policy and describe what the app stores.
+could read the privacy policy and describe what the app stores. ✓ — that second
+clause is a coverage test: `web/src/features/legal/legal.test.tsx` requires
+every category of data the application actually keeps to be named on the page.
+It is the test that fails when a feature starts storing something new and
+nobody updates the policy, which is how a privacy policy normally becomes
+untrue.
+
+Shipped: `/privacy` and `/terms`, reachable in every authentication state and
+outside the app shell, linked from every signed-out screen and from Pengaturan.
+
+**Two places where honesty needed more words than the brief.**
+
+*"Shared with nobody" is not literally true*, and writing it would be the
+boilerplate problem in reverse — a document describing a product that is not
+this one. Three processors are named with exactly what each receives: **Resend**
+(the address and the message), **Sentry** (an error and an account id, with the
+request, address and IP scrubbed before sending), and the server provider. The
+policy also says plainly what is *not* shared: no analytics, no ad trackers, no
+cross-account aggregation (D-066).
+
+*The 30-day figure is a promise about backup retention*, and it is only true if
+the restic policy on the box adds up to 30 days or fewer. `04` S3 now says so
+explicitly. That is the one line in this document the deploy can falsify.
+
+**The status page is decided but not hosted, and deliberately so.** It must not
+live on the VPS — an app that is down cannot serve the page saying it is down,
+and a status page on the same box is decoration. `docs/runbooks/incident.md`
+now names the channel: **email to the affected accounts is primary** (it
+reaches people who are not watching, and the account list is exactly the
+audience), with a static page published from `Katzelabs/Konku` via GitHub Pages
+as the secondary. Standing that up is `04` S5, since it is hosting rather than
+code. Until it exists, email is the whole channel, which is acceptable for an
+instance with a handful of accounts.
+
+**Not settled, and it needs you rather than code:** the documents identify the
+operator as "Konku" with `konku@katzeapps.com` as contact, and say nothing
+about a legal entity or a jurisdiction. If you operate as a registered business,
+or if Indonesia's PDP law or the GDPR apply to your users, the wording needs a
+look from someone qualified. Everything factual in there is accurate to the
+code; the parts a lawyer would add are absent.
 
 ---
 

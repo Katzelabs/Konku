@@ -106,6 +106,27 @@ export default function SettingsPage() {
         <DeleteAccount />
       </Section>
 
+      <Section title="Tentang">
+        <Card className="flex flex-col gap-3 p-5 text-sm">
+          <p className="text-secondary-fg">
+            Konku menyimpan apa yang kamu tulis dan alamat email kamu. Tidak dijual,
+            tidak dipakai untuk iklan, tidak dipakai melatih model AI.
+          </p>
+          <p className="text-muted-fg">
+            <Link
+              to="/privacy"
+              className="text-surface-fg underline underline-offset-4"
+            >
+              Kebijakan Privasi
+            </Link>
+            {' · '}
+            <Link to="/terms" className="text-surface-fg underline underline-offset-4">
+              Ketentuan Layanan
+            </Link>
+          </p>
+        </Card>
+      </Section>
+
       <Section title="Domain">
         {/*
           A link rather than the editor inline. Domain management is a page's

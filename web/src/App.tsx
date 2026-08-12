@@ -4,6 +4,8 @@ import { Loading } from './components/ui/spinner'
 import { Notice } from './components/ui/notice'
 import LoginPage from './features/auth/LoginPage'
 import ForgotPasswordPage from './features/auth/ForgotPasswordPage'
+import PrivacyPage from './features/legal/PrivacyPage'
+import TermsPage from './features/legal/TermsPage'
 import ResetPasswordPage from './features/auth/ResetPasswordPage'
 import SignupPage from './features/auth/SignupPage'
 import VerifyPage from './features/auth/VerifyPage'
@@ -71,6 +73,14 @@ export default function App() {
    */
   if (location.pathname === '/verify') return <VerifyPage />
   if (location.pathname === '/reset-password') return <ResetPasswordPage />
+
+  /*
+   * The two documents, reachable in every authentication state and outside the
+   * app shell. The moments someone wants them are before signing up and after
+   * deciding to leave, and neither is a moment they are inside the app.
+   */
+  if (location.pathname === '/privacy') return <PrivacyPage />
+  if (location.pathname === '/terms') return <TermsPage />
 
   if (!user) {
     return (

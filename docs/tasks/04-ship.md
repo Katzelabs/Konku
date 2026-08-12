@@ -96,6 +96,10 @@ This is the production version (D-064):
 - Push off the box with restic to B2 or S3, encrypted, with a retention
   policy. A couple of dollars a month. A backup on the same machine as the
   database is not a backup
+- **Retention is at most 30 days, and that is now a promise rather than a
+  preference.** The privacy policy (`07` L9) tells users their data is gone
+  from backups within 30 days of deleting their account, which is only true if
+  `--keep-daily` and friends add up to 30 or fewer. Set it deliberately
 - **The job alerts on failure** (S5). A silent cron that stopped working in
   March is the standard way this goes wrong
 
@@ -149,8 +153,15 @@ points them at a real endpoint and a destination that reaches you (D-062):
 **Trigger each one deliberately.** An alert nobody has ever seen fire is an
 alert you are guessing about.
 
-**Done when:** stopping Postgres on the box reaches your phone, and you have
-seen all three fire once.
+**Also stand up the status page** (`07` L9). It must not live on the VPS: an
+app that is down cannot serve the page saying it is down, and a status page on
+the same box is decoration. A static page published from `Katzelabs/Konku` via
+GitHub Pages is enough and costs nothing. Until it exists, email to the
+affected accounts is the whole channel — which is acceptable at this size, and
+is what `docs/runbooks/incident.md` says to use.
+
+**Done when:** stopping Postgres on the box reaches your phone, you have seen
+all three fire once, and the status page is reachable while the app is not.
 
 ---
 
