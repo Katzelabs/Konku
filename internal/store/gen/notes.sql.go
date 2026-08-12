@@ -172,21 +172,32 @@ WHERE n.user_id = $1
            THEN n.deleted_at IS NOT NULL
            ELSE n.deleted_at IS NULL
       END
-  AND ($5::uuid IS NULL OR n.domain_id = $5)
-  AND ($6::uuid IS NULL OR EXISTS (
-          SELECT 1 FROM note_categories nc
-           WHERE nc.note_id = n.id AND nc.category_id = $6))
+  -- Many domains and many categories, with the same semantics a review set's
+  -- draw uses (D-077): OR inside each group, AND between them. Picking
+  -- Matematika and Fisika means either; adding the "rumus" category narrows
+  -- that to notes which are also tagged with it.
+  --
+  -- coalesce, not a bare cardinality(): pgx encodes a nil Go slice as SQL NULL
+  -- rather than '{}', and cardinality(NULL) is NULL, which makes the whole OR
+  -- null and drops every row. "No filter" would then mean "match nothing" for
+  -- any caller that passed nil instead of an empty slice.
+  AND (coalesce(cardinality($5::uuid[]), 0) = 0
+       OR n.domain_id = ANY($5::uuid[]))
+  AND (coalesce(cardinality($6::uuid[]), 0) = 0
+       OR EXISTS (SELECT 1 FROM note_categories nc
+                   WHERE nc.note_id = n.id
+                     AND nc.category_id = ANY($6::uuid[])))
 ORDER BY n.updated_at DESC
 LIMIT $2 OFFSET $3
 `
 
 type ListNotesParams struct {
-	UserID     uuid.UUID  `json:"user_id"`
-	Limit      int32      `json:"limit"`
-	Offset     int32      `json:"offset"`
-	Deleted    bool       `json:"deleted"`
-	DomainID   *uuid.UUID `json:"domain_id"`
-	CategoryID *uuid.UUID `json:"category_id"`
+	UserID      uuid.UUID   `json:"user_id"`
+	Limit       int32       `json:"limit"`
+	Offset      int32       `json:"offset"`
+	Deleted     bool        `json:"deleted"`
+	DomainIds   []uuid.UUID `json:"domain_ids"`
+	CategoryIds []uuid.UUID `json:"category_ids"`
 }
 
 type ListNotesRow struct {
@@ -214,8 +225,8 @@ func (q *Queries) ListNotes(ctx context.Context, arg ListNotesParams) ([]ListNot
 		arg.Limit,
 		arg.Offset,
 		arg.Deleted,
-		arg.DomainID,
-		arg.CategoryID,
+		arg.DomainIds,
+		arg.CategoryIds,
 	)
 	if err != nil {
 		return nil, err

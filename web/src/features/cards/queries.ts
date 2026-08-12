@@ -2,9 +2,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import type { BulkResult, Card, CardSummary } from '../../api/types'
 
+/**
+ * Many domains and many categories (D-078).
+ *
+ * The server OR's within each group and AND's between them, so two domains
+ * means either and a domain plus a category means both. Empty means no filter.
+ */
 export interface CardFilters {
-  domainId?: string | null
-  categoryId?: string | null
+  domainIds?: string[]
+  categoryIds?: string[]
   q?: string
   /** The Terhapus view: the same list, filtered to what has been deleted. */
   deleted?: boolean
@@ -16,8 +22,10 @@ export const cardKeys = {
     [
       ...cardKeys.all,
       'list',
-      f.domainId ?? null,
-      f.categoryId ?? null,
+      // Sorted, so picking two domains in the other order is the same cache
+      // entry rather than a second fetch of the same list.
+      [...(f.domainIds ?? [])].sort().join(','),
+      [...(f.categoryIds ?? [])].sort().join(','),
       f.q ?? '',
       f.deleted ?? false,
     ] as const,
@@ -39,8 +47,11 @@ export function useCards(filters: CardFilters = {}) {
     queryKey: cardKeys.list(filters),
     queryFn: () => {
       const params = new URLSearchParams({ limit: String(CARD_LIMIT) })
-      if (filters.domainId) params.set('domainId', filters.domainId)
-      if (filters.categoryId) params.set('categoryId', filters.categoryId)
+      // `append`, not `set`: the filter repeats the parameter rather than
+      // packing a comma-separated list into one value, which is what the Go
+      // handler reads with r.URL.Query()[name].
+      for (const id of filters.domainIds ?? []) params.append('domainId', id)
+      for (const id of filters.categoryIds ?? []) params.append('categoryId', id)
       if (filters.q?.trim()) params.set('q', filters.q.trim())
       if (filters.deleted) params.set('deleted', 'true')
       return api.get<CardSummary[]>(`/cards?${params}`)

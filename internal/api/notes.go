@@ -368,11 +368,11 @@ func (s *Server) handleListNotes(w http.ResponseWriter, r *http.Request) {
 	limit := intParam(r, "limit", defaultLimit, 1, maxLimit)
 	offset := intParam(r, "offset", 0, 0, 1<<30)
 
-	domainID, ok := optionalUUIDQuery(w, r, "domainId")
+	domainIDs, ok := uuidListQuery(w, r, "domainId")
 	if !ok {
 		return
 	}
-	categoryID, ok := optionalUUIDQuery(w, r, "categoryId")
+	categoryIDs, ok := uuidListQuery(w, r, "categoryId")
 	if !ok {
 		return
 	}
@@ -385,9 +385,9 @@ func (s *Server) handleListNotes(w http.ResponseWriter, r *http.Request) {
 			// The Terhapus view, off unless asked for: the same list, filtered to
 			// what has been deleted, so restoring is a normal screen rather than a
 			// toast the user has to catch.
-			Deleted:    boolQuery(r, "deleted"),
-			DomainID:   domainID,
-			CategoryID: categoryID,
+			Deleted:     boolQuery(r, "deleted"),
+			DomainIds:   domainIDs,
+			CategoryIds: categoryIDs,
 		})
 	})
 	if err != nil {
@@ -409,20 +409,37 @@ func (s *Server) handleListNotes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// optionalUUIDQuery reads a filter from the query string. Absent means "no
-// filter"; unparseable is a 400, because silently ignoring a malformed filter
-// would show the user everything and look like the filter found everything.
-func optionalUUIDQuery(w http.ResponseWriter, r *http.Request, name string) (*uuid.UUID, bool) {
-	raw := r.URL.Query().Get(name)
-	if raw == "" {
-		return nil, true
+// uuidListQuery reads a repeatable filter from the query string:
+// `?domainId=a&domainId=b` means either. Absent means "no filter".
+//
+// The empty slice is returned rather than nil, and that is not a style choice.
+// pgx encodes a nil Go slice as SQL NULL, `cardinality(NULL)` is NULL, and the
+// "no filter" arm of the WHERE clause is written as a cardinality test — so a
+// nil reaching the query would turn "filter by nothing" into "match nothing"
+// and empty both index screens. The SQL comment says the same thing from the
+// other side.
+//
+// Unparseable is a 400, because silently ignoring a malformed filter would
+// show the user everything and look like the filter matched everything.
+func uuidListQuery(w http.ResponseWriter, r *http.Request, name string) ([]uuid.UUID, bool) {
+	raw := r.URL.Query()[name]
+	out := make([]uuid.UUID, 0, len(raw))
+
+	for _, v := range raw {
+		// A repeated parameter with an empty value is how an unset <select>
+		// serialises. It means "no filter", not "a filter that is broken".
+		if v == "" {
+			continue
+		}
+		id, err := uuid.Parse(v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, CodeBadRequest, "Filter tidak valid.")
+			return nil, false
+		}
+		out = append(out, id)
 	}
-	id, err := uuid.Parse(raw)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Filter tidak valid.")
-		return nil, false
-	}
-	return &id, true
+
+	return out, true
 }
 
 // validNote checks what the database cannot express as a clean error. A

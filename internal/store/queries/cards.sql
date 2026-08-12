@@ -69,10 +69,18 @@ WHERE c.user_id = $1
            THEN c.deleted_at IS NOT NULL
            ELSE c.deleted_at IS NULL
       END
-  AND (sqlc.narg(domain_id)::uuid IS NULL OR c.domain_id = sqlc.narg(domain_id))
-  AND (sqlc.narg(category_id)::uuid IS NULL OR EXISTS (
-          SELECT 1 FROM card_categories cc
-           WHERE cc.card_id = c.id AND cc.category_id = sqlc.narg(category_id)))
+  -- Many domains and many categories, with the same semantics a review set's
+  -- draw uses (D-077): OR inside each group, AND between them.
+  --
+  -- coalesce, not a bare cardinality(): pgx encodes a nil Go slice as SQL NULL
+  -- rather than '{}', and cardinality(NULL) is NULL, which makes the whole OR
+  -- null and drops every row.
+  AND (coalesce(cardinality(sqlc.arg(domain_ids)::uuid[]), 0) = 0
+       OR c.domain_id = ANY(sqlc.arg(domain_ids)::uuid[]))
+  AND (coalesce(cardinality(sqlc.arg(category_ids)::uuid[]), 0) = 0
+       OR EXISTS (SELECT 1 FROM card_categories cc
+                   WHERE cc.card_id = c.id
+                     AND cc.category_id = ANY(sqlc.arg(category_ids)::uuid[])))
   -- ILIKE, not full-text: D-031 defers ranked search to v0.2. cards_front_trgm_idx
   -- is what keeps this from being a sequential scan.
   AND (sqlc.narg(query)::text IS NULL

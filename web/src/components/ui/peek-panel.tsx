@@ -1,122 +1,69 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog'
-import { Maximize2, PanelRight, SquareArrowOutUpRight, X } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import { X } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { cn } from '../../lib/utils'
 import { DialogOverlay, DialogPortal } from './dialog'
 
 /**
- * How opening an item from a list behaves.
+ * How the open item is shown.
  *
- * `side` and `center` preview it without leaving the list; `full` skips the
- * preview and navigates. The point of a peek is that scanning a list and
- * reading one item are the same task — losing your place in the list to read
- * one note is the friction this removes.
+ * It is no longer a preference. It used to be one — side, center or full page,
+ * remembered in localStorage and switched from a row of buttons on the panel
+ * itself — which meant two controls on one screen deciding the same thing: the
+ * view toggle chose how the *list* looked and this chose how the *item* looked,
+ * and every combination of the two had to work.
  *
- * `side` is a column of the page now, not a panel over it (see ListDetail). The
- * name survives because it is what the stored preference already says on every
- * machine this has ever run on, and a migration to rename a localStorage value
- * would be work in exchange for nothing.
+ * The view toggle answers both now. A list is narrow and leaves room beside it,
+ * so it gets `side`. A grid uses the whole width and has no room beside it, so
+ * it gets `center`. Nothing is stored, nothing is chosen twice, and the panel
+ * lost the button row that used to sit above every previewed note.
  */
-export type PeekMode = 'side' | 'center' | 'full'
-
-const STORAGE_KEY = 'konku:peek-mode'
-
-/** The preference, remembered across visits. */
-export function usePeekMode(): [PeekMode, (m: PeekMode) => void] {
-  const [mode, setStored] = useState<PeekMode>(() => read() ?? 'side')
-
-  function set(next: PeekMode) {
-    setStored(next)
-    try {
-      localStorage.setItem(STORAGE_KEY, next)
-    } catch {
-      // Private browsing or a full quota. A forgotten preference is not worth
-      // a broken click.
-    }
-  }
-
-  return [mode, set]
-}
-
-function read(): PeekMode | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw === 'side' || raw === 'center' || raw === 'full' ? raw : null
-  } catch {
-    return null
-  }
-}
+export type PeekMode = 'side' | 'center'
 
 /**
  * A preview of one item from the list it came from.
  *
  * The two modes are genuinely different components, not one styled twice:
  *
- * **Side** is deliberately *not* a modal, and no longer floats at all. It is a
- * card the page places in its second column, so the list stays live beside it —
- * clicking another row swaps what the card shows instead of dismissing it,
- * which is the whole reason to peek rather than navigate. Escape still closes
- * it, because reaching for the mouse to dismiss a preview is the friction this
- * was supposed to remove.
+ * **Side** is deliberately *not* a modal and does not float. It is a card the
+ * page puts in its second column, so the list stays live beside it — clicking
+ * another row swaps what the card shows instead of dismissing it, which is the
+ * whole reason to peek rather than navigate.
+ *
+ * It has no close button and no Escape handler, and that is a consequence of
+ * auto-selection rather than an omission. List view opens its top row on
+ * arrival, so there is no "nothing selected" state to close *to*: closing
+ * would immediately re-select, and the Escape handler this used to have was
+ * worse than that — it called `navigate(-1)` against a history entry that
+ * auto-selection had already replaced, so pressing Escape on the note list
+ * left the note list. Switching to grid is what closes the preview.
  *
  * **Center** covers the list, so it *is* a modal and gets Radix: focus trap,
- * focus restore, scroll lock, `aria-modal`. It portals out of wherever it is
- * mounted, which is what lets both modes be rendered from the same place in
- * the page.
- *
- * `full` never reaches this component — the caller navigates instead.
+ * focus restore, scroll lock, `aria-modal`, Escape and outside-dismissal. It
+ * portals out of wherever it is mounted, which is what lets both modes be
+ * rendered from the same place in the page.
  */
 export function PeekPanel({
   open,
   onOpenChange,
   mode,
-  onModeChange,
-  fullPageTo,
   title,
   children,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** 'full' is handled by the caller; this component only sees side/center. */
-  mode: Exclude<PeekMode, 'full'>
-  onModeChange: (m: PeekMode) => void
-  /** Where "open as a page" goes. */
-  fullPageTo: string
+  mode: PeekMode
   title: string
   children: ReactNode
 }) {
-  // Side peek is not a Radix dialog, so Escape is ours to handle.
-  useEffect(() => {
-    if (!open || mode !== 'side') return
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onOpenChange(false)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, mode, onOpenChange])
-
   if (!open) return null
-
-  const header = (
-    <PeekHeader
-      mode={mode}
-      onModeChange={onModeChange}
-      fullPageTo={fullPageTo}
-      onClose={() => onOpenChange(false)}
-    />
-  )
 
   if (mode === 'side') {
     return (
       <section
         aria-label={title}
-        className={cn(
-          'flex flex-col overflow-hidden rounded-lg border border-border',
-          'bg-card text-card-fg',
-        )}
+        className="flex flex-col overflow-hidden rounded-lg border border-border bg-card text-card-fg"
       >
-        {header}
         {/*
           No scroll container of its own: the column around it is the one that
           scrolls (ListDetail), so a second one here would produce the nested
@@ -133,7 +80,7 @@ export function PeekPanel({
         <DialogOverlay />
         <DialogPrimitive.Content
           className={cn(
-            'fixed top-1/2 left-1/2 z-50 flex max-h-[85vh] w-[calc(100%-2rem)] max-w-3xl',
+            'fixed top-1/2 left-1/2 z-50 flex max-h-[85vh] w-[calc(100%-2rem)] max-w-2xl',
             '-translate-x-1/2 -translate-y-1/2 flex-col',
             'rounded-xl border border-border bg-card text-card-fg shadow-dialog',
             'data-[state=open]:animate-scale-in data-[state=closed]:animate-fade-out',
@@ -143,90 +90,27 @@ export function PeekPanel({
               visually redundant with the item's own heading below, so it is
               hidden rather than duplicated on screen. */}
           <DialogPrimitive.Title className="sr-only">{title}</DialogPrimitive.Title>
-          {header}
-          <div className="flex-1 overflow-y-auto px-6 py-6">{children}</div>
+
+          {/*
+            The one control the panel keeps. A modal covers what it came from,
+            so it has to say how to get back — unlike the side pane, which is
+            beside the list rather than on top of it.
+          */}
+          <DialogPrimitive.Close
+            aria-label="Tutup pratinjau"
+            className="absolute top-3 right-3 rounded-md p-1.5 text-subtle-fg transition-colors duration-(--animate-duration-quick) ease-(--ease-quiet) hover:bg-muted hover:text-surface-fg"
+          >
+            <X className="size-4" />
+          </DialogPrimitive.Close>
+
+          {/*
+            Extra room on the right, because the close button floats over this
+            and the first thing a preview renders is a metadata row that ends
+            in a date at `ml-auto`. Without it the × lands on top of "Hari ini".
+          */}
+          <div className="flex-1 overflow-y-auto px-6 py-6 pr-14">{children}</div>
         </DialogPrimitive.Content>
       </DialogPortal>
     </DialogPrimitive.Root>
-  )
-}
-
-function PeekHeader({
-  mode,
-  onModeChange,
-  fullPageTo,
-  onClose,
-}: {
-  mode: Exclude<PeekMode, 'full'>
-  onModeChange: (m: PeekMode) => void
-  fullPageTo: string
-  onClose: () => void
-}) {
-  return (
-    <div className="flex shrink-0 items-center gap-1 border-b border-border px-3 py-2">
-      <PeekButton
-        active={mode === 'side'}
-        label="Tampilkan di samping"
-        onClick={() => onModeChange('side')}
-      >
-        <PanelRight className="size-4" />
-      </PeekButton>
-      <PeekButton
-        active={mode === 'center'}
-        label="Tampilkan di tengah"
-        onClick={() => onModeChange('center')}
-      >
-        <Maximize2 className="size-4" />
-      </PeekButton>
-
-      <Link
-        to={fullPageTo}
-        aria-label="Buka satu halaman penuh"
-        title="Buka satu halaman penuh"
-        className="rounded-md p-1.5 text-subtle-fg transition-colors duration-(--animate-duration-quick) ease-(--ease-quiet) hover:bg-muted hover:text-surface-fg"
-      >
-        <SquareArrowOutUpRight className="size-4" />
-      </Link>
-
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label="Tutup pratinjau"
-        title="Tutup pratinjau"
-        className="ml-auto rounded-md p-1.5 text-subtle-fg transition-colors duration-(--animate-duration-quick) ease-(--ease-quiet) hover:bg-muted hover:text-surface-fg"
-      >
-        <X className="size-4" />
-      </button>
-    </div>
-  )
-}
-
-function PeekButton({
-  active,
-  label,
-  onClick,
-  children,
-}: {
-  active: boolean
-  label: string
-  onClick: () => void
-  children: ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      aria-label={label}
-      title={label}
-      className={cn(
-        'rounded-md p-1.5 transition-colors duration-(--animate-duration-quick) ease-(--ease-quiet)',
-        active
-          ? 'bg-accent text-accent-fg'
-          : 'text-subtle-fg hover:bg-muted hover:text-surface-fg',
-      )}
-    >
-      {children}
-    </button>
   )
 }

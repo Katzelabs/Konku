@@ -20,7 +20,7 @@ import { cn } from '../../lib/utils'
  * peeking is a URL, so that is the browser's own button doing it (peek-route).
  */
 export function ListDetail({
-  /** False when the preference is 'full' or 'center': the list gets everything. */
+  /** False in grid view: the list gets the whole width and previews in a modal. */
   split,
   /** Something is open, which is what the narrow-screen swap keys on. */
   peeked,
@@ -36,25 +36,29 @@ export function ListDetail({
   placeholder?: ReactNode
   children: ReactNode
 }) {
-  // Not split, but `detail` still renders: in `center` mode it is a Radix
-  // dialog, which portals to the body and does not care where it was mounted.
-  // Dropping it here would silently turn that preference into "opens nothing".
+  // Grid view. `detail` still renders: there it is a Radix dialog, which
+  // portals to the body and does not care where it was mounted — dropping it
+  // would silently turn the grid into a list that opens nothing.
+  //
+  // The `@container` is not optional in either branch. The list lays itself out
+  // against its own box rather than the viewport, so without a container to
+  // measure, `@md:grid-cols-2` matches nothing and a full-width grid collapses
+  // to a single column.
   if (!split) {
     return (
       <>
-        {children}
+        <div className="@container min-w-0">{children}</div>
         {detail}
       </>
     )
   }
 
   return (
-    <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
+    <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,28rem)_minmax(0,1fr)]">
       {/*
-        A container, so the list inside can lay itself out against this column
-        rather than the viewport. Without it a grid view would ask for three
-        columns at the `lg` *screen* breakpoint and get three columns inside a
-        24rem pane.
+        28rem, up from 24rem: the preview was wider than a comfortable measure
+        for prose while the list beside it was truncating titles at the second
+        word. Widening the list narrows the preview, and both improve.
       */}
       <div className={cn('@container min-w-0', peeked && 'hidden lg:block')}>
         {children}

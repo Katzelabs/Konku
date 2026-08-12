@@ -1,24 +1,23 @@
 import { useMemo, useState } from 'react'
 import { Plus, Search, Trash2, Undo2 } from 'lucide-react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import type { Category, CardSummary, Domain } from '../../api/types'
 import { DomainDot } from '../../components/ui/badge'
 import { Button } from '../../components/ui/button'
-import { Card } from '../../components/ui/card'
 import { CategoryChips } from '../../components/ui/category'
 import { ConfirmDialog } from '../../components/ui/confirm-dialog'
 import { EmptyState } from '../../components/ui/empty-state'
+import { FilterBar } from '../../components/ui/filter-bar'
 import { Input } from '../../components/ui/input'
 import { DetailPlaceholder, ListDetail } from '../../components/ui/list-detail'
 import { MarkdownInline } from '../../components/ui/markdown'
 import { Notice } from '../../components/ui/notice'
 import { PageHeader } from '../../components/ui/page-header'
 import { SelectCheckbox, SelectionBar } from '../../components/ui/selection-bar'
+import { Separator } from '../../components/ui/separator'
 import { Loading } from '../../components/ui/spinner'
-import { ToggleGroup, ToggleGroupItem } from '../../components/ui/toggle-group'
-import { usePeekMode } from '../../components/ui/peek-panel'
-import { useViewMode, ViewToggle } from '../../components/ui/view-toggle'
-import { usePeekedId, usePeekNavigation } from '../../lib/peek-route'
+import { useViewMode, ViewToggle, type ViewMode } from '../../components/ui/view-toggle'
+import { useAutoSelect, usePeekedId, usePeekNavigation } from '../../lib/peek-route'
 import { useSelection } from '../../lib/use-selection'
 import { cn } from '../../lib/utils'
 import { useAllCategories } from '../categories/queries'
@@ -40,21 +39,21 @@ import { CARD_LIMIT, useCards, useDeleteCards, useRestoreCards } from './queries
  * whole review history, since card_schedules was never touched.
  */
 export default function CardsPage() {
-  const navigate = useNavigate()
   const [view, setView] = useViewMode('konku:cards-view')
   const [params, setParams] = useSearchParams()
 
   // The peek is a URL — `/cards/:id` — so Back closes it and the link is
   // copyable, while App keeps this list mounted against the background
-  // location. The preview is the second column of this page rather than a
-  // panel floating over it; see ListDetail.
-  const [peekMode, setPeekMode] = usePeekMode()
+  // location. The preview is rendered by this page rather than floating over
+  // it, which is what lets the view toggle decide its shape; see ListDetail.
   const peek = usePeekNavigation()
   const peekId = usePeekedId('/cards/')
 
   const query = params.get('q') ?? ''
-  const domainId = params.get('domainId')
-  const categoryId = params.get('categoryId')
+  // Repeated parameters, not comma-joined values: `?domainId=a&domainId=b` is
+  // what URLSearchParams and the Go handler both already speak.
+  const domainIds = params.getAll('domainId').filter(Boolean)
+  const categoryIds = params.getAll('categoryId').filter(Boolean)
   const deleted = params.get('deleted') === 'true'
 
   const [confirming, setConfirming] = useState(false)
@@ -62,25 +61,66 @@ export default function CardsPage() {
   // a flag: the undo restores exactly what went, not whatever is in the bin.
   const [undo, setUndo] = useState<{ ids: string[]; count: number } | null>(null)
 
+  /*
+   * Both of these update through the functional form, never from the `params`
+   * this render closed over. Ticking two domains in quick succession is one
+   * gesture, and the second click lands before the first navigation has
+   * re-rendered this component — a snapshot rebuilt from the stale `params`
+   * writes back a URL the first value never reached, and one of the two
+   * silently does not take.
+   */
   function setParam(key: string, value: string | null) {
-    const next = new URLSearchParams(params)
-    if (value) next.set(key, value)
-    else next.delete(key)
-    setParams(next, { replace: true, preventScrollReset: true })
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        if (value) next.set(key, value)
+        else next.delete(key)
+        return next
+      },
+      { replace: true, preventScrollReset: true },
+    )
     // The offer belongs to the list it was made on.
+    setUndo(null)
+  }
+
+  /** Flip one value of a repeatable parameter, against the latest URL. */
+  function toggleParam(key: string, id: string) {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        const current = next.getAll(key).filter(Boolean)
+        next.delete(key)
+        for (const v of current) if (v !== id) next.append(key, v)
+        if (!current.includes(id)) next.append(key, id)
+        return next
+      },
+      { replace: true, preventScrollReset: true },
+    )
+    setUndo(null)
+  }
+
+  function clearParam(key: string) {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete(key)
+        return next
+      },
+      { replace: true, preventScrollReset: true },
+    )
     setUndo(null)
   }
 
   // Filtering is the server's job here, unlike notes: the list is capped at
   // 500 and a client-side filter would silently search only the first page.
-  const { data, isPending, error } = useCards({ domainId, categoryId, q: query, deleted })
+  const { data, isPending, error } = useCards({ domainIds, categoryIds, q: query, deleted })
   const { data: domains } = useDomains()
   const { data: categories } = useAllCategories()
   const removeMany = useDeleteCards()
   const restoreMany = useRestoreCards()
 
   const cards = useMemo(() => data ?? [], [data])
-  const filtering = Boolean(query.trim() || domainId || categoryId)
+  const filtering = Boolean(query.trim() || domainIds.length || categoryIds.length)
 
   const selection = useSelection(useMemo(() => cards.map((c) => c.id), [cards]))
 
@@ -91,8 +131,7 @@ export default function CardsPage() {
       selection.toggle(cardId)
       return
     }
-    if (peekMode === 'full') navigate(`/cards/${cardId}`)
-    else peek.open(`/cards/${cardId}`)
+    peek.open(`/cards/${cardId}`)
   }
 
   function confirmDelete() {
@@ -117,24 +156,29 @@ export default function CardsPage() {
   }
 
   /*
-   * The preview, and whether the page splits in two to hold it. Not in the
-   * Terhapus view: a deleted card answers 404 everywhere else, so there is
-   * nothing to preview and the second column would be permanently empty.
+   * The view toggle decides the shape of both halves of this screen (D-078):
+   * a list splits the page and previews beside it, a grid takes the full width
+   * and previews in a modal. Neither happens in the Terhapus view, where a
+   * deleted card answers 404 everywhere else and there is nothing to preview.
    */
-  const split = peekMode === 'side' && !deleted
-  const preview = peekId ? (
-    <CardPeek
-      cardId={peekId}
-      // 'full' never reaches the preview: choosing it is a navigation, not a
-      // rendering mode, so peekId is already null by the time it matters.
-      mode={peekMode === 'full' ? 'side' : peekMode}
-      onModeChange={(next) => {
-        if (next === 'full') peek.openFull(`/cards/${peekId}`)
-        else setPeekMode(next)
-      }}
-      onClose={peek.close}
-    />
-  ) : null
+  const split = view === 'list' && !deleted
+  const preview =
+    peekId && !deleted ? (
+      <CardPeek
+        cardId={peekId}
+        mode={view === 'list' ? 'side' : 'center'}
+        onClose={peek.close}
+      />
+    ) : null
+
+  // In list view the top card is open on arrival, so the second column is
+  // never a placeholder asking for a click it could have made itself.
+  useAutoSelect({
+    enabled: split,
+    ids: useMemo(() => cards.map((c) => c.id), [cards]),
+    peekedId: peekId,
+    toPath: (id) => `/cards/${id}`,
+  })
 
   return (
     <div className="flex flex-col gap-6">
@@ -223,67 +267,44 @@ export default function CardsPage() {
         detail={preview}
         placeholder={<DetailPlaceholder>Pilih kartu untuk melihat isinya.</DetailPlaceholder>}
       >
-        {/*
-          Search, both filter rows and the list in one panel. They belong
-          together — all of them are about narrowing the same list — and it is
-          what makes the left column a thing rather than loose controls stacked
-          beside a card.
-        */}
-        <Card className="flex flex-col gap-3 p-3">
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle-fg" />
-              <Input
-                value={query}
-                onChange={(e) => setParam('q', e.target.value)}
-                placeholder="Cari isi kartu…"
-                className="pl-9"
-              />
+        <div className="flex flex-col gap-4">
+          {/*
+            The controls are a bare group, not a panel of their own — a border
+            around a search box and two dropdowns that each already have one,
+            stacked directly above the first card's, is three lines saying one
+            thing. The rule below says it once: everything above narrows the
+            list, everything below is the list.
+          */}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 @2xl:max-w-sm">
+                <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle-fg" />
+                <Input
+                  value={query}
+                  onChange={(e) => setParam('q', e.target.value)}
+                  placeholder="Cari isi kartu…"
+                  className="pl-9"
+                />
+              </div>
+              <ViewToggle mode={view} onChange={setView} />
             </div>
-            <ViewToggle mode={view} onChange={setView} />
+
+            {/*
+              Two dropdowns rather than two rows of chips (D-078). This page
+              had the worse version of the problem: five domains on one row and
+              every category on another, both above the list they filter.
+            */}
+            <FilterBar
+              domains={domains}
+              categories={categories}
+              domainIds={domainIds}
+              categoryIds={categoryIds}
+              onToggle={toggleParam}
+              onClear={clearParam}
+            />
           </div>
 
-          {domains && domains.length > 0 && (
-            <ToggleGroup>
-              <ToggleGroupItem
-                selected={domainId === null}
-                onClick={() => setParam('domainId', null)}
-              >
-                Semua domain
-              </ToggleGroupItem>
-              {domains.map((d) => (
-                <ToggleGroupItem
-                  key={d.id}
-                  selected={domainId === d.id}
-                  onClick={() => setParam('domainId', d.id)}
-                  className="inline-flex items-center gap-1.5"
-                >
-                  <DomainDot color={d.color} />
-                  {d.label}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          )}
-
-          {categories && categories.length > 0 && (
-            <ToggleGroup>
-              <ToggleGroupItem
-                selected={categoryId === null}
-                onClick={() => setParam('categoryId', null)}
-              >
-                Semua kategori
-              </ToggleGroupItem>
-              {categories.map((c) => (
-                <ToggleGroupItem
-                  key={c.id}
-                  selected={categoryId === c.id}
-                  onClick={() => setParam('categoryId', c.id)}
-                >
-                  {c.label}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          )}
+          <Separator />
 
           {data && cards.length === 0 && !filtering && (
             <EmptyState
@@ -308,46 +329,40 @@ export default function CardsPage() {
           )}
 
           {/*
-            Container queries, not viewport ones: in the split layout this list
-            sits in a 24rem column, and `lg:grid-cols-3` would ask the screen
-            how wide it is and get an answer about the wrong box.
+            Container queries, not viewport ones. In list view this sits in a
+            28rem column and in grid view it has the whole page, and
+            `lg:grid-cols-3` would ask the screen how wide it is and get an
+            answer about the wrong box either way.
           */}
-          {cards.length > 0 &&
-            (view === 'grid' ? (
-              <ul className="grid gap-2 @md:grid-cols-2 @3xl:grid-cols-3">
-                {cards.map((c) => (
-                  <li key={c.id}>
-                    <CardTile
-                      card={c}
-                      domains={domains}
-                      categories={categories}
-                      active={peekId === c.id}
-                      selected={selection.selected.has(c.id)}
-                      anySelected={selection.count > 0}
-                      onToggle={() => selection.toggle(c.id)}
-                      onOpen={() => open(c.id)}
-                    />
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <ul className="-mx-3 divide-y divide-border border-t border-border">
-                {cards.map((c) => (
-                  <li key={c.id}>
-                    <CardRow
-                      card={c}
-                      domains={domains}
-                      categories={categories}
-                      active={peekId === c.id}
-                      selected={selection.selected.has(c.id)}
-                      anySelected={selection.count > 0}
-                      onToggle={() => selection.toggle(c.id)}
-                      onOpen={() => open(c.id)}
-                    />
-                  </li>
-                ))}
-              </ul>
-            ))}
+          {cards.length > 0 && (
+            <ul
+              className={cn(
+                'grid',
+                // Rows are one line of text and sit closer than cells do: a
+                // grid cell is a block with its own weight, a row is part of a
+                // sequence you scan down.
+                view === 'grid'
+                  ? 'gap-3 @xl:grid-cols-2 @4xl:grid-cols-3 @6xl:grid-cols-4'
+                  : 'gap-1.5',
+              )}
+            >
+              {cards.map((c) => (
+                <li key={c.id}>
+                  <CardItem
+                    card={c}
+                    domains={domains}
+                    categories={categories}
+                    layout={view}
+                    active={peekId === c.id}
+                    selected={selection.selected.has(c.id)}
+                    anySelected={selection.count > 0}
+                    onToggle={() => selection.toggle(c.id)}
+                    onOpen={() => open(c.id)}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
 
           {/*
             Said plainly rather than paginated. If this ever trips, paging is
@@ -358,7 +373,7 @@ export default function CardsPage() {
               Menampilkan {CARD_LIMIT} kartu pertama.
             </p>
           )}
-        </Card>
+        </div>
       </ListDetail>
 
       <ConfirmDialog
@@ -374,10 +389,12 @@ export default function CardsPage() {
   )
 }
 
-interface CardRowProps {
+interface CardItemProps {
   card: CardSummary
   domains: Domain[] | undefined
   categories: Category[] | undefined
+  /** Column in a grid cell, or row across the full width. */
+  layout: ViewMode
   active: boolean
   selected: boolean
   /** Something is ticked, so the checkbox column stays visible on every row. */
@@ -386,118 +403,123 @@ interface CardRowProps {
   onOpen: () => void
 }
 
-function CardRow({
+/**
+ * One card in the index, as a card in both views. Same shape as `NoteItem`, and
+ * for the same reason: two components for two views drift, and the two views
+ * are one design.
+ *
+ * The prompt only. The answer arrives when you open one, which is the same
+ * recall-before-reveal shape the review screen uses (D-003) — and the list is
+ * where an accidental glance would actually happen.
+ */
+function CardItem({
   card,
   domains,
   categories,
+  layout,
   active,
   selected,
   anySelected,
   onToggle,
   onOpen,
-}: CardRowProps) {
+}: CardItemProps) {
   const domain = domains?.find((d) => d.id === card.domainId)
+  const row = layout === 'list'
 
-  return (
-    // The checkbox is a sibling of the button, never inside it: a <button>
-    // cannot legally contain another control.
-    <div
-      className={cn(
-        'group flex items-center gap-3 px-4 transition-colors duration-(--animate-duration-quick) ease-(--ease-quiet)',
-        active ? 'bg-accent' : selected ? 'bg-muted' : 'hover:bg-muted',
-      )}
-    >
-      <SelectCheckbox
-        checked={selected}
-        onToggle={onToggle}
-        visible={anySelected}
-        label="Pilih kartu ini"
-      />
-
-      <button
-        type="button"
-        onClick={onOpen}
-        aria-current={active ? 'true' : undefined}
-        className="flex min-w-0 flex-1 flex-col gap-1.5 py-3 text-left"
-      >
-        {/* The front is markdown now, so it renders rather than showing syntax. */}
-        <MarkdownInline className="text-sm text-card-fg">{card.front}</MarkdownInline>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {domain && (
-            <span className="flex min-w-0 items-center gap-1.5">
-              <DomainDot color={domain.color} />
-              <span className="truncate text-xs text-muted-fg">{domain.label}</span>
-            </span>
-          )}
-          <CategoryChips ids={card.categoryIds} categories={categories} />
-        </div>
-      </button>
-    </div>
+  const checkbox = (
+    <SelectCheckbox
+      checked={selected}
+      onToggle={onToggle}
+      visible={anySelected}
+      label="Pilih kartu ini"
+      className="pointer-events-auto"
+    />
   )
-}
 
-function CardTile({
-  card,
-  domains,
-  categories,
-  active,
-  selected,
-  anySelected,
-  onToggle,
-  onOpen,
-}: CardRowProps) {
-  const domain = domains?.find((d) => d.id === card.domainId)
+  const domainTag = domain && (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <DomainDot color={domain.color} />
+      <span className="truncate text-xs text-muted-fg">{domain.label}</span>
+    </span>
+  )
+
+  // Nothing to say on the second line. Cards are commonly untagged — capture
+  // must never block on a decision the user has not made (hard rule 7) — so
+  // rendering it anyway leaves most rows with a band of whitespace under them.
+  const hasLabels = Boolean(domain) || card.categoryIds.length > 0
 
   return (
     <div
       className={cn(
-        'group relative flex h-full flex-col gap-2 rounded-lg border px-4 py-3',
+        'group relative rounded-lg border px-4 py-3',
         'transition-colors duration-(--animate-duration-quick) ease-(--ease-quiet)',
+        row ? 'flex items-center gap-3' : 'flex h-full flex-col gap-2',
         active
-          ? 'border-primary bg-accent'
+          ? 'border-primary-ink bg-accent'
           : selected
-            ? 'border-primary bg-muted'
+            ? 'border-primary-ink bg-muted'
             : 'border-border bg-card hover:bg-muted',
       )}
     >
       {/*
-        The click target, stretched behind the content, so the whole tile opens
-        the card while the checkbox above it stays its own control.
+        The click target, stretched behind the content, so the whole card opens
+        it while the checkbox on top stays its own control. The checkbox is a
+        *sibling* of this button, never inside it — a <button> cannot legally
+        contain another control.
+      */}
+      {/*
+        Named by its prompt, not "Buka kartu". The stretched button is the only
+        control in the card, so its label is the whole of what a screen reader
+        gets — and five hundred buttons all called "Buka kartu" is a list you
+        cannot navigate. It is the card's own text, the same way NoteItem names
+        itself with its title.
       */}
       <button
         type="button"
         onClick={onOpen}
         aria-current={active ? 'true' : undefined}
-        aria-label="Buka kartu"
+        aria-label={card.front}
         className="absolute inset-0 rounded-lg"
       />
 
-      <div className="pointer-events-none relative flex min-w-0 items-center gap-1.5">
-        <SelectCheckbox
-          checked={selected}
-          onToggle={onToggle}
-          visible={anySelected}
-          label="Pilih kartu ini"
-          className="pointer-events-auto"
-        />
-        {domain && (
-          <>
-            <DomainDot color={domain.color} />
-            <span className="truncate text-xs text-muted-fg">{domain.label}</span>
-          </>
-        )}
-      </div>
+      {row ? (
+        <>
+          {/* Leading, the way a control at the edge of a row reads. In a grid
+              cell it sits on the meta line instead, because a cell has no
+              leading edge to speak of. */}
+          <span className="relative shrink-0">{checkbox}</span>
 
-      <MarkdownInline className="pointer-events-none relative line-clamp-4 text-sm text-card-fg">
-        {card.front}
-      </MarkdownInline>
+          <div className="pointer-events-none relative flex min-w-0 flex-1 flex-col gap-1.5">
+            {/* The front is markdown, so it renders rather than showing syntax. */}
+            <MarkdownInline className="line-clamp-2 text-sm text-card-fg">
+              {card.front}
+            </MarkdownInline>
+            {hasLabels && (
+              <div className="flex flex-wrap items-center gap-2">
+                {domainTag}
+                <CategoryChips ids={card.categoryIds} categories={categories} />
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="pointer-events-none relative flex min-w-0 items-center gap-1.5">
+            {checkbox}
+            {domainTag}
+          </div>
 
-      <CategoryChips
-        ids={card.categoryIds}
-        categories={categories}
-        className="pointer-events-none relative mt-auto pt-1"
-      />
+          <MarkdownInline className="pointer-events-none relative line-clamp-4 text-sm text-card-fg">
+            {card.front}
+          </MarkdownInline>
+
+          <CategoryChips
+            ids={card.categoryIds}
+            categories={categories}
+            className="pointer-events-none relative mt-auto pt-1"
+          />
+        </>
+      )}
     </div>
   )
 }

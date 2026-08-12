@@ -27,12 +27,11 @@ import { useCard, useDeleteCard } from './queries'
 export function CardPeek({
   cardId,
   mode,
-  onModeChange,
   onClose,
 }: {
   cardId: string
-  mode: Exclude<PeekMode, 'full'>
-  onModeChange: (m: PeekMode) => void
+  /** Decided by the view toggle, not by a preference of its own. */
+  mode: PeekMode
   onClose: () => void
 }) {
   const { data: card, isPending, error } = useCard(cardId)
@@ -49,8 +48,6 @@ export function CardPeek({
       open
       onOpenChange={(v) => !v && onClose()}
       mode={mode}
-      onModeChange={onModeChange}
-      fullPageTo={`/cards/${cardId}`}
       title="Kartu"
     >
       {isPending && <Loading />}
@@ -88,8 +85,13 @@ export function CardPeek({
             Deleting closes the panel — the card it was showing has left the
             list underneath, and a preview of something no longer there is a
             dead end.
+
+            Pushed away from the answer rather than sharing the article's gap.
+            One of these deletes the card, and a destructive button sitting a
+            line's breath under the thing it destroys is one the eye can reach
+            before the brain does.
           */}
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="mt-5 flex flex-wrap items-center gap-3">
             <Button asChild variant="secondary" size="sm">
               <Link to={`/cards/${cardId}`}>
                 <Pencil />

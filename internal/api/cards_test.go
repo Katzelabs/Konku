@@ -213,6 +213,9 @@ func TestCardFilters(t *testing.T) {
 		{"by domain", "?domainId=" + math},
 		{"by category", "?categoryId=" + tag.ID},
 		{"by text", "?q=matriks"},
+		// The two groups are AND'd, so naming both narrows to the same card
+		// rather than returning either (D-077's semantics, D-078's filter bar).
+		{"by domain and category", "?domainId=" + math + "&categoryId=" + tag.ID},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var list []cardBody
@@ -221,6 +224,43 @@ func TestCardFilters(t *testing.T) {
 				t.Fatalf("got %d cards, want only the matching one", len(list))
 			}
 		})
+	}
+
+	t.Run("no filter lists everything", func(t *testing.T) {
+		// The regression this guards: the "no filter" arm of the WHERE clause
+		// is a cardinality test, and pgx encodes a nil slice as SQL NULL, so a
+		// handler that passed nil instead of an empty slice would answer this
+		// with zero cards and look like an empty account.
+		var list []cardBody
+		c.expect(c.do(http.MethodGet, "/cards", nil), http.StatusOK, &list)
+		if len(list) != 2 {
+			t.Fatalf("got %d cards, want both", len(list))
+		}
+	})
+}
+
+// Within a group the values are OR'd: picking two domains means either.
+func TestCardsFilterByManyDomains(t *testing.T) {
+	app := newApp(t)
+	c := app.newClient(t)
+
+	math := c.domainID("math")
+	music := c.domainID("music")
+
+	inMath := c.createCard(map[string]any{"front": "matriks", "back": "a", "domainId": math})
+	inMusic := c.createCard(map[string]any{"front": "sonata", "back": "b", "domainId": music})
+	c.createCard(map[string]any{"front": "tanpa domain", "back": "c"})
+
+	var list []cardBody
+	c.expect(c.do(http.MethodGet,
+		"/cards?domainId="+math+"&domainId="+music, nil), http.StatusOK, &list)
+
+	got := map[string]bool{}
+	for _, card := range list {
+		got[card.ID] = true
+	}
+	if len(list) != 2 || !got[inMath.ID] || !got[inMusic.ID] {
+		t.Fatalf("got %d cards, want the two with a domain", len(list))
 	}
 }
 

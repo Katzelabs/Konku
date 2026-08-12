@@ -10,6 +10,7 @@ import { Markdown } from '../components/ui/markdown'
 import { SelectionBar } from '../components/ui/selection-bar'
 import { PropertyBar, PropertyRow, DomainProperty } from '../components/ui/property'
 import { ViewToggle, type ViewMode } from '../components/ui/view-toggle'
+import { MultiSelect, type SelectOption } from '../components/ui/multi-select'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -60,6 +61,7 @@ export default function StyleGuide() {
   const [dark, setDark] = useState(false)
   const [duration, setDuration] = useState(20)
   const [view, setView] = useState<ViewMode>('list')
+  const [filterDomains, setFilterDomains] = useState<string[]>([])
   const [checked, setChecked] = useState(true)
   const [confirming, setConfirming] = useState(false)
 
@@ -335,10 +337,31 @@ export default function StyleGuide() {
 
         <Section
           title="View toggle"
-          hint="Grid or list, for the notes and cards indexes. State lives in ?view=."
+          hint="Grid or list, for the notes and cards indexes — and the only control over their layout (D-078). List splits the page and previews beside it; grid takes the full width and previews in a modal. State lives in ?view=."
         >
           <Row label="toggle">
             <ViewToggle mode={view} onChange={setView} />
+          </Row>
+        </Section>
+
+        <Section
+          title="Multi-select"
+          hint="The index filter bar. Popover, not DropdownMenu — a Radix menu owns typeahead and would eat the search box's keystrokes. Several values mean either; the groups are AND'd against each other."
+        >
+          <Row label="filter">
+            <MultiSelect
+              label="Domain"
+              options={DEMO_DOMAINS}
+              selected={filterDomains}
+              onToggle={(id) =>
+                setFilterDomains((prev) =>
+                  prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id],
+                )
+              }
+              onClear={() => setFilterDomains([])}
+              searchPlaceholder="Cari domain…"
+              emptyText="Belum ada domain."
+            />
           </Row>
         </Section>
 
@@ -611,4 +634,11 @@ const STYLE_GUIDE_DOMAINS: Domain[] = DOMAINS.map((d, i) => ({
   weeklyQuota: 0,
   sortOrder: i,
   archivedAt: null,
+}))
+
+/** The same fixture as options, for the filter bar's multi-select. */
+const DEMO_DOMAINS: SelectOption[] = STYLE_GUIDE_DOMAINS.map((d) => ({
+  id: d.id,
+  label: d.label,
+  color: d.color,
 }))

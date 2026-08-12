@@ -4,21 +4,20 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import type { Category, Domain, NoteSummary } from '../../api/types'
 import { DomainDot } from '../../components/ui/badge'
 import { Button } from '../../components/ui/button'
-import { Card } from '../../components/ui/card'
 import { CategoryChips } from '../../components/ui/category'
 import { ConfirmDialog } from '../../components/ui/confirm-dialog'
 import { EmptyState } from '../../components/ui/empty-state'
+import { FilterBar } from '../../components/ui/filter-bar'
 import { Input } from '../../components/ui/input'
 import { DetailPlaceholder, ListDetail } from '../../components/ui/list-detail'
 import { Notice } from '../../components/ui/notice'
 import { PageHeader } from '../../components/ui/page-header'
 import { SelectCheckbox, SelectionBar } from '../../components/ui/selection-bar'
+import { Separator } from '../../components/ui/separator'
 import { Loading } from '../../components/ui/spinner'
-import { ToggleGroup, ToggleGroupItem } from '../../components/ui/toggle-group'
-import { usePeekMode } from '../../components/ui/peek-panel'
-import { useViewMode, ViewToggle } from '../../components/ui/view-toggle'
+import { useViewMode, ViewToggle, type ViewMode } from '../../components/ui/view-toggle'
 import { humanDay } from '../../lib/date'
-import { usePeekedId, usePeekNavigation } from '../../lib/peek-route'
+import { useAutoSelect, usePeekedId, usePeekNavigation } from '../../lib/peek-route'
 import { useSelection } from '../../lib/use-selection'
 import { cn } from '../../lib/utils'
 import { useAllCategories } from '../categories/queries'
@@ -42,15 +41,14 @@ export default function NotesPage() {
   const navigate = useNavigate()
   const [view, setView] = useViewMode('konku:notes-view')
 
-  // Opening an item peeks at it rather than leaving the list, unless the
-  // preference says otherwise. The peek is a URL — `/notes/:id` — so Back
-  // closes it and the link is copyable, while App keeps this list mounted
-  // against the background location. See lib/peek-route.
+  // Opening an item peeks at it rather than leaving the list. The peek is a
+  // URL — `/notes/:id` — so Back closes it and the link is copyable, while App
+  // keeps this list mounted against the background location. See
+  // lib/peek-route.
   //
-  // The preview is rendered *here* now, as the second column of this page,
-  // rather than by App as a panel floating over it. That is what lets the two
-  // share a header and a height.
-  const [peekMode, setPeekMode] = usePeekMode()
+  // The preview is rendered *here*, as part of this page, rather than by App as
+  // a panel floating over it. That is what lets the two share a header and a
+  // height, and what lets the view toggle decide the preview's shape.
   const peek = usePeekNavigation()
   const peekId = usePeekedId('/notes/')
 
@@ -58,7 +56,11 @@ export default function NotesPage() {
   // the same filter rather than two that disagree.
   const [params, setParams] = useSearchParams()
   const query = params.get('q') ?? ''
-  const categoryId = params.get('categoryId')
+  // Repeated parameters, not comma-joined values: `?categoryId=a&categoryId=b`
+  // is what URLSearchParams and the Go handler both already speak, so nothing
+  // has to agree on a separator or escape one out of a label.
+  const categoryIds = params.getAll('categoryId').filter(Boolean)
+  const domainIds = params.getAll('domainId').filter(Boolean)
   const deleted = params.get('deleted') === 'true'
 
   const [confirming, setConfirming] = useState(false)
@@ -67,18 +69,61 @@ export default function NotesPage() {
   // deleted, not "whatever is in the bin now".
   const [undo, setUndo] = useState<{ ids: string[]; count: number } | null>(null)
 
+  /*
+   * Both of these update through the functional form, never from the `params`
+   * this render closed over.
+   *
+   * Ticking two domains in quick succession is one gesture, and the second
+   * click lands before the first navigation has re-rendered this component. A
+   * `new URLSearchParams(params)` built from the stale snapshot then writes
+   * back a URL that never had the first value in it, and one of the two
+   * silently does not take.
+   */
   function setParam(key: string, value: string | null) {
-    const next = new URLSearchParams(params)
-    if (value) next.set(key, value)
-    else next.delete(key)
-    setParams(next, { replace: true, preventScrollReset: true })
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        if (value) next.set(key, value)
+        else next.delete(key)
+        return next
+      },
+      { replace: true, preventScrollReset: true },
+    )
     // The offer belongs to the list it was made on. Carrying it across a
     // filter change would leave an "undo" button floating over notes it has
     // nothing to do with.
     setUndo(null)
   }
 
-  const { data: notes, isPending, error } = useNotes({ categoryId, deleted })
+  /** Flip one value of a repeatable parameter, against the latest URL. */
+  function toggleParam(key: string, id: string) {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        const current = next.getAll(key).filter(Boolean)
+        next.delete(key)
+        for (const v of current) if (v !== id) next.append(key, v)
+        if (!current.includes(id)) next.append(key, id)
+        return next
+      },
+      { replace: true, preventScrollReset: true },
+    )
+    setUndo(null)
+  }
+
+  function clearParam(key: string) {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete(key)
+        return next
+      },
+      { replace: true, preventScrollReset: true },
+    )
+    setUndo(null)
+  }
+
+  const { data: notes, isPending, error } = useNotes({ domainIds, categoryIds, deleted })
   const { data: domains } = useDomains()
   const { data: categories } = useAllCategories()
   const create = useCreateNote()
@@ -107,8 +152,7 @@ export default function NotesPage() {
       selection.toggle(noteId)
       return
     }
-    if (peekMode === 'full') navigate(`/notes/${noteId}`)
-    else peek.open(`/notes/${noteId}`)
+    peek.open(`/notes/${noteId}`)
   }
 
   function confirmDelete() {
@@ -133,26 +177,34 @@ export default function NotesPage() {
   }
 
   /*
-   * The preview, and whether the page splits in two to hold it.
+   * The view toggle decides the shape of both halves of this screen (D-078).
    *
-   * Not in the Terhapus view: a deleted note answers 404 everywhere else, so
-   * there is nothing to preview, and a permanently empty second column would
-   * be half the screen spent saying nothing.
+   * A list is narrow and leaves room beside it, so it splits the page and the
+   * preview lives in the second column. A grid uses the full width and has no
+   * room beside it, so the preview is a modal. There is no third control for
+   * this and nothing remembered: one toggle, one answer.
+   *
+   * Neither happens in the Terhapus view — a deleted note answers 404
+   * everywhere else, so there is nothing to preview.
    */
-  const split = peekMode === 'side' && !deleted
-  const preview = peekId ? (
-    <NotePeek
-      noteId={peekId}
-      // 'full' never reaches the preview: choosing it is a navigation, not a
-      // rendering mode, so peekId is already null by the time it matters.
-      mode={peekMode === 'full' ? 'side' : peekMode}
-      onModeChange={(next) => {
-        if (next === 'full') peek.openFull(`/notes/${peekId}`)
-        else setPeekMode(next)
-      }}
-      onClose={peek.close}
-    />
-  ) : null
+  const split = view === 'list' && !deleted
+  const preview =
+    peekId && !deleted ? (
+      <NotePeek
+        noteId={peekId}
+        mode={view === 'list' ? 'side' : 'center'}
+        onClose={peek.close}
+      />
+    ) : null
+
+  // In list view the top note is open on arrival, so the second column is
+  // never a placeholder asking for a click it could have made itself.
+  useAutoSelect({
+    enabled: split,
+    ids: useMemo(() => filtered.map((n) => n.id), [filtered]),
+    peekedId: peekId,
+    toPath: (id) => `/notes/${id}`,
+  })
 
   return (
     <div className="flex flex-col gap-6">
@@ -250,45 +302,49 @@ export default function NotesPage() {
         detail={preview}
         placeholder={<DetailPlaceholder>Pilih catatan untuk membacanya di sini.</DetailPlaceholder>}
       >
-        {/*
-          Search, filters and the list in one panel, which is what makes the
-          left column a thing rather than a stack of loose controls beside a
-          card. They belong together anyway: all three are about narrowing the
-          same list.
-        */}
-        <Card className="flex flex-col gap-3 p-3">
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle-fg" />
-              <Input
-                value={query}
-                onChange={(e) => setParam('q', e.target.value)}
-                placeholder="Cari judul…"
-                className="pl-9"
-              />
+        <div className="flex flex-col gap-4">
+          {/*
+            The controls are a bare group, not a panel of their own.
+
+            They were a `<Card>` briefly, which put a border around the search
+            box and the dropdowns — each of which already has one — and then
+            stacked that border directly above the first item's. Three lines in
+            twelve pixels, saying one thing. A rule below the group says it
+            once, and it is the only boundary the eye needs here: everything
+            above narrows the list, everything below is the list.
+          */}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 @2xl:max-w-sm">
+                <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle-fg" />
+                <Input
+                  value={query}
+                  onChange={(e) => setParam('q', e.target.value)}
+                  placeholder="Cari judul…"
+                  className="pl-9"
+                />
+              </div>
+              <ViewToggle mode={view} onChange={setView} />
             </div>
-            <ViewToggle mode={view} onChange={setView} />
+
+            {/*
+              Two dropdowns rather than two rows of chips (D-078). Chips were
+              readable at five seeded domains and stopped being readable the
+              moment categories became create-on-type: a filter bar that grows
+              a line every time you label something pushes the list it filters
+              off the screen, and it could never express "either of these two".
+            */}
+            <FilterBar
+              domains={domains}
+              categories={categories}
+              domainIds={domainIds}
+              categoryIds={categoryIds}
+              onToggle={toggleParam}
+              onClear={clearParam}
+            />
           </div>
 
-          {categories && categories.length > 0 && (
-            <ToggleGroup>
-              <ToggleGroupItem
-                selected={categoryId === null}
-                onClick={() => setParam('categoryId', null)}
-              >
-                Semua
-              </ToggleGroupItem>
-              {categories.map((c) => (
-                <ToggleGroupItem
-                  key={c.id}
-                  selected={categoryId === c.id}
-                  onClick={() => setParam('categoryId', c.id)}
-                >
-                  {c.label}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          )}
+          <Separator />
 
           {notes && notes.length === 0 && (
             /*
@@ -313,47 +369,41 @@ export default function NotesPage() {
           )}
 
           {/*
-            Container queries, not viewport ones: in the split layout this list
-            sits in a 24rem column, and `lg:grid-cols-3` would ask the screen
-            how wide it is and get an answer about the wrong box.
+            Container queries, not viewport ones. In list view this sits in a
+            28rem column and in grid view it has the whole page, and
+            `lg:grid-cols-3` would ask the screen how wide it is and get an
+            answer about the wrong box either way.
           */}
-          {filtered.length > 0 &&
-            (view === 'grid' ? (
-              <ul className="grid gap-2 @md:grid-cols-2 @3xl:grid-cols-3">
-                {filtered.map((note) => (
-                  <li key={note.id}>
-                    <NoteTile
-                      note={note}
-                      domains={domains}
-                      categories={categories}
-                      active={peekId === note.id}
-                      selected={selection.selected.has(note.id)}
-                      anySelected={selection.count > 0}
-                      onToggle={() => selection.toggle(note.id)}
-                      onOpen={() => open(note.id)}
-                    />
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <ul className="-mx-3 divide-y divide-border border-t border-border">
-                {filtered.map((note) => (
-                  <li key={note.id}>
-                    <NoteRow
-                      note={note}
-                      domains={domains}
-                      categories={categories}
-                      active={peekId === note.id}
-                      selected={selection.selected.has(note.id)}
-                      anySelected={selection.count > 0}
-                      onToggle={() => selection.toggle(note.id)}
-                      onOpen={() => open(note.id)}
-                    />
-                  </li>
-                ))}
-              </ul>
-            ))}
-        </Card>
+          {filtered.length > 0 && (
+            <ul
+              className={cn(
+                'grid',
+                // Rows are one line of text and sit closer than cells do: a
+                // grid cell is a block with its own weight, a row is part of a
+                // sequence you scan down.
+                view === 'grid'
+                  ? 'gap-3 @xl:grid-cols-2 @4xl:grid-cols-3 @6xl:grid-cols-4'
+                  : 'gap-1.5',
+              )}
+            >
+              {filtered.map((note) => (
+                <li key={note.id}>
+                  <NoteItem
+                    note={note}
+                    domains={domains}
+                    categories={categories}
+                    layout={view}
+                    active={peekId === note.id}
+                    selected={selection.selected.has(note.id)}
+                    anySelected={selection.count > 0}
+                    onToggle={() => selection.toggle(note.id)}
+                    onOpen={() => open(note.id)}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </ListDetail>
 
       <ConfirmDialog
@@ -373,10 +423,12 @@ function useNoteMeta(note: NoteSummary, domains: Domain[] | undefined) {
   return domains?.find((d) => d.id === note.domainId)
 }
 
-interface RowProps {
+interface ItemProps {
   note: NoteSummary
   domains: Domain[] | undefined
   categories: Category[] | undefined
+  /** Column in a grid cell, or row across the full width. */
+  layout: ViewMode
   active: boolean
   selected: boolean
   /** Something is ticked, so the checkbox column stays visible on every row. */
@@ -385,131 +437,130 @@ interface RowProps {
   onOpen: () => void
 }
 
-function NoteRow({
+/**
+ * One note in the index, as a card in both views.
+ *
+ * The two views used to be two components: a bordered tile for the grid, and a
+ * borderless row inside one big `<Card>` with `divide-y` for the list. They
+ * drifted, because nothing made them agree — the tile grew a stretched click
+ * target and pointer-transparent content while the row kept a button that only
+ * covered part of itself, and selecting in one looked nothing like selecting in
+ * the other.
+ *
+ * It is one component with one set of container classes now. `layout` changes
+ * the axis and nothing else: a grid cell stacks its meta above the title, a row
+ * puts the title first and pushes the date to the far edge, which is the only
+ * thing a full-width item can do that a 24rem cell cannot.
+ */
+function NoteItem({
   note,
   domains,
   categories,
+  layout,
   active,
   selected,
   anySelected,
   onToggle,
   onOpen,
-}: RowProps) {
+}: ItemProps) {
   const domain = useNoteMeta(note, domains)
+  const title = note.title || 'Tanpa judul'
+  const row = layout === 'list'
 
-  return (
-    // The checkbox is a sibling of the button, never inside it: a <button>
-    // cannot legally contain another control, and nesting one breaks both the
-    // keyboard order and the row's own click target.
-    <div
-      className={cn(
-        'group flex items-center gap-3 px-4 transition-colors duration-(--animate-duration-quick) ease-(--ease-quiet)',
-        active ? 'bg-accent' : selected ? 'bg-muted' : 'hover:bg-muted',
-      )}
-    >
-      <SelectCheckbox
-        checked={selected}
-        onToggle={onToggle}
-        visible={anySelected}
-        label={`Pilih ${note.title || 'Tanpa judul'}`}
-      />
-
-      <button
-        type="button"
-        onClick={onOpen}
-        aria-current={active ? 'true' : undefined}
-        className="flex min-w-0 flex-1 flex-col gap-1.5 py-3 text-left"
-      >
-        <div className="flex items-baseline justify-between gap-3">
-          <span className="truncate text-sm font-medium text-card-fg">
-            {note.title || 'Tanpa judul'}
-          </span>
-          <span className="shrink-0 text-xs text-subtle-fg">
-            {humanDay(note.updatedAt)}
-          </span>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {domain && (
-            <span className="flex min-w-0 items-center gap-1.5">
-              <DomainDot color={domain.color} />
-              <span className="truncate text-xs text-muted-fg">{domain.label}</span>
-            </span>
-          )}
-          <CategoryChips ids={note.categoryIds} categories={categories} />
-        </div>
-      </button>
-    </div>
+  const checkbox = (
+    <SelectCheckbox
+      checked={selected}
+      onToggle={onToggle}
+      visible={anySelected}
+      label={`Pilih ${title}`}
+      className="pointer-events-auto"
+    />
   )
-}
 
-function NoteTile({
-  note,
-  domains,
-  categories,
-  active,
-  selected,
-  anySelected,
-  onToggle,
-  onOpen,
-}: RowProps) {
-  const domain = useNoteMeta(note, domains)
+  const domainTag = domain && (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <DomainDot color={domain.color} />
+      <span className="truncate text-xs text-muted-fg">{domain.label}</span>
+    </span>
+  )
+
+  const date = (
+    <span className="shrink-0 text-xs text-subtle-fg">{humanDay(note.updatedAt)}</span>
+  )
+
+  // Nothing to say on the second line. Rendering it anyway leaves a row of
+  // whitespace under the title with an invisible checkbox floating in it —
+  // which is what an untagged note looked like when the checkbox lived here.
+  const hasLabels = Boolean(domain) || note.categoryIds.length > 0
 
   return (
     <div
       className={cn(
-        'group relative flex h-full flex-col gap-2 rounded-lg border px-4 py-3',
+        'group relative rounded-lg border px-4 py-3',
         'transition-colors duration-(--animate-duration-quick) ease-(--ease-quiet)',
+        row ? 'flex items-center gap-3' : 'flex h-full flex-col gap-2',
         active
-          ? 'border-primary bg-accent'
+          ? 'border-primary-ink bg-accent'
           : selected
-            ? 'border-primary bg-muted'
+            ? 'border-primary-ink bg-muted'
             : 'border-border bg-card hover:bg-muted',
       )}
     >
       {/*
-        The click target, stretched behind the content, so the whole tile opens
-        the note while the checkbox above it stays its own control. The content
-        is pointer-transparent; only the checkbox takes clicks back.
+        The click target, stretched behind the content, so the whole card opens
+        the note while the checkbox on top of it stays its own control. The
+        checkbox is a *sibling* of this button, never inside it: a <button>
+        cannot legally contain another control. The content is
+        pointer-transparent; only the checkbox takes clicks back.
       */}
       <button
         type="button"
         onClick={onOpen}
         aria-current={active ? 'true' : undefined}
-        aria-label={note.title || 'Tanpa judul'}
+        aria-label={title}
         className="absolute inset-0 rounded-lg"
       />
 
-      <div className="pointer-events-none relative flex items-center justify-between gap-2">
-        <span className="flex min-w-0 items-center gap-1.5">
-          <SelectCheckbox
-            checked={selected}
-            onToggle={onToggle}
-            visible={anySelected}
-            label={`Pilih ${note.title || 'Tanpa judul'}`}
-            className="pointer-events-auto"
+      {row ? (
+        <>
+          {/* Leading, the way a control at the edge of a row reads. In a grid
+              cell it sits on the meta line instead, because a cell has no
+              leading edge to speak of. */}
+          <span className="relative shrink-0">{checkbox}</span>
+
+          <div className="pointer-events-none relative flex min-w-0 flex-1 flex-col gap-1.5">
+            <span className="truncate text-sm font-medium text-card-fg">{title}</span>
+            {hasLabels && (
+              <div className="flex flex-wrap items-center gap-2">
+                {domainTag}
+                <CategoryChips ids={note.categoryIds} categories={categories} />
+              </div>
+            )}
+          </div>
+
+          <div className="pointer-events-none relative">{date}</div>
+        </>
+      ) : (
+        <>
+          <div className="pointer-events-none relative flex items-center justify-between gap-2">
+            <span className="flex min-w-0 items-center gap-1.5">
+              {checkbox}
+              {domainTag}
+            </span>
+            {date}
+          </div>
+
+          <span className="pointer-events-none relative line-clamp-2 text-sm font-medium text-card-fg">
+            {title}
+          </span>
+
+          <CategoryChips
+            ids={note.categoryIds}
+            categories={categories}
+            className="pointer-events-none relative mt-auto pt-1"
           />
-          {domain && (
-            <>
-              <DomainDot color={domain.color} />
-              <span className="truncate text-xs text-muted-fg">{domain.label}</span>
-            </>
-          )}
-        </span>
-        <span className="shrink-0 text-xs text-subtle-fg">
-          {humanDay(note.updatedAt)}
-        </span>
-      </div>
-
-      <span className="pointer-events-none relative line-clamp-2 text-sm font-medium text-card-fg">
-        {note.title || 'Tanpa judul'}
-      </span>
-
-      <CategoryChips
-        ids={note.categoryIds}
-        categories={categories}
-        className="pointer-events-none relative mt-auto pt-1"
-      />
+        </>
+      )}
     </div>
   )
 }

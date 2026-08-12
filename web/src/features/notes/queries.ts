@@ -8,8 +8,10 @@ export const noteKeys = {
     [
       ...noteKeys.all,
       'list',
-      f.domainId ?? null,
-      f.categoryId ?? null,
+      // Sorted, so picking two domains in the other order is the same cache
+      // entry rather than a second fetch of the same list.
+      [...(f.domainIds ?? [])].sort().join(','),
+      [...(f.categoryIds ?? [])].sort().join(','),
       f.deleted ?? false,
     ] as const,
   detail: (id: string) => [...noteKeys.all, 'detail', id] as const,
@@ -22,9 +24,15 @@ export interface NoteInput {
   categoryIds?: string[]
 }
 
+/**
+ * Many domains and many categories (D-078).
+ *
+ * The server OR's within each group and AND's between them, so two domains
+ * means either and a domain plus a category means both. Empty means no filter.
+ */
 export interface NoteFilters {
-  domainId?: string | null
-  categoryId?: string | null
+  domainIds?: string[]
+  categoryIds?: string[]
   /** The Terhapus view: the same list, filtered to what has been deleted. */
   deleted?: boolean
 }
@@ -34,8 +42,11 @@ export function useNotes(filters: NoteFilters = {}) {
     queryKey: noteKeys.list(filters),
     queryFn: () => {
       const params = new URLSearchParams()
-      if (filters.domainId) params.set('domainId', filters.domainId)
-      if (filters.categoryId) params.set('categoryId', filters.categoryId)
+      // `append`, not `set`: the filter repeats the parameter rather than
+      // packing a comma-separated list into one value, which is what the Go
+      // handler reads with r.URL.Query()[name].
+      for (const id of filters.domainIds ?? []) params.append('domainId', id)
+      for (const id of filters.categoryIds ?? []) params.append('categoryId', id)
       if (filters.deleted) params.set('deleted', 'true')
       const query = params.toString()
       return api.get<NoteSummary[]>(query ? `/notes?${query}` : '/notes')

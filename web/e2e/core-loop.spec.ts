@@ -42,7 +42,11 @@ test.describe('the core loop', () => {
     await expect(page.getByPlaceholder('Judul', { exact: true })).toHaveValue('Catatan dari e2e')
 
     await page.goto('/notes')
-    await expect(page.getByText('Catatan dari e2e')).toBeVisible()
+    // The list row, by role. A bare getByText matches twice since D-078: list
+    // view opens its top note on arrival, so the title is on screen as a row
+    // *and* as the preview's heading. Asking for the row is what this line
+    // always meant — the note came back and the index can see it.
+    await expect(page.getByRole('button', { name: /Catatan dari e2e/ })).toBeVisible()
   })
 
   test('write a card, review it, and rating advances the queue', async ({ page, email }) => {
@@ -57,7 +61,9 @@ test.describe('the core loop', () => {
     await expect(page).toHaveURL(/\/cards\/[0-9a-f-]{36}/)
 
     await page.goto('/cards')
-    await expect(page.getByText('Ibu kota Indonesia?')).toBeVisible()
+    // The list row, by role — the auto-selected preview repeats the prompt
+    // beside it (D-078), so a bare getByText is ambiguous here now.
+    await expect(page.getByRole('button', { name: 'Ibu kota Indonesia?' })).toBeVisible()
 
     // A card written today is due tomorrow (srs.Intervals[0] is 1), so bring
     // it forward. Everything after this point is the real interface.
@@ -120,9 +126,11 @@ test.describe('the core loop', () => {
 
     await expect(page.getByText('Apa yang kamu pelajari?')).toBeHidden()
 
-    // The capture becomes a note, which is the point of asking.
+    // The capture becomes a note, which is the point of asking. By role: the
+    // note is the only one in this account, so list view auto-selects it and
+    // its title is both a row and the preview's heading (D-078).
     await page.goto('/notes')
-    await expect(page.getByText('Belajar RLS di Postgres.')).toBeVisible()
+    await expect(page.getByRole('button', { name: /Belajar RLS di Postgres./ })).toBeVisible()
   })
 
   test('the session is recorded in the log', async ({ page, email }) => {

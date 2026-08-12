@@ -289,10 +289,18 @@ WHERE c.user_id = $1
            THEN c.deleted_at IS NOT NULL
            ELSE c.deleted_at IS NULL
       END
-  AND ($4::uuid IS NULL OR c.domain_id = $4)
-  AND ($5::uuid IS NULL OR EXISTS (
-          SELECT 1 FROM card_categories cc
-           WHERE cc.card_id = c.id AND cc.category_id = $5))
+  -- Many domains and many categories, with the same semantics a review set's
+  -- draw uses (D-077): OR inside each group, AND between them.
+  --
+  -- coalesce, not a bare cardinality(): pgx encodes a nil Go slice as SQL NULL
+  -- rather than '{}', and cardinality(NULL) is NULL, which makes the whole OR
+  -- null and drops every row.
+  AND (coalesce(cardinality($4::uuid[]), 0) = 0
+       OR c.domain_id = ANY($4::uuid[]))
+  AND (coalesce(cardinality($5::uuid[]), 0) = 0
+       OR EXISTS (SELECT 1 FROM card_categories cc
+                   WHERE cc.card_id = c.id
+                     AND cc.category_id = ANY($5::uuid[])))
   -- ILIKE, not full-text: D-031 defers ranked search to v0.2. cards_front_trgm_idx
   -- is what keeps this from being a sequential scan.
   AND ($6::text IS NULL
@@ -303,12 +311,12 @@ LIMIT $2
 `
 
 type ListCardsParams struct {
-	UserID     uuid.UUID  `json:"user_id"`
-	Limit      int32      `json:"limit"`
-	Deleted    bool       `json:"deleted"`
-	DomainID   *uuid.UUID `json:"domain_id"`
-	CategoryID *uuid.UUID `json:"category_id"`
-	Query      *string    `json:"query"`
+	UserID      uuid.UUID   `json:"user_id"`
+	Limit       int32       `json:"limit"`
+	Deleted     bool        `json:"deleted"`
+	DomainIds   []uuid.UUID `json:"domain_ids"`
+	CategoryIds []uuid.UUID `json:"category_ids"`
+	Query       *string     `json:"query"`
 }
 
 type ListCardsRow struct {
@@ -335,8 +343,8 @@ func (q *Queries) ListCards(ctx context.Context, arg ListCardsParams) ([]ListCar
 		arg.UserID,
 		arg.Limit,
 		arg.Deleted,
-		arg.DomainID,
-		arg.CategoryID,
+		arg.DomainIds,
+		arg.CategoryIds,
 		arg.Query,
 	)
 	if err != nil {

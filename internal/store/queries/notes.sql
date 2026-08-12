@@ -64,10 +64,21 @@ WHERE n.user_id = $1
            THEN n.deleted_at IS NOT NULL
            ELSE n.deleted_at IS NULL
       END
-  AND (sqlc.narg(domain_id)::uuid IS NULL OR n.domain_id = sqlc.narg(domain_id))
-  AND (sqlc.narg(category_id)::uuid IS NULL OR EXISTS (
-          SELECT 1 FROM note_categories nc
-           WHERE nc.note_id = n.id AND nc.category_id = sqlc.narg(category_id)))
+  -- Many domains and many categories, with the same semantics a review set's
+  -- draw uses (D-077): OR inside each group, AND between them. Picking
+  -- Matematika and Fisika means either; adding the "rumus" category narrows
+  -- that to notes which are also tagged with it.
+  --
+  -- coalesce, not a bare cardinality(): pgx encodes a nil Go slice as SQL NULL
+  -- rather than '{}', and cardinality(NULL) is NULL, which makes the whole OR
+  -- null and drops every row. "No filter" would then mean "match nothing" for
+  -- any caller that passed nil instead of an empty slice.
+  AND (coalesce(cardinality(sqlc.arg(domain_ids)::uuid[]), 0) = 0
+       OR n.domain_id = ANY(sqlc.arg(domain_ids)::uuid[]))
+  AND (coalesce(cardinality(sqlc.arg(category_ids)::uuid[]), 0) = 0
+       OR EXISTS (SELECT 1 FROM note_categories nc
+                   WHERE nc.note_id = n.id
+                     AND nc.category_id = ANY(sqlc.arg(category_ids)::uuid[])))
 ORDER BY n.updated_at DESC
 LIMIT $2 OFFSET $3;
 

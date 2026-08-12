@@ -84,11 +84,11 @@ type cardSummary struct {
 func (s *Server) handleListCards(w http.ResponseWriter, r *http.Request) {
 	user, _ := UserFrom(r.Context())
 
-	domainID, ok := optionalUUIDQuery(w, r, "domainId")
+	domainIDs, ok := uuidListQuery(w, r, "domainId")
 	if !ok {
 		return
 	}
-	categoryID, ok := optionalUUIDQuery(w, r, "categoryId")
+	categoryIDs, ok := uuidListQuery(w, r, "categoryId")
 	if !ok {
 		return
 	}
@@ -103,11 +103,11 @@ func (s *Server) handleListCards(w http.ResponseWriter, r *http.Request) {
 			UserID: user.ID,
 			// The Terhapus view, off unless asked for. The exam picker never asks
 			// for it: a deleted card must not be pinnable as a question.
-			Deleted:    boolQuery(r, "deleted"),
-			DomainID:   domainID,
-			CategoryID: categoryID,
-			Query:      query,
-			Limit:      int32(intParam(r, "limit", cardListLimit, 1, cardListLimit)),
+			Deleted:     boolQuery(r, "deleted"),
+			DomainIds:   domainIDs,
+			CategoryIds: categoryIDs,
+			Query:       query,
+			Limit:       int32(intParam(r, "limit", cardListLimit, 1, cardListLimit)),
 		})
 	})
 	if err != nil {

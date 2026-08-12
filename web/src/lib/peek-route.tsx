@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react'
 import { useLocation, useNavigate, type Location } from 'react-router-dom'
 
 /**
@@ -91,18 +91,30 @@ export function usePeekNavigation() {
        * through six rows leaves one history entry and Back returns to the
        * list rather than walking the six.
        */
-      open(to: string) {
+      open(to: string, options?: { replace?: boolean }) {
         navigate(to, {
-          replace: peekedPath !== null,
+          replace: options?.replace ?? peekedPath !== null,
           state: {
             peekBackground: { pathname: location.pathname, search: location.search },
           },
         })
       },
 
-      /** Promote the open peek to its own page: same path, no background. */
-      openFull(to: string) {
-        navigate(to, { replace: true })
+      /**
+       * Open `to` without leaving a history entry behind.
+       *
+       * For the selection the list makes on its own behalf: list view opens
+       * its top row on arrival, and pushing that would mean Back walks through
+       * a choice the user never made — press it once and you land on the same
+       * screen with nothing selected, which is not a state the screen has.
+       */
+      select(to: string) {
+        navigate(to, {
+          replace: true,
+          state: {
+            peekBackground: { pathname: location.pathname, search: location.search },
+          },
+        })
       },
 
       /**
@@ -122,6 +134,61 @@ export function usePeekNavigation() {
     }),
     [navigate, location.pathname, location.search, peekedPath, background],
   )
+}
+
+/**
+ * Keep the top of the list open, in a layout that has room for it.
+ *
+ * An index in list view is a two-column screen, and the second column is only
+ * worth its width if something is in it. Arriving to "pilih catatan untuk
+ * membacanya di sini" means the first thing the screen asks you to do is a
+ * click it could have made for you — so it makes it.
+ *
+ * Three conditions, and each one is load-bearing:
+ *
+ * - `enabled` is off in grid view (the preview is a modal there, and opening a
+ *   modal at someone on arrival is hostile), off in the Terhapus view, and off
+ *   below `lg` where there is only one column.
+ * - It re-selects when the open item leaves the list — filtered out, deleted,
+ *   or searched past — because a preview of something no longer in the list
+ *   beside it is a dead end. That is why it compares against `ids` rather than
+ *   only firing once.
+ * - It replaces rather than pushes, so Back never walks through a selection
+ *   the user did not make.
+ */
+export function useAutoSelect({
+  enabled,
+  ids,
+  peekedId,
+  toPath,
+}: {
+  enabled: boolean
+  /** The ids currently in the list, in the order they are shown. */
+  ids: string[]
+  /** What is open right now, if anything. */
+  peekedId: string | null
+  toPath: (id: string) => string
+}) {
+  const peek = usePeekNavigation()
+
+  // `ids` is a fresh array every render, so the effect keys on its contents.
+  // Depending on the array itself would re-run this on every keystroke in the
+  // search box and fight the navigation it just performed.
+  const key = ids.join(',')
+
+  useEffect(() => {
+    if (!enabled) return
+
+    const list = key ? key.split(',') : []
+    if (list.length === 0) return
+    if (peekedId && list.includes(peekedId)) return
+
+    peek.select(toPath(list[0]))
+    // peek and toPath are rebuilt every render; including them would make this
+    // an infinite loop. What it actually depends on is what is in the list and
+    // what is open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, key, peekedId])
 }
 
 /** Narrow a router Location to the serialisable part history state can hold. */

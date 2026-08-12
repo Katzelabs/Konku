@@ -1188,6 +1188,64 @@ schedule; and logging choice answers indistinguishably from recall.
 
 ---
 
+### D-078 — The view toggle is the only control over the index screens *(amends D-074's sibling change)*
+
+`/notes` and `/cards` had two controls deciding overlapping things: a view
+toggle for how the *list* looked, and a peek-mode preference — side, centre,
+full page — for how the *item* looked, switched from a row of buttons sitting
+above every previewed note and remembered in localStorage. Six combinations,
+each of which had to work, to express two layouts anybody actually wanted.
+
+**One toggle now answers both.** A **list** is narrow and leaves room beside it,
+so the page splits and the preview is the second column. A **grid** takes the
+whole width and leaves no room, so the preview is a modal. The preference, the
+`full` mode and the button row are gone. `PeekMode` survives as a rendering
+shape rather than a stored choice, and still calls the first one `side` because
+that is what every machine's localStorage already says and renaming it would be
+a migration in exchange for nothing.
+
+**List view opens its top row on arrival**, and re-opens when the open item
+leaves the list — filtered out, searched past, deleted. A second column is only
+worth its width if something is in it, and arriving to "pilih catatan untuk
+membacanya di sini" makes the first thing the screen asks you to do a click it
+could have made for you. It **replaces** rather than pushes, so Back never
+walks through a selection the user did not make.
+
+That is also why the side preview has **no close button and no Escape
+handler**. There is no "nothing selected" state to close *to* — closing would
+re-select immediately. The Escape handler it used to have was worse than
+useless: it called `navigate(-1)` against a history entry auto-selection had
+already replaced, so pressing Escape on the note list left the note list.
+Switching to grid is what closes the preview.
+
+**The filters became searchable multi-selects.** Chips were readable at five
+seeded domains and stopped being readable the moment categories became
+create-on-type: a filter bar that grows a line every time you label something
+pushes the list it filters off the screen, and it could never express "either
+of these two". Within a group the values are OR'd and between the groups
+AND'd — the same semantics a review set's draw uses (D-077), because two
+screens filtering the same vocabulary two different ways is a bug waiting to be
+reported as one. "Both labels at once" was the other available reading of
+multi-select and it is the wrong one here: the second click would almost always
+empty the screen, which reads as broken rather than as precise.
+
+The wire format is a repeated parameter — `?domainId=a&domainId=b` — not a
+comma-joined value, so nothing has to agree on a separator or escape one out of
+a label. `uuidListQuery` returns an **empty slice, never nil**: pgx encodes a
+nil Go slice as SQL NULL, `cardinality(NULL)` is NULL, and the "no filter" arm
+of the WHERE clause is a cardinality test — so a nil would turn "filter by
+nothing" into "match nothing" and empty both index screens.
+
+**`@radix-ui/react-popover` is the one new dependency**, and it discharges an
+obligation `DropdownMenu` cannot: a Radix menu owns typeahead, so a text input
+inside one loses its keystrokes to the menu, and searching is the entire
+interaction here. It is the same reason `CategoryProperty` expands inline
+rather than in a menu. Every one of popover's transitive dependencies was
+already installed by `dialog` and `dropdown-menu`, so the lockfile grew by
+exactly one package (D-065).
+
+---
+
 ## Open questions
 
 None blocking. Deferred details, intentionally left until the feature is being built:

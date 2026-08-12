@@ -151,6 +151,73 @@ func TestNotesFilterByCategory(t *testing.T) {
 			t.Fatalf("status = %d, want 400", res.StatusCode)
 		}
 	})
+
+	t.Run("an empty filter value is no filter, not a broken one", func(t *testing.T) {
+		// An unset multi-select serialises as `?categoryId=`, and answering 400
+		// to "I have chosen nothing" would break the default state of the screen.
+		var all []noteBody
+		c.expect(c.do(http.MethodGet, "/notes?categoryId=", nil), http.StatusOK, &all)
+		if len(all) != 2 {
+			t.Fatalf("got %d notes, want both", len(all))
+		}
+	})
+}
+
+// The filter bar multi-selects (D-078). Within a group the values are OR'd, so
+// picking two categories means either — the alternative reading, "notes with
+// both labels", would make the second click almost always empty the screen.
+func TestNotesFilterByManyCategories(t *testing.T) {
+	app := newApp(t)
+	c := app.newClient(t)
+
+	math := c.createCategory("Matematika")
+	physics := c.createCategory("Fisika")
+
+	inMath := c.createNote(map[string]any{"title": "aljabar", "categoryIds": []string{math.ID}})
+	inPhysics := c.createNote(map[string]any{"title": "optik", "categoryIds": []string{physics.ID}})
+	c.createNote(map[string]any{"title": "tanpa label"})
+
+	var list []noteBody
+	c.expect(c.do(http.MethodGet,
+		"/notes?categoryId="+math.ID+"&categoryId="+physics.ID, nil), http.StatusOK, &list)
+
+	got := map[string]bool{}
+	for _, n := range list {
+		got[n.ID] = true
+	}
+	if len(list) != 2 || !got[inMath.ID] || !got[inPhysics.ID] {
+		t.Fatalf("got %d notes, want the two labelled ones", len(list))
+	}
+}
+
+// Between the two groups the filters are AND'd: a domain and a category
+// together narrow, they do not widen. Same semantics a review set's draw uses
+// (D-077), and the two must not disagree.
+func TestNotesFilterCombinesDomainAndCategory(t *testing.T) {
+	app := newApp(t)
+	c := app.newClient(t)
+
+	math := c.domainID("math")
+	psych := c.domainID("psychology")
+	tag := c.createCategory("Rumus")
+
+	both := c.createNote(map[string]any{
+		"title": "rumus matematika", "domainId": math, "categoryIds": []string{tag.ID},
+	})
+	// Right domain, wrong label.
+	c.createNote(map[string]any{"title": "catatan matematika", "domainId": math})
+	// Right label, wrong domain.
+	c.createNote(map[string]any{
+		"title": "rumus psikologi", "domainId": psych, "categoryIds": []string{tag.ID},
+	})
+
+	var list []noteBody
+	c.expect(c.do(http.MethodGet,
+		"/notes?domainId="+math+"&categoryId="+tag.ID, nil), http.StatusOK, &list)
+
+	if len(list) != 1 || list[0].ID != both.ID {
+		t.Fatalf("got %d notes, want only the one matching both", len(list))
+	}
 }
 
 // TestNoteDeleteAndRestore. Deleting is soft (00005): the note leaves every
