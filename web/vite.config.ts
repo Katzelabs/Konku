@@ -23,7 +23,16 @@ export default defineConfig({
       // session cookies behave identically in dev and prod. Pointing the app
       // straight at localhost:8080 would reintroduce the CORS problems that
       // D-040 exists to avoid.
-      '/api': 'http://localhost:8080',
+      //
+      // changeOrigin MUST stay false, and it cannot be written as the string
+      // shorthand: Vite expands `'/api': 'http://localhost:8080'` to
+      // `{ target, changeOrigin: true }`, which rewrites the Host header to
+      // the proxy target. The browser still sends Origin: http://localhost:5173,
+      // so enforceOrigin (internal/api/security.go) compares 5173 against 8080,
+      // decides the write is cross-site and answers 403 to every POST, PUT and
+      // DELETE in dev. Passing Host through is what makes "same-origin in dev"
+      // true rather than merely intended.
+      '/api': { target: 'http://localhost:8080', changeOrigin: false },
     },
   },
 })
