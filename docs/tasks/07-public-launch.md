@@ -29,7 +29,7 @@ The tables the rest of this file needs, plus the open question that has been
 sitting in `DECISIONS.md` since schema v2.
 
 ```sql
-users            -- + email_verified_at, deleted_at
+users            -- + email_verified_at (deleted_at too, dropped again in L7)
 user_settings    -- user_id, default_duration_minutes, focus_step_n, rota_enabled
 auth_sessions    -- + created_at, last_seen_at, user_agent, ip
 auth_tokens      -- id, user_id, kind ('verify'|'reset'), token_hash,
@@ -468,7 +468,7 @@ found **zero** orphaned rows.
 
 ## L8 — Quotas and limits
 
-`todo` · ~2 h · no deps
+`done` · ~2 h · no deps
 
 Per-user caps on note count, card count, request rate, and body size. Not
 monetisation — an unbounded free write path on a shared VPS is an outage
@@ -479,7 +479,55 @@ Limits are generous enough that a real user never meets one, and the error
 copy says what the limit is rather than just refusing.
 
 **Done when:** exceeding a quota returns a 429 with Indonesian copy naming the
-limit, and the metric from P2 shows quota rejections.
+limit, and the metric from P2 shows quota rejections. ✓ — both halves are
+asserted together in `internal/api/quota_test.go`: each test checks the status,
+greps the body for the number, and scrapes `/metrics` for
+`konku_quota_rejections_total{quota="…"}`.
+
+| Limit | Default | Where |
+|---|---|---|
+| Notes | 5.000 live | `MAX_NOTES` |
+| Cards | 20.000 live | `MAX_CARDS` |
+| Writes | 300/minute/account | `MAX_WRITES_PER_MINUTE` |
+| Request body | 1 MiB | in code |
+| Note markdown | 256 KiB | in code |
+| Note title | 200 characters | in code |
+
+**Body size was already done** before this task started — `decodeJSON` wraps
+every request in an `http.MaxBytesReader`, and notes have had per-field caps
+since `03`. Only the counts, the per-account write rate and the metric are new.
+
+Decisions:
+
+- **The counts are over live rows**, so emptying Terhapus is not a
+  prerequisite for writing again. What bounds create-and-delete churn is the
+  write limiter, not the count. **Known gap:** soft-deleted rows still
+  accumulate, so a determined loop grows the table within the rate limit. A
+  purge of long-deleted rows is the real fix and is not written yet.
+- **The write limiter is keyed by account, not by IP.** The IP limiters guard
+  the paths where there is no account yet; behind a phone network or an office
+  NAT an IP is shared by strangers. Reads are untouched — they neither grow
+  the database nor hold a write transaction.
+- **The limits are config**, not constants. They are an operational knob whose
+  right value depends on the box, and an operator should not rebuild to change
+  one. Anything unset, unparseable or non-positive falls back to the default,
+  so a typo in an environment variable cannot refuse every write. It is also
+  what makes them testable without writing five thousand notes.
+- **The metric has no per-account label.** That would mint a time series per
+  user, and counting other people's behaviour individually is the aggregation
+  D-066 rules out. What it answers is "are the limits set wrong", which is a
+  question about the limits. There is a test asserting the absence of the
+  label.
+- **The copy names the number** — "batas maksimum 5.000 catatan", not "terlalu
+  banyak". A refusal without a number cannot be told apart from a bug, and
+  cannot be acted on.
+
+**A real bug the tests caught:** the counts first ran on the bare pool, where
+the strict RLS policy on `notes` and `cards` matches nothing without
+`app.user_id` — so every count came back zero, every check passed, and the
+whole feature was a no-op that looked like it worked (D-059). They now run
+inside a user-scoped transaction. The same class of mistake as the export's
+first seeding assertion.
 
 ---
 

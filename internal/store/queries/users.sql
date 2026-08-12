@@ -37,6 +37,16 @@ SELECT * FROM users WHERE id = $1;
 -- name: CountUsers :one
 SELECT count(*) FROM users;
 
+-- Quotas (07 L8). Live rows only: the cap is the number of things the person
+-- actually has, so emptying Terhapus is not a prerequisite for writing again.
+-- What bounds create-and-delete churn is the per-user write limiter, not this.
+
+-- name: CountLiveNotes :one
+SELECT count(*) FROM notes WHERE user_id = $1 AND deleted_at IS NULL;
+
+-- name: CountLiveCards :one
+SELECT count(*) FROM cards WHERE user_id = $1 AND deleted_at IS NULL;
+
 -- Auth sessions are server-side so logout actually revokes access (D-039).
 -- The table is auth_sessions, not sessions, because focus sessions and exam
 -- attempts both wanted that name (D-052).

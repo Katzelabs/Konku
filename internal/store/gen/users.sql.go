@@ -49,6 +49,32 @@ func (q *Queries) ClaimAuthToken(ctx context.Context, arg ClaimAuthTokenParams) 
 	return i, err
 }
 
+const countLiveCards = `-- name: CountLiveCards :one
+SELECT count(*) FROM cards WHERE user_id = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) CountLiveCards(ctx context.Context, userID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countLiveCards, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countLiveNotes = `-- name: CountLiveNotes :one
+
+SELECT count(*) FROM notes WHERE user_id = $1 AND deleted_at IS NULL
+`
+
+// Quotas (07 L8). Live rows only: the cap is the number of things the person
+// actually has, so emptying Terhapus is not a prerequisite for writing again.
+// What bounds create-and-delete churn is the per-user write limiter, not this.
+func (q *Queries) CountLiveNotes(ctx context.Context, userID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countLiveNotes, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT count(*) FROM users
 `

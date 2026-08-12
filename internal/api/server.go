@@ -35,6 +35,11 @@ type Server struct {
 	// per-address alone lets one host enumerate many victims — so both, and
 	// neither replaces the other (07 L3).
 	signupAddrLimit *rateLimiter
+
+	// Per-account write limiter (07 L8). Keyed by user id rather than IP: the
+	// IP limiters guard the paths where there is no account yet, and behind a
+	// phone network or an office NAT an IP is shared by strangers.
+	writeLimit *rateLimiter
 }
 
 func NewServer(cfg config.Config, st *store.Store, au *auth.Service, mailer Mailer, dist fs.FS) *Server {
@@ -48,6 +53,7 @@ func NewServer(cfg config.Config, st *store.Store, au *auth.Service, mailer Mail
 		// Three sends per address per hour. Generous for someone whose mail is
 		// slow to arrive, useless as a mailbomb.
 		signupAddrLimit: newRateLimiter(3, time.Hour),
+		writeLimit:      newRateLimiter(writesPerMinute(cfg), writeLimitWindow),
 	}
 }
 
@@ -161,6 +167,10 @@ func (s *Server) Routes() http.Handler {
 			// boundary, and one that a new route joins by default.
 			r.Group(func(r chi.Router) {
 				r.Use(s.requireVerified)
+				// Above the routes rather than per-handler, so a new write
+				// endpoint is covered the moment it is added rather than when
+				// somebody remembers — the same reasoning as enforceOrigin.
+				r.Use(s.limitWrites)
 
 				// Deleting is soft on both resources, so both carry a restore and
 				// both lists take ?deleted=true for the Terhapus view. The bulk

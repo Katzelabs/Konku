@@ -68,6 +68,18 @@ type Config struct {
 	// host that cannot verify them, and the mail is already delivered by the
 	// time anyone notices.
 	PublicBaseURL string
+	// Per-account quotas (07 L8). Not monetisation: an unbounded free write
+	// path on a shared VPS is an outage waiting for one bad actor, and the pgx
+	// pool is capped at 10 for the sake of every other project on the box
+	// (D-028).
+	//
+	// Configurable because they are an operational knob — the right value
+	// depends on the box, and an operator should not have to rebuild to change
+	// one. The defaults are far past any plausible personal knowledge base: a
+	// limit a real person trips has made the product worse (hard rule 7).
+	MaxNotes           int
+	MaxCards           int
+	MaxWritesPerMinute int
 	// MetricsAddr is where /metrics is served, on its own listener.
 	//
 	// Bound to loopback by default and never to 0.0.0.0: pool saturation and
@@ -89,6 +101,9 @@ func Load() (Config, error) {
 		SentryRelease:        env("SENTRY_RELEASE", "dev"),
 		SentryEnvironment:    env("SENTRY_ENVIRONMENT", "development"),
 		SMTPURL:              os.Getenv("SMTP_URL"),
+		MaxNotes:             envInt("MAX_NOTES", 5_000),
+		MaxCards:             envInt("MAX_CARDS", 20_000),
+		MaxWritesPerMinute:   envInt("MAX_WRITES_PER_MINUTE", 300),
 		MailFrom:             os.Getenv("MAIL_FROM"),
 		PublicBaseURL:        env("PUBLIC_BASE_URL", "http://localhost:5173"),
 		// LookupEnv, not env(): METRICS_ADDR is documented as "empty disables
@@ -131,6 +146,18 @@ func Load() (Config, error) {
 		}
 	}
 	return c, nil
+}
+
+// envInt reads a positive integer setting, falling back on anything unset,
+// unparseable or non-positive. A zero or negative quota would refuse every
+// write, so a typo in an environment variable must not be able to take the
+// service down more thoroughly than deleting the variable would.
+func envInt(key string, fallback int) int {
+	v, err := strconv.Atoi(os.Getenv(key))
+	if err != nil || v <= 0 {
+		return fallback
+	}
+	return v
 }
 
 func env(key, fallback string) string {

@@ -129,6 +129,14 @@ func requireRLSEnforcedRole(t *testing.T, st *store.Store) {
 
 func newApp(t *testing.T) *testApp {
 	t.Helper()
+	return newAppWith(t, config.Config{Dev: true, SessionTTL: time.Hour, AllowSignup: true})
+}
+
+// newAppWith builds the same server with a different configuration, which is
+// how the quota tests get limits small enough to reach without writing five
+// thousand notes (07 L8).
+func newAppWith(t *testing.T, cfg config.Config) *testApp {
+	t.Helper()
 
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
@@ -146,10 +154,6 @@ func newApp(t *testing.T) *testApp {
 	}
 	requireRLSEnforcedRole(t, st)
 
-	// AllowSignup is on so the signup route exists. Everything else in the
-	// suite predates it and is unaffected: the route is additive, and
-	// seed-user-style accounts are created verified.
-	cfg := config.Config{Dev: true, SessionTTL: time.Hour, AllowSignup: true}
 	svc := auth.NewService(st, cfg.SessionTTL)
 	mailer := &fakeMailer{}
 

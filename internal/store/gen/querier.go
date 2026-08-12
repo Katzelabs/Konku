@@ -41,6 +41,11 @@ type Querier interface {
 	ClearNoteCategories(ctx context.Context, arg ClearNoteCategoriesParams) error
 	CountCards(ctx context.Context, userID uuid.UUID) (int64, error)
 	CountDueCards(ctx context.Context, arg CountDueCardsParams) (int64, error)
+	CountLiveCards(ctx context.Context, userID uuid.UUID) (int64, error)
+	// Quotas (07 L8). Live rows only: the cap is the number of things the person
+	// actually has, so emptying Terhapus is not a prerequisite for writing again.
+	// What bounds create-and-delete churn is the per-user write limiter, not this.
+	CountLiveNotes(ctx context.Context, userID uuid.UUID) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	// attempt_date is the client's LOCAL YYYY-MM-DD, passed in rather than derived
 	// from now(), for the same reason as focus_sessions.session_date: an attempt

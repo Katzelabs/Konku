@@ -22,6 +22,7 @@ type metrics struct {
 	registry  *prometheus.Registry
 	requests  *prometheus.CounterVec
 	durations *prometheus.HistogramVec
+	quotas    *prometheus.CounterVec
 }
 
 func newMetrics(st *store.Store) *metrics {
@@ -45,9 +46,18 @@ func newMetrics(st *store.Store) *metrics {
 			// everything in the first one and make p50 meaningless.
 			Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
 		}, []string{"route", "method"}),
+		// Quota rejections (07 L8). Labelled by which limit was hit and
+		// deliberately not by user: a per-account label would mint a time
+		// series per user, and counting other people's behaviour individually
+		// is the aggregation D-066 rules out. What this answers is "are the
+		// limits set wrong", which is a question about the limits.
+		quotas: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "konku_quota_rejections_total",
+			Help: "Requests refused for exceeding a per-account limit, by quota.",
+		}, []string{"quota"}),
 	}
 
-	reg.MustRegister(m.requests, m.durations)
+	reg.MustRegister(m.requests, m.durations, m.quotas)
 	reg.MustRegister(collectors.NewGoCollector())
 	reg.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	reg.MustRegister(newPoolCollector(st))
@@ -78,6 +88,16 @@ func (m *metrics) middleware(next http.Handler) http.Handler {
 // localhost (see cmd/konku), not on the application router: a separate socket
 // cannot be exposed by a Caddy misconfiguration, and middleware that has to
 // remember to exclude a path is one edit away from not excluding it.
+// quotaRejected counts one refusal against a named limit (07 L8).
+//
+// A rising count is not necessarily an attack — it is first evidence that a
+// limit is set too low for the way the product is actually used, which is the
+// failure mode worth catching, since a quota a real person trips has made the
+// product worse (hard rule 7).
+func (m *metrics) quotaRejected(quota string) {
+	m.quotas.WithLabelValues(quota).Inc()
+}
+
 func (m *metrics) handler() http.Handler {
 	return promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{
 		ErrorHandling: promhttp.ContinueOnError,

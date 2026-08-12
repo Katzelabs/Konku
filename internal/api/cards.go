@@ -144,6 +144,9 @@ func (s *Server) handleCreateCard(w http.ResponseWriter, r *http.Request) {
 	if !validCard(w, front, back) {
 		return
 	}
+	if !s.withinCardQuota(w, r, user.ID) {
+		return
+	}
 	domainID, ok := s.parseDomain(w, r, req.DomainID)
 	if !ok {
 		return

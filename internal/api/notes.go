@@ -106,6 +106,11 @@ func (s *Server) handleCreateNote(w http.ResponseWriter, r *http.Request) {
 	if !s.validNote(w, title, content) {
 		return
 	}
+	// Checked on create only. A restore returns a row that already exists and
+	// already counted, and an edit changes no count at all (07 L8).
+	if !s.withinNoteQuota(w, r, user.ID) {
+		return
+	}
 	domainID, ok := s.parseDomain(w, r, req.DomainID)
 	if !ok {
 		return
