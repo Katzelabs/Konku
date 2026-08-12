@@ -117,6 +117,19 @@ func run() error {
 		}()
 	}
 
+	// Emptying Terhapus, daily.
+	//
+	// In the process rather than in a cron on the box, deliberately: a cron is
+	// a second thing to install and a second thing to notice has stopped, and
+	// the failure mode of forgetting it is the unbounded growth this job
+	// exists to prevent. It needs no coordination — one container, and a
+	// second one purging the same rows would find nothing to do.
+	//
+	// The first run is delayed rather than fired at boot, so a crash loop
+	// cannot turn into a delete loop.
+	purgeStop := make(chan struct{})
+	go runPurge(st, purgeStop)
+
 	// Shut down cleanly so in-flight requests finish and, later, the pgx pool
 	// closes rather than leaking connections on the shared instance.
 	shutdownDone := make(chan struct{})
@@ -135,6 +148,7 @@ func run() error {
 			// worth delaying the shutdown of the thing serving users.
 			_ = metricsSrv.Close()
 		}
+		close(purgeStop)
 		if err := srv.Shutdown(ctx); err != nil {
 			slog.Error("graceful shutdown failed", "error", err)
 		}
@@ -147,4 +161,52 @@ func run() error {
 
 	<-shutdownDone
 	return nil
+}
+
+// purgeInterval is how often Terhapus is emptied of anything past the window.
+//
+// Daily. The window is 30 days, so the exact hour a row leaves is not
+// meaningful, and a sweep that runs more often would only mean more
+// transactions for the same result.
+const purgeInterval = 24 * time.Hour
+
+// purgeStartupDelay keeps the first sweep away from boot.
+//
+// A destructive job that runs the instant the process starts turns a crash
+// loop into a delete loop, and gives an operator watching a bad deploy no
+// window to stop the container before it acts.
+const purgeStartupDelay = 5 * time.Minute
+
+// runPurge empties Terhapus on a timer until the process shuts down.
+//
+// Failures are logged and the loop continues: a purge that could not run today
+// is not a reason to stop trying tomorrow, and it is emphatically not a reason
+// to take the service down.
+func runPurge(st *store.Store, stop <-chan struct{}) {
+	timer := time.NewTimer(purgeStartupDelay)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-stop:
+			return
+		case <-timer.C:
+		}
+		timer.Reset(purgeInterval)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		result, err := st.PurgeTrash(ctx, store.TrashWindow)
+		cancel()
+
+		if err != nil {
+			slog.Error("purging deleted notes and cards failed",
+				"notes", result.Notes, "cards", result.Cards, "error", err)
+			continue
+		}
+		// Logged even when it removed nothing, so "the job is running" is
+		// answerable without a metric. Counts only — no titles, no ids beyond
+		// the account count (rule 10).
+		slog.Info("purged deleted notes and cards",
+			"notes", result.Notes, "cards", result.Cards, "accounts", result.Accounts)
+	}
 }

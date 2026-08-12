@@ -116,7 +116,7 @@ export function CardPeek({
         open={confirming}
         onOpenChange={setConfirming}
         title="Hapus kartu ini?"
-        description="Kartu pindah ke Terhapus. Jadwal dan riwayat ulangannya tetap utuh, jadi bisa dikembalikan kapan saja."
+        description="Kartu pindah ke Terhapus. Jadwal dan riwayat ulangannya tetap utuh. Kartu yang pernah kamu ulang bisa dikembalikan kapan saja; yang belum pernah, selama 30 hari."
         confirmLabel="Hapus"
         pending={remove.isPending}
         onConfirm={() =>

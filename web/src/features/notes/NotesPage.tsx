@@ -132,7 +132,7 @@ export default function NotesPage() {
         title={deleted ? 'Terhapus' : 'Catatan'}
         description={
           deleted
-            ? 'Catatan yang kamu hapus. Bisa dikembalikan kapan saja.'
+            ? 'Catatan yang kamu hapus. Bisa dikembalikan selama 30 hari, setelah itu hilang permanen.'
             : 'Tulis dulu, rapikan nanti.'
         }
         meta={
@@ -316,7 +316,7 @@ export default function NotesPage() {
         open={confirming}
         onOpenChange={setConfirming}
         title={selection.count === 1 ? 'Hapus catatan ini?' : `Hapus ${selection.count} catatan?`}
-        description="Catatan pindah ke Terhapus beserta kategorinya, dan bisa dikembalikan kapan saja."
+        description="Catatan pindah ke Terhapus beserta kategorinya, dan bisa dikembalikan selama 30 hari."
         confirmLabel="Hapus"
         pending={removeMany.isPending}
         onConfirm={confirmDelete}

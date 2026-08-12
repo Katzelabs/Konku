@@ -272,7 +272,7 @@ export default function NoteEditorPage() {
         open={confirming}
         onOpenChange={setConfirming}
         title="Hapus catatan ini?"
-        description="Catatan pindah ke Terhapus beserta kategorinya, dan bisa dikembalikan kapan saja."
+        description="Catatan pindah ke Terhapus beserta kategorinya, dan bisa dikembalikan selama 30 hari."
         confirmLabel="Hapus"
         pending={remove.isPending}
         onConfirm={() =>

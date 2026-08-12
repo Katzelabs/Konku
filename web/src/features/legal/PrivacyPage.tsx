@@ -94,6 +94,12 @@ export default function PrivacyPage() {
       <ul>
         <li>Selama akun kamu ada.</li>
         <li>
+          Catatan dan kartu yang kamu hapus pindah ke <strong>Terhapus</strong> dan bisa
+          dikembalikan selama <strong>30 hari</strong>. Setelah itu benar-benar dihapus.
+          Kartu yang pernah kamu ulang dikecualikan — kartunya tetap disimpan supaya
+          riwayat belajarmu tidak menunjuk ke sesuatu yang sudah tidak ada.
+        </li>
+        <li>
           Kalau kamu <strong>menghapus akun</strong>, semua baris milik akun itu hilang
           saat itu juga — bukan ditandai terhapus, tapi benar-benar dihapus. Alamat
           emailnya bisa dipakai mendaftar lagi setelahnya.

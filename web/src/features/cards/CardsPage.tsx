@@ -118,7 +118,7 @@ export default function CardsPage() {
         title={deleted ? 'Terhapus' : 'Kartu'}
         description={
           deleted
-            ? 'Kartu yang kamu hapus. Dikembalikan lengkap dengan riwayat ulangannya.'
+            ? 'Kartu yang kamu hapus. Dikembalikan lengkap dengan riwayat ulangannya. Kartu yang belum pernah diulang hilang permanen setelah 30 hari.'
             : 'Satu pertanyaan, satu jawaban. Ditulis di sini, diulang di layar ulangan.'
         }
         meta={!isPending && <span>{cards.length} kartu</span>}
@@ -325,7 +325,7 @@ export default function CardsPage() {
         open={confirming}
         onOpenChange={setConfirming}
         title={selection.count === 1 ? 'Hapus kartu ini?' : `Hapus ${selection.count} kartu?`}
-        description="Kartu pindah ke Terhapus. Jadwal dan riwayat ulangannya tetap utuh, jadi bisa dikembalikan kapan saja."
+        description="Kartu pindah ke Terhapus. Jadwal dan riwayat ulangannya tetap utuh. Kartu yang pernah kamu ulang bisa dikembalikan kapan saja; yang belum pernah, selama 30 hari."
         confirmLabel="Hapus"
         pending={removeMany.isPending}
         onConfirm={confirmDelete}

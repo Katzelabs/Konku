@@ -838,6 +838,56 @@ and it carries its own risk (D-067).
 
 ---
 
+### D-069 — Terhapus empties after 30 days, except for anything ever studied *(amends D-019, D-056)*
+
+Soft delete meant nothing ever actually left the database. That was right for
+one account and wrong the moment anyone can sign up: the quota in `07` L8
+counts **live** rows, so a create-and-delete loop grows the tables without ever
+meeting a limit. The write rate limiter bounds how fast; nothing bounded the
+total.
+
+**Notes and cards deleted more than 30 days ago are removed for good**, by a
+job inside the server process that runs daily.
+
+**A card that was ever reviewed, or ever appeared in an exam attempt, is kept
+indefinitely** — the window does not apply to it. This is the part worth
+defending. `review_logs` and `exam_attempt_cards` deliberately carry no foreign
+key to `cards` (D-050), so the database would happily let a purge orphan them:
+retention evidence would survive pointing at nothing, and a finished attempt
+would render a question with no text. Only the predicate in the query prevents
+that. The history is the part of a card that matters, and D-029's "cannot be
+reconstructed retroactively" applies to what the history *refers to* as much as
+to the history itself.
+
+What the purge is actually for is the other kind of card — created, never
+studied, deleted. That is exactly the churn an abusive script produces and
+exactly the row nobody will miss.
+
+**The window is stated in the UI, and that is not optional.** Every delete
+dialog, both Terhapus views and the privacy policy now say 30 days; the card
+copy says both halves, because "kartu yang pernah kamu ulang bisa dikembalikan
+kapan saja" is a different promise from the one made about a note. A trash that
+empties itself is ordinary. A trash that empties itself *silently* would be the
+disappearance this product exists to prevent, and the copy is what makes the
+difference between the two.
+
+**In the process, not in a cron.** A cron is a second thing to install and a
+second thing to notice has stopped, and the failure mode of forgetting it is
+precisely the unbounded growth the job exists to prevent. The first sweep is
+delayed five minutes after boot so a crash loop cannot become a delete loop.
+
+**Rejected:** counting deleted rows against the quota instead. It bounds
+storage with no new machinery, and it makes emptying Terhapus a prerequisite
+for writing again — friction on capture, which hard rule 7 puts above almost
+everything.
+
+**Rejected:** purging cards regardless of history and letting past attempts
+render blanks. The `LEFT JOIN` in the attempt query means the score survives,
+so this is *nearly* harmless — but "nearly" is doing the work of destroying the
+question text of an exam somebody sat, to save a row.
+
+---
+
 ## Open questions
 
 None blocking. Deferred details, intentionally left until the feature is being built:

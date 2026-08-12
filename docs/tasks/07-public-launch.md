@@ -501,9 +501,10 @@ Decisions:
 
 - **The counts are over live rows**, so emptying Terhapus is not a
   prerequisite for writing again. What bounds create-and-delete churn is the
-  write limiter, not the count. **Known gap:** soft-deleted rows still
-  accumulate, so a determined loop grows the table within the rate limit. A
-  purge of long-deleted rows is the real fix and is not written yet.
+  write limiter, not the count. ~~Known gap: soft-deleted rows still
+  accumulate.~~ **Closed** — Terhapus now empties after 30 days (D-069), so
+  the total is bounded as well as the rate. Cards with review history are
+  exempt and kept indefinitely.
 - **The write limiter is keyed by account, not by IP.** The IP limiters guard
   the paths where there is no account yet; behind a phone network or an office
   NAT an IP is shared by strangers. Reads are untouched — they neither grow
