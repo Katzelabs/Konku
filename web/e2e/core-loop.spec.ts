@@ -63,7 +63,12 @@ test.describe('the core loop', () => {
     // it forward. Everything after this point is the real interface.
     makeCardsDue(email)
 
-    await page.goto('/review')
+    // /review/due, not /review: since D-075 the bare route is the review-sets
+    // home and the due queue moved under it. This test is about recall before
+    // reveal and about a rating advancing the queue, so it goes straight to
+    // the screen that does both rather than asserting the new landing page's
+    // shape as a side effect.
+    await page.goto('/review/due')
     await expect(page.getByText('Ibu kota Indonesia?')).toBeVisible()
 
     // Recall before reveal is the whole design: the answer must not be on

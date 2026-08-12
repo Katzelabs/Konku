@@ -75,6 +75,7 @@ export default function ResetPasswordPage() {
                 {...a11y}
                 {...form.field('password')}
                 autoComplete="new-password"
+                required
                 autoFocus
               />
             )}
@@ -96,7 +97,9 @@ export default function ResetPasswordPage() {
               <PasswordInput
                 {...a11y}
                 {...form.field('confirmPassword')}
+                placeholder="Ketik lagi kata sandi di atas"
                 autoComplete="new-password"
+                required
               />
             )}
           </Field>

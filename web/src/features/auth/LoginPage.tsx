@@ -36,7 +36,9 @@ export default function LoginPage() {
                 {...a11y}
                 {...form.field('email')}
                 type="email"
+                placeholder="nama@email.com"
                 autoComplete="username"
+                required
                 autoFocus
               />
             )}
@@ -47,7 +49,13 @@ export default function LoginPage() {
               <PasswordInput
                 {...a11y}
                 {...form.field('password')}
+                // Deliberately bare. There is nothing useful to say into a
+                // login password box — you either know it or you are on the
+                // wrong screen — and a row of fake dots as a placeholder is
+                // the one hint that can be mistaken for a value already
+                // filled in.
                 autoComplete="current-password"
+                required
               />
             )}
           </Field>

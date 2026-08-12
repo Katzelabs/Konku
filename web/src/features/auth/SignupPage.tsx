@@ -72,33 +72,60 @@ export default function SignupPage() {
                 <Input
                   {...a11y}
                   {...form.field('firstName')}
+                  // An example, not a restatement of the label. What it
+                  // actually teaches is the shape asked for: one name, not the
+                  // full name someone would otherwise type into the first box
+                  // and then have to cut in half.
+                  placeholder="Sena"
                   autoComplete="given-name"
+                  required
                   autoFocus
                 />
               )}
             </Field>
 
             {/*
-              Optional, and marked as optional in words. Plenty of people have
-              one name, and a form that refuses to accept that is a form
-              telling them they are wrong about their own name.
+              Optional, and it stays optional — plenty of people have one name,
+              and a form that refuses to accept that is a form telling them
+              they are wrong about their own name.
+
+              Said in the placeholder rather than in the label, and backed by
+              the *absence* of `required` on this one input. That second half
+              matters: a placeholder is not reliably announced when a label is
+              already present, so on its own it would drop the information for
+              anyone not looking at the screen. `required` on the other four is
+              what makes this one's silence mean something.
             */}
             <Field
               id="lastName"
               label="Nama belakang"
-              optional
               error={form.errors.lastName}
               className="flex-1"
             >
               {(a11y) => (
-                <Input {...a11y} {...form.field('lastName')} autoComplete="family-name" />
+                <Input
+                  {...a11y}
+                  {...form.field('lastName')}
+                  placeholder="Opsional"
+                  autoComplete="family-name"
+                />
               )}
             </Field>
           </div>
 
           <Field id="email" label="Email" error={form.errors.email}>
             {(a11y) => (
-              <Input {...a11y} {...form.field('email')} type="email" autoComplete="username" />
+              <Input
+                {...a11y}
+                {...form.field('email')}
+                type="email"
+                // The format, shown rather than described. This is the field
+                // people mistype, and "nama@email.com" answers the question
+                // before the schema has to.
+                placeholder="nama@email.com"
+                autoComplete="username"
+                required
+              />
             )}
           </Field>
 
@@ -113,8 +140,20 @@ export default function SignupPage() {
             */
             hint={`Minimal ${MIN_PASSWORD} karakter. Kalimat yang panjang lebih aman dan lebih mudah diingat.`}
           >
+            {/*
+              No placeholder here, and that is the considered choice rather
+              than an omission. The rule already sits under the field, where it
+              stays readable *while* you type — a placeholder saying the same
+              thing would vanish at the first keystroke, which is exactly when
+              someone is checking whether they have reached twelve characters.
+            */}
             {(a11y) => (
-              <PasswordInput {...a11y} {...form.field('password')} autoComplete="new-password" />
+              <PasswordInput
+                {...a11y}
+                {...form.field('password')}
+                autoComplete="new-password"
+                required
+              />
             )}
           </Field>
 
@@ -127,7 +166,9 @@ export default function SignupPage() {
               <PasswordInput
                 {...a11y}
                 {...form.field('confirmPassword')}
+                placeholder="Ketik lagi kata sandi di atas"
                 autoComplete="new-password"
+                required
               />
             )}
           </Field>

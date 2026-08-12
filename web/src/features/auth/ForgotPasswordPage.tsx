@@ -64,13 +64,27 @@ export default function ForgotPasswordPage() {
           noValidate
           className="flex flex-col gap-4"
         >
-          <Field id="email" label="Email" error={form.errors.email}>
+          {/*
+            The hint is the whole point of this one. Someone here has already
+            forgotten something, and the failure this screen actually produces
+            is a link sent to a second address they also own — which answers
+            204 like everything else, so nothing on screen ever tells them why
+            no mail arrived.
+          */}
+          <Field
+            id="email"
+            label="Email"
+            hint="Alamat yang kamu pakai waktu mendaftar."
+            error={form.errors.email}
+          >
             {(a11y) => (
               <Input
                 {...a11y}
                 {...form.field('email')}
                 type="email"
+                placeholder="nama@email.com"
                 autoComplete="username"
+                required
                 autoFocus
               />
             )}

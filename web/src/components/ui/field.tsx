@@ -33,7 +33,6 @@ export function Field({
   label,
   hint,
   error,
-  optional,
   className,
   children,
 }: {
@@ -41,8 +40,6 @@ export function Field({
   label: string
   hint?: ReactNode
   error?: string
-  /** Marks the field as skippable, in words rather than by absence of an asterisk. */
-  optional?: boolean
   className?: string
   children: (control: FieldControlProps) => ReactNode
 }) {
@@ -52,16 +49,14 @@ export function Field({
 
   return (
     <div className={cn('flex flex-col gap-1.5', className)}>
-      <Label htmlFor={id}>
-        {label}
-        {/*
-          The convention is inverted on purpose: optional fields are marked and
-          required ones are not. A form where four of five fields carry a red
-          asterisk has taught the reader nothing except that asterisks are
-          decoration.
-        */}
-        {optional && <span className="ml-1.5 font-normal text-subtle-fg">(opsional)</span>}
-      </Label>
+      {/*
+        The label is the label and nothing else — no asterisk, no "(opsional)".
+        Which fields may be skipped is carried by the control instead: `required`
+        on the ones that are, which assistive tech announces, and a placeholder
+        on the one that is not. A form where four of five labels carry a marker
+        has taught the reader only that markers are decoration.
+      */}
+      <Label htmlFor={id}>{label}</Label>
 
       {children({
         id,

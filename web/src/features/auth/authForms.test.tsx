@@ -164,6 +164,51 @@ describe('signup validation', () => {
   })
 })
 
+describe('which fields may be skipped', () => {
+  /*
+   * The label used to say "(opsional)" and no longer does — it is carried by
+   * the placeholder and by `required` on everything else. That split is worth
+   * a test precisely because the visible half and the announced half are now
+   * different attributes: deleting either one leaves a form that still looks
+   * fine to whoever made the change.
+   */
+  it('marks every required field required, and the last name not', async () => {
+    renderAt(<SignupPage />)
+
+    for (const label of ['Nama depan', 'Email', 'Kata sandi', 'Ulangi kata sandi']) {
+      expect(screen.getByLabelText(label, { exact: true })).toBeRequired()
+    }
+
+    // The one that is not. A placeholder alone would not survive here: it is
+    // not reliably announced once a label exists, so this absence is what
+    // tells a screen reader the field can be skipped.
+    expect(screen.getByLabelText('Nama belakang')).not.toBeRequired()
+  })
+
+  it('says so on screen too, where the absence of an attribute is invisible', async () => {
+    renderAt(<SignupPage />)
+
+    expect(screen.getByLabelText('Nama belakang')).toHaveAttribute(
+      'placeholder',
+      'Opsional',
+    )
+  })
+
+  it('still validates through the schema rather than the browser', async () => {
+    // `required` on an input inside a form that is not `noValidate` would hand
+    // validation back to the browser: its own bubble, its own language, one
+    // field at a time, and no way to say "kata sandinya belum sama". The form
+    // carries noValidate for exactly this reason, and adding `required`
+    // attributes is the change most likely to quietly undo it.
+    renderAt(<SignupPage />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Buat akun' }))
+
+    expect(await screen.findByText('Nama depan wajib diisi.')).toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
 describe('password reveal', () => {
   it('starts hidden and toggles', async () => {
     renderAt(<LoginPage />)
