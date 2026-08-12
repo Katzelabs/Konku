@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "e2e:dev-proxy": "playwright test --config playwright.dev-proxy.config.ts"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",

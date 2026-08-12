@@ -6,7 +6,7 @@
 #   Go            vet, the purity rule, unit + integration tests, govulncheck
 #   sqlc drift    generated code still matches the queries
 #   Frontend      npm audit, typecheck, unit tests, production build
-#   End-to-end    the core loop against the built binary
+#   End-to-end    the core loop against the built binary, then the dev proxy
 #   Docker image  a broken Dockerfile is caught on the PR that broke it
 #
 # The two database jobs connect as the non-owner `konku_app`, because RLS is
@@ -258,6 +258,18 @@ jobs:
       # rather than the dev server.
       - name: playwright
         run: npx playwright test
+        working-directory: web
+
+      # The dev-server tier. The suite above drives the built binary on
+      # purpose, which means nothing in it can see a Vite proxy that rewrites
+      # headers the API decides on — and one did, turning every POST, PUT and
+      # DELETE in development into a 403. See playwright.dev-proxy.config.ts.
+      #
+      # Cheap enough to be unconditional: two servers, two tests, a few
+      # seconds. It runs after the main suite because that one has already
+      # migrated the database and installed the browser.
+      - name: playwright (dev proxy)
+        run: npx playwright test --config playwright.dev-proxy.config.ts
         working-directory: web
 
       - uses: actions/upload-artifact@v4

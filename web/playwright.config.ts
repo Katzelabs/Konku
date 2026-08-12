@@ -13,6 +13,10 @@ import { defineConfig, devices } from '@playwright/test'
  * the SPA fallback, the strict CSP, and the origin check — none of which exist
  * in front of `vite dev`. A suite run against the dev server would pass on a
  * build that cannot serve itself.
+ *
+ * The inverse is equally true, so it has its own tier: this suite stays green
+ * on a dev server nobody can POST through, which is a state the project has
+ * actually been in. See playwright.dev-proxy.config.ts.
  */
 
 const PORT = 8099
