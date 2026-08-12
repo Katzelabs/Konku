@@ -50,10 +50,11 @@ Raw palette classes (`bg-slate-100`, `text-red-500`, `#4F46E5`) in a feature
 folder are a bug in `theme.css`, not a shortcut. If a screen needs something the
 system does not have, add it to the system.
 
-The exception is **domain colours**, which are user data — an arbitrary
-`#RRGGBB` the user picked in the domains UI. Those arrive as inline `style` on
-`<DomainDot>` and nowhere else. The system palette is deliberately low-chroma so
-that those dots are the most saturated thing on any screen.
+The exception is **domain and category colours**, which are user data — an
+arbitrary `#RRGGBB` the user picked in Pengaturan (D-074). Those arrive as
+inline `style` on `<DomainDot>` and nowhere else. The system palette is
+deliberately low-chroma so that those dots are the most saturated thing on any
+screen.
 
 ---
 
@@ -152,7 +153,8 @@ and `Switch`. Everything else is markup.
 | `EmptyState` | See below. |
 | `PageHeader` | `title`, `description`, `meta`, `actions`. Only one action may be `primary`. |
 | `Markdown` `MarkdownInline` | `react-markdown` + `remark-gfm`, every element mapped to tokens by hand. **Never `innerHTML`, never `rehype-raw`** — an agent writes notes via MCP in v0.3, so embedded HTML would be a standing XSS (D-018). No typography plugin: it ships its own colour and spacing scale, which is a second source of truth. |
-| `CategoryChip` `CategoryChips` `CategoryPicker` | Shared labels for notes and cards (D-055). **No colour** — domain colour is the one colour signal in a row, and a second palette competing with it turns a list into confetti. The picker creates on type, because being sent elsewhere to define a label first is the friction that stops things being captured (hard rule 7). |
+| `CategoryChip` `CategoryChips` `CategoryPicker` | Shared labels for notes and cards (D-055). **Colour as a dot, never as a fill** (D-074) — a tinted chip beside a domain badge is the confetti D-054 rejected, so the chip stays a neutral outline and wears the same 10px mark a domain does. The picker creates on type, because being sent elsewhere to define a label first is the friction that stops things being captured (hard rule 7). |
+| `ColorPicker` | Six muted swatches plus a free `#RRGGBB` field. Shared by the domain and category editors — one row, so the two cannot drift. |
 | `ViewToggle` + `useViewMode` | Grid or list for the notes and cards indexes. State lives in `?view=` beside `?q=`, with `localStorage` only as a fallback, so a filtered grid is a link you can reload into. |
 | `PeekPanel` + `usePeekMode` + `lib/peek-route` | Preview one item over the list it came from — `side`, `center` or `full`. **The peek is a URL**, not component state: opening one navigates to `/notes/:id` and carries the list's location in history state, so App renders the main routes against *that* while the panel renders against the real one. Back closes it, the link is copyable, and a URL opened cold has no history state so it falls through to the full-page editor — which is right, since a peek only means something over a list you were already on. Opening a second row replaces rather than pushes, so Back returns to the list, not through every preview. **Side is deliberately not a modal**: no overlay, no focus trap, no scroll lock, so the list stays live and clicking another row swaps the panel instead of dismissing it. That is the entire reason to peek rather than navigate. Escape still closes it. Center *does* cover the list, so it gets Radix Dialog. `full` never reaches the component — the caller navigates. Side peek insets the page content from `xl` rather than covering it, because clicking a covered row to swap the preview is the point. |
 | `PropertyBar` `PropertyRow` `DomainProperty` `CategoryProperty` | An item's domain and categories, **above its title**. Borderless, label in subtle grey, edges only on hover: a row of boxed form fields above a title reads as a form you must complete before you are allowed to write, which is the friction hard rule 7 exists to remove. `CategoryProperty` expands its picker inline rather than inside a dropdown — Radix menus own typeahead, and typing is the whole interaction. |

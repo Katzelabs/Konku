@@ -1,16 +1,14 @@
-import { useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { CircleCheck, MailWarning } from 'lucide-react'
 import { Button } from '../../components/ui/button'
 import { Card } from '../../components/ui/card'
-import { Input } from '../../components/ui/input'
-import { Label } from '../../components/ui/label'
+import { Field } from '../../components/ui/field'
 import { Notice } from '../../components/ui/notice'
+import { PasswordInput } from '../../components/ui/password-input'
+import { useZodForm } from '../../lib/useZodForm'
+import { MIN_PASSWORD, resetSchema } from './schemas'
 import { useResetPassword } from './useAuth'
 import { AuthLayout } from './AuthLayout'
-
-/** Matches minPasswordLength in the API and in `konku seed-user`. */
-const MIN_PASSWORD = 12
 
 /**
  * The page the reset link lands on.
@@ -23,13 +21,9 @@ const MIN_PASSWORD = 12
 export default function ResetPasswordPage() {
   const [params] = useSearchParams()
   const token = params.get('token') ?? ''
-  const [password, setPassword] = useState('')
   const reset = useResetPassword()
 
-  function onSubmit(e: FormEvent) {
-    e.preventDefault()
-    reset.mutate({ token, password })
-  }
+  const form = useZodForm(resetSchema, { password: '', confirmPassword: '' })
 
   if (!token) {
     return (
@@ -65,25 +59,47 @@ export default function ResetPasswordPage() {
   return (
     <AuthLayout title="Buat kata sandi baru">
       <Card className="p-6">
-        <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="password">Kata sandi baru</Label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={MIN_PASSWORD}
-              autoComplete="new-password"
-              autoFocus
-              aria-describedby="password-hint"
-            />
-            <p id="password-hint" className="text-sm text-muted-fg">
-              Minimal {MIN_PASSWORD} karakter. Kalimat yang panjang lebih aman dan lebih
-              mudah diingat.
-            </p>
-          </div>
+        <form
+          onSubmit={form.handleSubmit(({ password }) => reset.mutate({ token, password }))}
+          noValidate
+          className="flex flex-col gap-4"
+        >
+          <Field
+            id="password"
+            label="Kata sandi baru"
+            error={form.errors.password}
+            hint={`Minimal ${MIN_PASSWORD} karakter. Kalimat yang panjang lebih aman dan lebih mudah diingat.`}
+          >
+            {(a11y) => (
+              <PasswordInput
+                {...a11y}
+                {...form.field('password')}
+                autoComplete="new-password"
+                autoFocus
+              />
+            )}
+          </Field>
+
+          {/*
+            The confirm field matters more here than at signup, and for a
+            reason worth stating: this is the last screen before every session
+            is revoked. A typo at signup means trying again; a typo here means
+            being locked out of an account whose only recovery path is the link
+            that was just spent.
+          */}
+          <Field
+            id="confirmPassword"
+            label="Ulangi kata sandi baru"
+            error={form.errors.confirmPassword}
+          >
+            {(a11y) => (
+              <PasswordInput
+                {...a11y}
+                {...form.field('confirmPassword')}
+                autoComplete="new-password"
+              />
+            )}
+          </Field>
 
           {reset.isError && <Notice role="alert">{reset.error.message}</Notice>}
 

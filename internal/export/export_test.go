@@ -214,9 +214,10 @@ func TestTheDataFolderCoversTheRest(t *testing.T) {
 		"data/user.json", "data/settings.json", "data/domains.json",
 		"data/categories.json", "data/notes.json", "data/note-categories.json",
 		"data/cards.json", "data/card-categories.json", "data/schedules.json",
-		"data/reviews.json", "data/focus-sessions.json", "data/exams.json",
-		"data/exam-cards.json", "data/exam-attempts.json",
-		"data/exam-attempt-cards.json",
+		"data/reviews.json", "data/focus-sessions.json", "data/review-sets.json",
+		"data/review-set-domains.json", "data/review-set-categories.json",
+		"data/review-set-cards.json", "data/review-runs.json",
+		"data/review-run-cards.json",
 	} {
 		if _, ok := files[want]; !ok {
 			t.Errorf("%s is missing from the archive", want)

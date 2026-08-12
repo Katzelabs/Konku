@@ -133,7 +133,7 @@ func (q *Queries) ExportCards(ctx context.Context, userID uuid.UUID) ([]ExportCa
 }
 
 const exportCategories = `-- name: ExportCategories :many
-SELECT id, slug, label, archived_at, created_at
+SELECT id, slug, label, color, archived_at, created_at
 FROM categories
 WHERE user_id = $1
 ORDER BY created_at
@@ -143,10 +143,13 @@ type ExportCategoriesRow struct {
 	ID         uuid.UUID  `json:"id"`
 	Slug       string     `json:"slug"`
 	Label      string     `json:"label"`
+	Color      string     `json:"color"`
 	ArchivedAt *time.Time `json:"archived_at"`
 	CreatedAt  time.Time  `json:"created_at"`
 }
 
+// Colour travels with the archive (00011). It is a thing the user chose, and
+// an export that silently drops the choices they made is not the whole account.
 func (q *Queries) ExportCategories(ctx context.Context, userID uuid.UUID) ([]ExportCategoriesRow, error) {
 	rows, err := q.db.Query(ctx, exportCategories, userID)
 	if err != nil {
@@ -160,6 +163,7 @@ func (q *Queries) ExportCategories(ctx context.Context, userID uuid.UUID) ([]Exp
 			&i.ID,
 			&i.Slug,
 			&i.Label,
+			&i.Color,
 			&i.ArchivedAt,
 			&i.CreatedAt,
 		); err != nil {
@@ -209,170 +213,6 @@ func (q *Queries) ExportDomains(ctx context.Context, userID uuid.UUID) ([]Export
 			&i.SortOrder,
 			&i.ArchivedAt,
 			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const exportExamAttemptCards = `-- name: ExportExamAttemptCards :many
-SELECT attempt_id, card_id, position
-FROM exam_attempt_cards
-WHERE user_id = $1
-ORDER BY attempt_id, position
-`
-
-type ExportExamAttemptCardsRow struct {
-	AttemptID uuid.UUID `json:"attempt_id"`
-	CardID    uuid.UUID `json:"card_id"`
-	Position  int32     `json:"position"`
-}
-
-func (q *Queries) ExportExamAttemptCards(ctx context.Context, userID uuid.UUID) ([]ExportExamAttemptCardsRow, error) {
-	rows, err := q.db.Query(ctx, exportExamAttemptCards, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ExportExamAttemptCardsRow{}
-	for rows.Next() {
-		var i ExportExamAttemptCardsRow
-		if err := rows.Scan(&i.AttemptID, &i.CardID, &i.Position); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const exportExamAttempts = `-- name: ExportExamAttempts :many
-SELECT id, exam_id, started_at, finished_at, attempt_date, total_count,
-       correct_count
-FROM exam_attempts
-WHERE user_id = $1
-ORDER BY started_at
-`
-
-type ExportExamAttemptsRow struct {
-	ID           uuid.UUID  `json:"id"`
-	ExamID       uuid.UUID  `json:"exam_id"`
-	StartedAt    time.Time  `json:"started_at"`
-	FinishedAt   *time.Time `json:"finished_at"`
-	AttemptDate  time.Time  `json:"attempt_date"`
-	TotalCount   int32      `json:"total_count"`
-	CorrectCount int32      `json:"correct_count"`
-}
-
-func (q *Queries) ExportExamAttempts(ctx context.Context, userID uuid.UUID) ([]ExportExamAttemptsRow, error) {
-	rows, err := q.db.Query(ctx, exportExamAttempts, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ExportExamAttemptsRow{}
-	for rows.Next() {
-		var i ExportExamAttemptsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.ExamID,
-			&i.StartedAt,
-			&i.FinishedAt,
-			&i.AttemptDate,
-			&i.TotalCount,
-			&i.CorrectCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const exportExamCards = `-- name: ExportExamCards :many
-SELECT exam_id, card_id, position
-FROM exam_cards
-WHERE user_id = $1
-ORDER BY exam_id, position
-`
-
-type ExportExamCardsRow struct {
-	ExamID   uuid.UUID `json:"exam_id"`
-	CardID   uuid.UUID `json:"card_id"`
-	Position int32     `json:"position"`
-}
-
-func (q *Queries) ExportExamCards(ctx context.Context, userID uuid.UUID) ([]ExportExamCardsRow, error) {
-	rows, err := q.db.Query(ctx, exportExamCards, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ExportExamCardsRow{}
-	for rows.Next() {
-		var i ExportExamCardsRow
-		if err := rows.Scan(&i.ExamID, &i.CardID, &i.Position); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const exportExams = `-- name: ExportExams :many
-SELECT id, domain_id, title, description, selection, question_count,
-       time_limit_minutes, archived_at, created_at, updated_at
-FROM exams
-WHERE user_id = $1
-ORDER BY created_at
-`
-
-type ExportExamsRow struct {
-	ID               uuid.UUID  `json:"id"`
-	DomainID         *uuid.UUID `json:"domain_id"`
-	Title            string     `json:"title"`
-	Description      string     `json:"description"`
-	Selection        string     `json:"selection"`
-	QuestionCount    *int32     `json:"question_count"`
-	TimeLimitMinutes *int32     `json:"time_limit_minutes"`
-	ArchivedAt       *time.Time `json:"archived_at"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
-}
-
-func (q *Queries) ExportExams(ctx context.Context, userID uuid.UUID) ([]ExportExamsRow, error) {
-	rows, err := q.db.Query(ctx, exportExams, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ExportExamsRow{}
-	for rows.Next() {
-		var i ExportExamsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.DomainID,
-			&i.Title,
-			&i.Description,
-			&i.Selection,
-			&i.QuestionCount,
-			&i.TimeLimitMinutes,
-			&i.ArchivedAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -503,7 +343,7 @@ func (q *Queries) ExportNotes(ctx context.Context, userID uuid.UUID) ([]ExportNo
 
 const exportReviewLogs = `-- name: ExportReviewLogs :many
 SELECT id, card_id, rating, interval_before, interval_after, reviewed_at,
-       source, exam_attempt_id
+       source, run_id, format
 FROM review_logs
 WHERE user_id = $1
 ORDER BY reviewed_at
@@ -517,7 +357,8 @@ type ExportReviewLogsRow struct {
 	IntervalAfter  int32      `json:"interval_after"`
 	ReviewedAt     time.Time  `json:"reviewed_at"`
 	Source         string     `json:"source"`
-	ExamAttemptID  *uuid.UUID `json:"exam_attempt_id"`
+	RunID          *uuid.UUID `json:"run_id"`
+	Format         string     `json:"format"`
 }
 
 // The retention history, which is the one dataset here that cannot be
@@ -540,7 +381,249 @@ func (q *Queries) ExportReviewLogs(ctx context.Context, userID uuid.UUID) ([]Exp
 			&i.IntervalAfter,
 			&i.ReviewedAt,
 			&i.Source,
-			&i.ExamAttemptID,
+			&i.RunID,
+			&i.Format,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const exportReviewRunCards = `-- name: ExportReviewRunCards :many
+SELECT run_id, card_id, position, options, correct_index
+FROM review_run_cards
+WHERE user_id = $1
+ORDER BY run_id, position
+`
+
+type ExportReviewRunCardsRow struct {
+	RunID        uuid.UUID `json:"run_id"`
+	CardID       uuid.UUID `json:"card_id"`
+	Position     int32     `json:"position"`
+	Options      []string  `json:"options"`
+	CorrectIndex *int32    `json:"correct_index"`
+}
+
+// options and correct_index included: they are what the question actually
+// looked like, and a run's history without them is not the run.
+func (q *Queries) ExportReviewRunCards(ctx context.Context, userID uuid.UUID) ([]ExportReviewRunCardsRow, error) {
+	rows, err := q.db.Query(ctx, exportReviewRunCards, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ExportReviewRunCardsRow{}
+	for rows.Next() {
+		var i ExportReviewRunCardsRow
+		if err := rows.Scan(
+			&i.RunID,
+			&i.CardID,
+			&i.Position,
+			&i.Options,
+			&i.CorrectIndex,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const exportReviewRuns = `-- name: ExportReviewRuns :many
+SELECT id, set_id, started_at, finished_at, run_date, total_count,
+       correct_count
+FROM review_runs
+WHERE user_id = $1
+ORDER BY started_at
+`
+
+type ExportReviewRunsRow struct {
+	ID           uuid.UUID  `json:"id"`
+	SetID        uuid.UUID  `json:"set_id"`
+	StartedAt    time.Time  `json:"started_at"`
+	FinishedAt   *time.Time `json:"finished_at"`
+	RunDate      time.Time  `json:"run_date"`
+	TotalCount   int32      `json:"total_count"`
+	CorrectCount int32      `json:"correct_count"`
+}
+
+func (q *Queries) ExportReviewRuns(ctx context.Context, userID uuid.UUID) ([]ExportReviewRunsRow, error) {
+	rows, err := q.db.Query(ctx, exportReviewRuns, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ExportReviewRunsRow{}
+	for rows.Next() {
+		var i ExportReviewRunsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SetID,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.RunDate,
+			&i.TotalCount,
+			&i.CorrectCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const exportReviewSetCards = `-- name: ExportReviewSetCards :many
+SELECT set_id, card_id, position
+FROM review_set_cards
+WHERE user_id = $1
+ORDER BY set_id, position
+`
+
+type ExportReviewSetCardsRow struct {
+	SetID    uuid.UUID `json:"set_id"`
+	CardID   uuid.UUID `json:"card_id"`
+	Position int32     `json:"position"`
+}
+
+func (q *Queries) ExportReviewSetCards(ctx context.Context, userID uuid.UUID) ([]ExportReviewSetCardsRow, error) {
+	rows, err := q.db.Query(ctx, exportReviewSetCards, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ExportReviewSetCardsRow{}
+	for rows.Next() {
+		var i ExportReviewSetCardsRow
+		if err := rows.Scan(&i.SetID, &i.CardID, &i.Position); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const exportReviewSetCategories = `-- name: ExportReviewSetCategories :many
+SELECT set_id, category_id
+FROM review_set_categories
+WHERE user_id = $1
+ORDER BY set_id, category_id
+`
+
+type ExportReviewSetCategoriesRow struct {
+	SetID      uuid.UUID `json:"set_id"`
+	CategoryID uuid.UUID `json:"category_id"`
+}
+
+func (q *Queries) ExportReviewSetCategories(ctx context.Context, userID uuid.UUID) ([]ExportReviewSetCategoriesRow, error) {
+	rows, err := q.db.Query(ctx, exportReviewSetCategories, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ExportReviewSetCategoriesRow{}
+	for rows.Next() {
+		var i ExportReviewSetCategoriesRow
+		if err := rows.Scan(&i.SetID, &i.CategoryID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const exportReviewSetDomains = `-- name: ExportReviewSetDomains :many
+SELECT set_id, domain_id
+FROM review_set_domains
+WHERE user_id = $1
+ORDER BY set_id, domain_id
+`
+
+type ExportReviewSetDomainsRow struct {
+	SetID    uuid.UUID `json:"set_id"`
+	DomainID uuid.UUID `json:"domain_id"`
+}
+
+// The filters are part of the configuration, so an export that omitted them
+// would describe a set that draws from everything (07 L6: the archive is the
+// whole account, not a summary of it).
+func (q *Queries) ExportReviewSetDomains(ctx context.Context, userID uuid.UUID) ([]ExportReviewSetDomainsRow, error) {
+	rows, err := q.db.Query(ctx, exportReviewSetDomains, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ExportReviewSetDomainsRow{}
+	for rows.Next() {
+		var i ExportReviewSetDomainsRow
+		if err := rows.Scan(&i.SetID, &i.DomainID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const exportReviewSets = `-- name: ExportReviewSets :many
+SELECT id, title, description, selection, question_count,
+       time_limit_minutes, format, archived_at, created_at, updated_at
+FROM review_sets
+WHERE user_id = $1
+ORDER BY created_at
+`
+
+type ExportReviewSetsRow struct {
+	ID               uuid.UUID  `json:"id"`
+	Title            string     `json:"title"`
+	Description      string     `json:"description"`
+	Selection        string     `json:"selection"`
+	QuestionCount    *int32     `json:"question_count"`
+	TimeLimitMinutes *int32     `json:"time_limit_minutes"`
+	Format           string     `json:"format"`
+	ArchivedAt       *time.Time `json:"archived_at"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+}
+
+func (q *Queries) ExportReviewSets(ctx context.Context, userID uuid.UUID) ([]ExportReviewSetsRow, error) {
+	rows, err := q.db.Query(ctx, exportReviewSets, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ExportReviewSetsRow{}
+	for rows.Next() {
+		var i ExportReviewSetsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Description,
+			&i.Selection,
+			&i.QuestionCount,
+			&i.TimeLimitMinutes,
+			&i.Format,
+			&i.ArchivedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -554,7 +637,7 @@ func (q *Queries) ExportReviewLogs(ctx context.Context, userID uuid.UUID) ([]Exp
 
 const exportUser = `-- name: ExportUser :one
 
-SELECT id, email, created_at, email_verified_at
+SELECT id, email, first_name, last_name, created_at, email_verified_at
 FROM users
 WHERE id = $1
 `
@@ -562,6 +645,8 @@ WHERE id = $1
 type ExportUserRow struct {
 	ID              uuid.UUID  `json:"id"`
 	Email           string     `json:"email"`
+	FirstName       string     `json:"first_name"`
+	LastName        string     `json:"last_name"`
 	CreatedAt       time.Time  `json:"created_at"`
 	EmailVerifiedAt *time.Time `json:"email_verified_at"`
 }
@@ -585,12 +670,18 @@ type ExportUserRow struct {
 // live credential and a token hash is the shadow of one — neither is content
 // the user wrote, and putting them in a file that gets emailed around is a way
 // to lose an account, not a way to own your data.
+// The name is part of what the account holds about the person, so it is part
+// of what "everything we have on you" means (07 L6). Omitting it would make
+// the archive quietly incomplete in exactly the field a reader would check
+// first.
 func (q *Queries) ExportUser(ctx context.Context, id uuid.UUID) (ExportUserRow, error) {
 	row := q.db.QueryRow(ctx, exportUser, id)
 	var i ExportUserRow
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
+		&i.FirstName,
+		&i.LastName,
 		&i.CreatedAt,
 		&i.EmailVerifiedAt,
 	)

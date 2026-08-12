@@ -26,9 +26,19 @@ interface PeekBackground {
 interface PeekState {
   /** The real pathname while a peek is open, else null. */
   peekedPath: string | null
+  /**
+   * The list's location, while a peek is open.
+   *
+   * It is in context rather than read from `useLocation` because the list is
+   * rendered inside `<Routes location={background}>`, and React Router hands
+   * that override to everything below it. A component in the list therefore
+   * sees the list's own location — which is the entire point, and also why it
+   * cannot find the peek, or the background, by itself.
+   */
+  background: PeekBackground | null
 }
 
-const PeekContext = createContext<PeekState>({ peekedPath: null })
+const PeekContext = createContext<PeekState>({ peekedPath: null, background: null })
 
 /** Reads the background location out of history state, if there is one. */
 export function usePeekBackground(): PeekBackground | null {
@@ -39,12 +49,14 @@ export function usePeekBackground(): PeekBackground | null {
 
 export function PeekProvider({
   peekedPath,
+  background,
   children,
 }: {
   peekedPath: string | null
+  background: PeekBackground | null
   children: ReactNode
 }) {
-  const value = useMemo(() => ({ peekedPath }), [peekedPath])
+  const value = useMemo(() => ({ peekedPath, background }), [peekedPath, background])
   return <PeekContext.Provider value={value}>{children}</PeekContext.Provider>
 }
 
@@ -68,7 +80,7 @@ export function usePeekedId(prefix: string): string | null {
 export function usePeekNavigation() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { peekedPath } = useContext(PeekContext)
+  const { peekedPath, background } = useContext(PeekContext)
 
   return useMemo(
     () => ({
@@ -93,7 +105,14 @@ export function usePeekNavigation() {
         navigate(to, { replace: true })
       },
 
-      close(background: PeekBackground | null) {
+      /**
+       * Close the open peek.
+       *
+       * The background comes from context rather than an argument, because the
+       * caller is now the list itself and the list cannot see it — see the
+       * note on PeekState.background.
+       */
+      close() {
         // Back, so the browser restores the list's scroll position. There is
         // always somewhere to go back to: a peek cannot exist without the
         // navigation that opened it.
@@ -101,7 +120,7 @@ export function usePeekNavigation() {
         else navigate('/home')
       },
     }),
-    [navigate, location.pathname, location.search, peekedPath],
+    [navigate, location.pathname, location.search, peekedPath, background],
   )
 }
 

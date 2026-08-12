@@ -21,7 +21,12 @@ func newCategory(t *testing.T, st *store.Store, ctx context.Context, userID uuid
 
 	c, err := store.UserQuery(ctx, st, userID, func(q *gen.Queries) (gen.Category, error) {
 		return q.CreateCategory(ctx, gen.CreateCategoryParams{
-			UserID: userID, Slug: slug, Label: slug,
+			// Colour is not what these tests are about, but it cannot be left
+			// off: the INSERT names every column, so the DEFAULT in 00011 never
+			// applies and an empty string fails categories_color_hex. That is
+			// the constraint doing its job — the handler picks a default before
+			// it gets here, and this helper stands in for the handler.
+			UserID: userID, Slug: slug, Label: slug, Color: "#5C6B73",
 		})
 	})
 	if err != nil {

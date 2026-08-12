@@ -86,7 +86,9 @@ function DueToday() {
             </p>
             {count > 0 && (
               <Button asChild variant="primary" size="sm" className="self-start">
-                <Link to="/review">
+                {/* Straight into the queue, not the Ulangan index: this tile
+                    already is the index's summary. */}
+                <Link to="/review/due">
                   Mulai ulangan
                   <ArrowRight />
                 </Link>

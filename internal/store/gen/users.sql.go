@@ -165,9 +165,9 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (A
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (id, email, password_hash, email_verified_at)
-VALUES ($1, $2, $3, $4)
-RETURNING id, email, password_hash, created_at, email_verified_at
+INSERT INTO users (id, email, password_hash, email_verified_at, first_name, last_name)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, email, password_hash, created_at, email_verified_at, first_name, last_name
 `
 
 type CreateUserParams struct {
@@ -175,6 +175,8 @@ type CreateUserParams struct {
 	Email           string     `json:"email"`
 	PasswordHash    string     `json:"password_hash"`
 	EmailVerifiedAt *time.Time `json:"email_verified_at"`
+	FirstName       string     `json:"first_name"`
+	LastName        string     `json:"last_name"`
 }
 
 // The id is supplied rather than defaulted so the caller knows the identity
@@ -188,12 +190,19 @@ type CreateUserParams struct {
 // passes now(), since the operator typed the address at a shell and that is a
 // stronger check than clicking a link in a mailbox; public signup passes NULL
 // and sends the mail (07 L3).
+//
+// first_name and last_name are parameters for the same reason: public signup
+// collects them, `konku seed-user` has nobody to ask and passes ”. Both are
+// NOT NULL DEFAULT ” in the schema (migration 00010), so ” is the honest
+// "not given" rather than a placeholder.
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
 	row := q.db.QueryRow(ctx, createUser,
 		arg.ID,
 		arg.Email,
 		arg.PasswordHash,
 		arg.EmailVerifiedAt,
+		arg.FirstName,
+		arg.LastName,
 	)
 	var i User
 	err := row.Scan(
@@ -202,6 +211,8 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.PasswordHash,
 		&i.CreatedAt,
 		&i.EmailVerifiedAt,
+		&i.FirstName,
+		&i.LastName,
 	)
 	return i, err
 }
@@ -331,7 +342,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) error {
 }
 
 const getActiveSession = `-- name: GetActiveSession :one
-SELECT auth_sessions.id, auth_sessions.user_id, auth_sessions.expires_at, auth_sessions.created_at, auth_sessions.last_seen_at, auth_sessions.user_agent, auth_sessions.ip, auth_sessions.public_id, users.id, users.email, users.password_hash, users.created_at, users.email_verified_at
+SELECT auth_sessions.id, auth_sessions.user_id, auth_sessions.expires_at, auth_sessions.created_at, auth_sessions.last_seen_at, auth_sessions.user_agent, auth_sessions.ip, auth_sessions.public_id, users.id, users.email, users.password_hash, users.created_at, users.email_verified_at, users.first_name, users.last_name
 FROM auth_sessions
 JOIN users ON users.id = auth_sessions.user_id
 WHERE auth_sessions.id = $1
@@ -362,12 +373,14 @@ func (q *Queries) GetActiveSession(ctx context.Context, id string) (GetActiveSes
 		&i.User.PasswordHash,
 		&i.User.CreatedAt,
 		&i.User.EmailVerifiedAt,
+		&i.User.FirstName,
+		&i.User.LastName,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, created_at, email_verified_at FROM users WHERE email = $1
+SELECT id, email, password_hash, created_at, email_verified_at, first_name, last_name FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -379,12 +392,14 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.PasswordHash,
 		&i.CreatedAt,
 		&i.EmailVerifiedAt,
+		&i.FirstName,
+		&i.LastName,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, created_at, email_verified_at FROM users WHERE id = $1
+SELECT id, email, password_hash, created_at, email_verified_at, first_name, last_name FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
@@ -396,6 +411,8 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.PasswordHash,
 		&i.CreatedAt,
 		&i.EmailVerifiedAt,
+		&i.FirstName,
+		&i.LastName,
 	)
 	return i, err
 }

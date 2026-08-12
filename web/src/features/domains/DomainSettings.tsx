@@ -4,6 +4,7 @@ import type { Domain } from '../../api/types'
 import { DomainDot } from '../../components/ui/badge'
 import { Button } from '../../components/ui/button'
 import { Card } from '../../components/ui/card'
+import { COLOR_PALETTE, ColorPicker } from '../../components/ui/color-picker'
 import { EmptyState } from '../../components/ui/empty-state'
 import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
@@ -17,9 +18,6 @@ import {
   useDeleteDomain,
   useUpdateDomain,
 } from './queries'
-
-/** A muted starting palette. The user can type any #RRGGBB they like. */
-const PALETTE = ['#4F7CAC', '#6A8D73', '#B08968', '#8E7DBE', '#5C6B73', '#AA6C6C']
 
 /**
  * Domain management, rendered as a section of Pengaturan.
@@ -86,7 +84,7 @@ export default function DomainSettings() {
 
 function NewDomainForm({ onDone }: { onDone: () => void }) {
   const [label, setLabel] = useState('')
-  const [color, setColor] = useState(PALETTE[0])
+  const [color, setColor] = useState(COLOR_PALETTE[0])
   const [quota, setQuota] = useState(1)
   const create = useCreateDomain()
 
@@ -232,36 +230,6 @@ function EditDomainForm({ domain, onDone }: { domain: Domain; onDone: () => void
         </form>
       </Card>
     </li>
-  )
-}
-
-function ColorPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <Label>Warna</Label>
-      <div className="flex flex-wrap items-center gap-2">
-        {PALETTE.map((c) => (
-          <button
-            key={c}
-            type="button"
-            aria-label={`Warna ${c}`}
-            aria-pressed={value === c}
-            onClick={() => onChange(c)}
-            style={{ backgroundColor: c }}
-            className={cn(
-              'size-7 rounded-full transition-shadow',
-              value === c && 'ring-2 ring-primary ring-offset-2 ring-offset-card',
-            )}
-          />
-        ))}
-        <Input
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          aria-label="Kode warna"
-          className="h-8 w-24 font-mono text-xs"
-        />
-      </div>
-    </div>
   )
 }
 

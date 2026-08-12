@@ -337,9 +337,11 @@ func (c *testClient) createCard(body any) cardBody {
 }
 
 type categoryBody struct {
-	ID         string  `json:"id"`
-	Slug       string  `json:"slug"`
-	Label      string  `json:"label"`
+	ID    string `json:"id"`
+	Slug  string `json:"slug"`
+	Label string `json:"label"`
+	// #RRGGBB since 00011. See categories_test.go for what guards it.
+	Color      string  `json:"color"`
 	ArchivedAt *string `json:"archivedAt"`
 	NoteCount  int64   `json:"noteCount"`
 	CardCount  int64   `json:"cardCount"`

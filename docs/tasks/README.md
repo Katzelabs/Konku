@@ -14,21 +14,24 @@ ClickUp-import artifact and covers the product work that follows (v1.2, v1.3).
 | [05-cards-and-categories.md](05-cards-and-categories.md) | Standalone cards, categories, Notion-shaped UI | — | **done** |
 | [06-production-hardening.md](06-production-hardening.md) | RLS, observability, security, test tiers, CI | **no** | ~42 h |
 | [07-public-launch.md](07-public-launch.md) | Accounts, export, deletion, quotas (L1–L9) | **no** | ~26 h |
+| [08-review.md](08-review.md) | Ulangan absorbs Ujian; filters and multiple choice | **no** | **done** |
 | [04-ship.md](04-ship.md) | Deploy, backups on the box, real mail, open signup | **yes** | ~8 h |
 
 ## Build order
 
 ```
-01 ──► 02 ──► 03 ──► 05 ──► 06 Harden ──► 07 L1–L9 ──► 04 Ship ──► 07 L10
- ✅     ✅     ✅     ✅      ← next          local        the VPS      signup on
-                              (local)                     residue
+01 ──► 02 ──► 03 ──► 05 ──► 06 Harden ──► 07 L1–L9 ──► 08 ──► 04 Ship ──► 07 L10
+ ✅     ✅     ✅     ✅      ← next          local        ✅     the VPS      signup on
+                              (local)                            residue
 ```
 
-**Two files run out of numeric order, both deliberately.** 05 ran before 04
+**Three files run out of numeric order, all deliberately.** 05 ran before 04
 because it reshaped the schema and shipping first would have meant migrating
 real data instead of dev data. **04 now runs after 06 and most of 07** for the
 same reason plus a simpler one: almost none of the remaining work needs the box
-(D-067).
+(D-067). **08 slotted in ahead of 04** on the 05 argument exactly: it renames
+four tables, and doing that after the first deploy would mean migrating
+strangers' data rather than a dev volume.
 
 ### What actually requires the VPS
 

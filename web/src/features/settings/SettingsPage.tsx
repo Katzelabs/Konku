@@ -43,9 +43,28 @@ export default function SettingsPage() {
 
       <Section
         title="Akun"
-        description="Email dan sesi kamu."
+        description="Nama, email, dan sesi kamu."
       >
         <Card className="flex flex-col gap-4 p-5">
+          {/*
+            Read-only, both of them. Nothing in the app changes a name or an
+            address yet — signup is the only writer (00010) — and an editable
+            box that silently discards what you type is worse than one that
+            says it cannot be changed by looking like it.
+          */}
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="settings-name">Nama</Label>
+            <Input
+              id="settings-name"
+              readOnly
+              // Blank for an account created before signup asked, rather than
+              // repeating the address in a field labelled "Nama".
+              value={user ? [user.firstName, user.lastName].filter(Boolean).join(' ') : ''}
+              placeholder="Belum diisi"
+              className="bg-muted text-muted-fg"
+            />
+          </div>
+
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="settings-email">Email</Label>
             <Input
@@ -63,6 +82,13 @@ export default function SettingsPage() {
                 Sesi di perangkat ini diakhiri.
               </p>
             </div>
+            {/*
+              Secondary, not destructive, and deliberately unlike the account
+              menu's red item. Here "Keluar" sits above the delete-account
+              block, where red is spoken for by something irreversible — two
+              red buttons in one column would flatten the difference between
+              ending a session and destroying an account.
+            */}
             <Button
               variant="secondary"
               size="sm"
@@ -127,23 +153,31 @@ export default function SettingsPage() {
         </Card>
       </Section>
 
-      <Section title="Domain">
+      <Section
+        title="Label"
+        description="Dua cara menandai catatan dan kartu: satu domain, banyak kategori."
+      >
         {/*
-          A link rather than the editor inline. Domain management is a page's
-          worth of forms; folding it into a settings section buried the rest of
-          this screen under it, and it deserves a URL you can link to.
+          Links rather than the editors inline. Each is a page's worth of forms;
+          folding them into a settings section buried the rest of this screen
+          under them, and both deserve a URL you can link to.
+
+          Categories sit beside domains rather than under them. They are not a
+          sub-setting of a domain — they are the other half of the same job, and
+          until 00011 they were the half with no screen at all.
         */}
-        <Link to="/domains" className="block">
-          <Card className="flex items-center gap-4 px-5 py-4 transition-colors hover:bg-muted">
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-card-fg">Atur domain</p>
-              <p className="text-sm text-muted-fg">
-                Nama, warna, target mingguan, dan arsip.
-              </p>
-            </div>
-            <ChevronRight className="size-4 shrink-0 text-subtle-fg" />
-          </Card>
-        </Link>
+        <div className="flex flex-col gap-2">
+          <SettingsLink
+            to="/domains"
+            title="Atur domain"
+            description="Nama, warna, target mingguan, dan arsip."
+          />
+          <SettingsLink
+            to="/categories"
+            title="Atur kategori"
+            description="Ganti nama, warna, arsipkan, atau hapus yang tidak terpakai."
+          />
+        </div>
       </Section>
     </div>
   )
@@ -175,6 +209,29 @@ function ThemePicker() {
         ))}
       </ToggleGroup>
     </div>
+  )
+}
+
+/** A settings row that goes somewhere: title, one line of what is there, chevron. */
+function SettingsLink({
+  to,
+  title,
+  description,
+}: {
+  to: string
+  title: string
+  description: string
+}) {
+  return (
+    <Link to={to} className="block">
+      <Card className="flex items-center gap-4 px-5 py-4 transition-colors hover:bg-muted">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-card-fg">{title}</p>
+          <p className="text-sm text-muted-fg">{description}</p>
+        </div>
+        <ChevronRight className="size-4 shrink-0 text-subtle-fg" />
+      </Card>
+    </Link>
   )
 }
 

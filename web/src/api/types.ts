@@ -23,14 +23,19 @@ export interface Domain {
 /**
  * A label shared by notes and cards (D-055).
  *
- * Not a domain: a domain is one per item, drives the weekly rota and exam
- * draws, and carries a colour. A category is many per item and means nothing
- * to the scheduler. It has no colour on purpose — see CategoryChip.
+ * Still not a domain. A domain is exactly one per item and drives the weekly
+ * rota and exam draws; a category is many per item and means nothing to the
+ * scheduler. What no longer separates them is colour: categories got one in
+ * 00011, along with the management screen that made it necessary. The
+ * confetti D-054 was worried about is held off in `CategoryChip`, which wears
+ * the colour as a dot rather than as a fill.
  */
 export interface Category {
   id: string
   slug: string
   label: string
+  /** #RRGGBB, picked in Pengaturan. User data, like a domain's. */
+  color: string
   /** Archived categories leave the picker but keep labelling history (D-051). */
   archivedAt: string | null
   noteCount: number
@@ -154,47 +159,62 @@ export interface FocusSession {
 }
 
 /**
- * How an exam picks its questions (D-048).
+ * How a review set picks its questions (D-048).
  *
- * `fixed` pins a card set, so two attempts compare like for like. `random`
- * draws afresh each sitting — better practice, non-comparable scores.
+ * `fixed` pins a card set, so two runs compare like for like. `random` draws
+ * afresh each sitting — better practice, non-comparable scores.
  */
-export type ExamSelection = 'fixed' | 'random'
+export type SetSelection = 'fixed' | 'random'
 
-export interface Exam {
+/**
+ * How a review set asks its questions (D-076).
+ *
+ * `recall` is the Anki shape: prompt, reveal, judge yourself. `choice` offers
+ * four options and grades on the server. This is a property of the set, not of
+ * the card — the same card is free recall in one set and multiple choice in
+ * another, which is why `CardType` stays out of it.
+ */
+export type SetFormat = 'recall' | 'choice'
+
+export interface ReviewSet {
   id: string
   title: string
   description: string
-  domainId: DomainId | null
-  selection: ExamSelection
+  selection: SetSelection
   /** Only set when selection is 'random'. */
   questionCount: number | null
   timeLimitMinutes: number | null
-  attemptCount: number
+  format: SetFormat
+  /** Empty means the set draws from the whole knowledge base. */
+  domainIds: DomainId[]
+  categoryIds: string[]
+  /** Finished runs only. */
+  runCount: number
+  archived: boolean
   createdAt: string
 }
 
-export interface Attempt {
+export interface Run {
   id: string
-  examId: string
+  setId: string
   startedAt: string
-  /** Null while the attempt is still in progress. */
+  /** Null while the run is still in progress. */
   finishedAt: string | null
   /** Local YYYY-MM-DD, like a focus session's date. */
-  attemptDate: string
+  runDate: string
   totalCount: number
   correctCount: number
 }
 
-/** A card in a fixed exam's pinned set. Prompt only. */
+/** A card in a fixed set's pinned questions. Prompt only. */
 export interface CardRef {
   cardId: string
   front: string
 }
 
-export interface ExamDetail extends Exam {
-  attempts: Attempt[]
-  /** The pinned set. Empty for a 'random' exam, which draws per attempt. */
+export interface ReviewSetDetail extends ReviewSet {
+  runs: Run[]
+  /** The pinned set. Empty for a 'random' set, which draws per run. */
   cards: CardRef[]
 }
 
@@ -203,18 +223,31 @@ export interface ExamDetail extends Exam {
  *
  * `back` is absent for the same reason it is absent from DueCard: recall
  * before reveal is mandatory (D-003) and the answer arrives only when asked
- * for.
+ * for. For a choice question the options are present but which one is right is
+ * not — grading happens on the server.
  */
-export interface AttemptQuestion {
+export interface RunQuestion {
   position: number
   cardId: string
   front: string
-  /** Set once answered, which is what makes an attempt resumable (D-050). */
+  /** Set once answered, which is what makes a run resumable (D-050). */
   rating: Rating | null
-  /** The card was deleted after the attempt began. It still counts. */
+  /**
+   * Empty for a recall question, and for a choice question the draw could not
+   * find enough distinct distractors for — that one falls back to recall.
+   */
+  options: string[]
+  /** The card was deleted after the run began. It still counts. */
   missing: boolean
 }
 
-export interface AttemptDetail extends Attempt {
-  questions: AttemptQuestion[]
+export interface RunDetail extends Run {
+  questions: RunQuestion[]
+}
+
+/** What comes back from answering. A choice question reveals here. */
+export interface AnswerResult {
+  rating: Rating
+  back: string | null
+  correctIndex: number | null
 }

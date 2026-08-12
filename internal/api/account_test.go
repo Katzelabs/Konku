@@ -40,7 +40,7 @@ func TestADeletedAccountsEmailCanSignUpAgain(t *testing.T) {
 	// The address is free. Signing up with it must genuinely create an
 	// account, not answer 204 because the address is taken (07 L3).
 	if status, body := statusOf(t, post(t, a, "/auth/signup",
-		map[string]string{"email": email, "password": signupPassword})); status != http.StatusNoContent {
+		signupBody(email))); status != http.StatusNoContent {
 		t.Fatalf("signup after deletion = %d: %s", status, body)
 	}
 

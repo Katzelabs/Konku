@@ -8,6 +8,8 @@ import (
 	"net/mail"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5/middleware"
 
@@ -34,9 +36,16 @@ const minPasswordLength = 12
 // hold it open for the router's full 30 seconds.
 const mailSendTimeout = 10 * time.Second
 
+// maxNameLength matches the CHECK constraint in migration 00010. Two
+// mechanisms, not one (hard rule 9): this one produces a readable Indonesian
+// message, the constraint is what holds if a future call site forgets.
+const maxNameLength = 80
+
 type signupRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email     string `json:"email"`
+	Password  string `json:"password"`
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
 }
 
 type verifyRequest struct {
@@ -91,6 +100,20 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	firstName, ok := cleanName(req.FirstName)
+	if !ok || firstName == "" {
+		writeError(w, http.StatusBadRequest, CodeBadRequest, "Nama depan wajib diisi.")
+		return
+	}
+	// Optional, and it stays optional. Plenty of people have one name, and a
+	// form that refuses to accept that tells them they are wrong about their
+	// own name.
+	lastName, ok := cleanName(req.LastName)
+	if !ok {
+		writeError(w, http.StatusBadRequest, CodeBadRequest, "Nama belakang terlalu panjang.")
+		return
+	}
+
 	// Per-address limiting, on top of the per-IP limiter on the route. Per-IP
 	// alone lets an attacker mailbomb one victim from many hosts (07 L3).
 	if !s.signupAddrLimit.allow(strings.ToLower(email)) {
@@ -99,7 +122,12 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, token, err := s.auth.Signup(r.Context(), email, req.Password)
+	user, token, err := s.auth.Signup(r.Context(), auth.NewAccount{
+		Email:     email,
+		Password:  req.Password,
+		FirstName: firstName,
+		LastName:  lastName,
+	})
 	if err != nil {
 		if errors.Is(err, auth.ErrEmailTaken) {
 			// Same answer as success, and no mail. The log line records what
@@ -207,6 +235,40 @@ func (s *Server) sendOrLog(r *http.Request, kind, userID string, send func(conte
 			"request_id", middleware.GetReqID(r.Context()), "user_id", userID, "error", err)
 		reportError(r, err, middleware.GetReqID(r.Context()))
 	}
+}
+
+// cleanName trims a submitted name and reports whether it is storable.
+//
+// Deliberately not a pattern match on letters. There is no character class
+// that spans the names people actually have — apostrophes, hyphens, spaces,
+// non-Latin scripts, single-word names — and every attempt at one ends up
+// rejecting somebody real. So this rejects only what is definitely not a name.
+//
+// What it does reject:
+//
+//   - Control characters, including newlines. This is the one with a security
+//     edge rather than a cosmetic one: a name is the obvious thing to greet
+//     someone by in mail, and a CR or LF in a value that reaches a header is
+//     header injection. Blocking it at the boundary means no future template
+//     has to remember.
+//   - Anything longer than the column allows, counted in runes so that a name
+//     in a non-Latin script is measured the way Postgres's length() measures
+//     it rather than in bytes.
+//
+// Escaping is not this function's job — the frontend renders React elements
+// and never innerHTML (D-018), so a name containing "<script>" is text on the
+// screen, not a script. Stripping it here would silently rename people.
+func cleanName(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	if utf8.RuneCountInString(s) > maxNameLength {
+		return "", false
+	}
+	for _, r := range s {
+		if r == utf8.RuneError || unicode.IsControl(r) {
+			return "", false
+		}
+	}
+	return s, true
 }
 
 // validEmail is a parse, not a pattern.

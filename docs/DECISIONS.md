@@ -888,13 +888,316 @@ question text of an exam somebody sat, to save a row.
 
 ---
 
+### D-070 — Zod for the signed-out forms, and nothing else *(amends D-053, tested against D-065)*
+
+The eleventh frontend runtime dependency, added when the signup form went from
+two fields to five and grew a confirm-password rule that no single `<input>`
+attribute can express.
+
+**D-065's test, applied honestly: this one nearly fails it.** The rule is that
+a new dependency names the production obligation it discharges, and client-side
+validation discharges *none* — the security boundary is `internal/api`, which
+validates every one of these rules again for a request that never loaded any
+JavaScript. A form library cannot be justified as protection, and it is not
+being justified that way here.
+
+What it discharges is a different obligation, and a real one: **the rules exist
+in two places and have to keep agreeing.** The minimum password length, the
+name bound, the address shape and the trimming are all decided by the Go
+handlers, and the screens have to state the same thing in the same words before
+the round trip. A schema is a place to write that down once per form and read
+it back as both a validator and a type. The alternative that was weighed and
+rejected was a hand-rolled ~80-line validator — it would have worked, and it
+would have been a worse version of the same thing, re-derived, with the parsed
+output typed by hand.
+
+**Scope is the price of admission.** Zod is for the four signed-out forms and
+their five schemas. It is not an API-response validator — the client trusts its
+own server, and parsing every response would be ceremony charged per request
+for a mismatch that a single deployed binary makes impossible. It is not a
+general form runtime either: `useZodForm` is 60 lines in `lib/`, deliberately
+not react-hook-form, because four short forms with no arrays and no wizards use
+about that much of one.
+
+**Rejected: making the client the enforcement point.** Stated because it is the
+tempting reading of "add validation to secure the input". Nothing in
+`web/src` secures anything. Anyone can `curl` the endpoint, and the tests that
+prove the rules hold live in `internal/api/signup_test.go`, not in vitest.
+
+---
+
+### D-071 — An account has a name *(amends 07 L1)*
+
+Until migration 00010 an account was an address and nothing else, which is fine
+for one user and wrong the moment the app addresses anyone: every screen that
+wanted to name someone showed the raw address, and `Halo hrofiyani@gmail.com`
+is the tell of software that does not know who it is talking to.
+
+**First name required, last name optional, both `NOT NULL DEFAULT ''`.** The
+distinction a nullable column would carry — "we never asked" versus "they left
+it blank" — is one nothing in the product acts on, and `emit_pointers_for_null_types`
+would spread a `*string` through the handler, the response and the export to
+represent it. An empty string is already unambiguous, because "" is not a name.
+
+**Optional means optional.** Plenty of people have one name, and a form that
+refuses to accept that is a form telling them they are wrong about their own
+name. The field is marked *(opsional)* in words rather than by the absence of
+an asterisk on the others.
+
+**Not pattern-matched against letters, only bounded and stripped of control
+characters.** There is no character class that spans real names — apostrophes,
+hyphens, spaces, non-Latin scripts — and every attempt at one rejects somebody.
+The control-character rule is the one with teeth rather than manners: a name is
+the obvious thing to greet someone by in mail, and a CR or LF in a value that
+reaches a header is header injection, so it is rejected at the boundary and no
+future template has to remember. Escaping is *not* done: the renderer emits
+React elements and never innerHTML (D-018), so a name containing `<script>` is
+text on the screen — and stripping it would silently rename people.
+
+**Existing accounts backfill to ''**, and the UI falls back to the address for
+them. Deliberately not a migration that invents names out of email local parts:
+guessing that "hrofiyani" is someone's first name and greeting them by it is
+worse than the fallback.
+
+The name is in the export (`data/user.json`) and named in the privacy policy,
+with the policy's coverage test extended to fail if it stops being — which is
+the mechanism, and the reason adding a stored field is more than a migration.
+
+---
+
+### D-072 — Signing out is one code path, and it writes the user before it clears the cache
+
+A bug, and the fix is a rule worth stating because the wrong version looked
+obviously correct.
+
+`useLogout` called `queryClient.clear()` and then wrote `null` over `auth/me`.
+Both lines do what they say and the result was that **logging out did nothing
+visible** — the app stayed on the page it was on, and only a manual reload
+reached the login screen.
+
+`clear()` *removes* every query, and an observer bound to a removed query is
+never notified; it keeps returning its last result until something else
+re-renders it. `useMe` is called by `App`, `useLogout` by `AppShell`
+underneath it, so the settled mutation re-rendered the child and left the
+parent holding the signed-in user. The `setQueryData` afterwards did not help
+either: writing to a removed key builds a *new* query that the stale observer
+is not watching. The cache was genuinely empty and the screen genuinely did not
+care.
+
+**So the order is: write `null` first, through the query the observer is bound
+to, then `removeQueries` for everything else.** `auth/config` is kept — it is
+instance configuration with nobody's data in it, and dropping it blinks the
+signup link off the login screen being shown.
+
+**All four paths that end a session share one helper.** Logout, revoking the
+current session, a password reset and deleting the account each had their own
+copy of the broken pair.
+
+**The test is at the app level, and that is the point.** The hook's own test
+asserted the cache was emptied and passed throughout — it agreed with the bug,
+because the screen does not read the cache. What is asserted now is that
+clicking "Keluar" reaches the login form with no reload.
+
+**Also: the account menu's "Keluar" is `destructive`.** Not because signing out
+is punitive — hard rule 6 still holds — but because it is the one item in that
+menu that throws away what you are in the middle of, and it sits directly under
+"Pengaturan". In `SettingsPage` it stays secondary, where red is spoken for by
+deleting the account.
+
+---
+
+### D-073 — The resend wait starts when a message is sent, not when the screen opens
+
+Sixty seconds between verification mails, counted down in the button's own
+label.
+
+It is **not** a security control and is not offered as one. The server already
+limits by IP and by target address; a client-side timer is deleted by anyone
+who opens devtools. What it addresses is the ordinary case: the mail takes a
+few seconds, the button is right there, and four presses send four messages to
+a mailbox about to receive one. The person doing that is the account holder,
+attacking nothing, spamming their own inbox.
+
+**The deadline is persisted, not the remaining seconds.** A counter in state
+resets on reload — and reloading is exactly what this screen used to tell
+people to do after clicking the link. Persisting an absolute time makes the
+wait the same sixty seconds whether the tab stayed open or not. It is keyed by
+address, so signing in as someone else does not inherit the previous account's
+wait, and it is clamped on read: a deadline further out than the cooldown means
+a clock change, and failing toward "you may resend" is correct when the button
+being locked is the only one that unsticks a signup.
+
+**Only the signup success screen starts a wait on arrival**, because only there
+is arriving *itself* a message being sent. Signing in to an unverified account
+lands on the same screen and sends nothing; a wait imposed there would be sixty
+seconds charged for a mail that never existed.
+
+**And the screen no longer asks for a reload.** It re-reads `/auth/me` when the
+tab regains focus, which is what actually happens after someone clicks the link
+in their mail and comes back. Scoped to that one screen rather than turning
+`refetchOnWindowFocus` back on globally: it is the only screen whose entire
+content is a fact that routinely changes while you are looking elsewhere.
+
+---
+
+### D-074 — Categories get a colour and a management screen *(amends D-054)*
+
+Migration `00011` puts a `color` column on `categories`, and Pengaturan gains
+an "Atur kategori" page beside "Atur domain".
+
+D-054 said categories have no colour, and that reasoning was about **list
+rows**: domain colour is the one colour signal in a row, and a second tinted
+palette beside it turns a list into confetti. That is still true, and it is
+still enforced — the colour arrives as the same 10px dot a domain wears, on the
+same neutral outline chip. What is rejected remains rejected: no tinted chip
+fills, no coloured backgrounds behind category text.
+
+What did not survive contact was **management**. Domains had a screen where
+they are named, coloured, given a quota and archived. Categories had
+create-on-type and nothing else, which is the right way to *create* one — being
+sent to a settings screen to define a label before you may apply it is exactly
+the friction hard rule 7 forbids — but it left a vocabulary that could only
+grow. A typo became a permanent second category. Nothing could be renamed,
+retired, or told apart from its neighbour at a glance. Giving the two the same
+shape is what makes one settings screen able to manage both, and colour is part
+of that shape rather than a decoration bolted onto it.
+
+**Create-on-type stays colourless, and stays idempotent about it.** The picker
+in the note and card editors posts a label and no colour; the server assigns
+the neutral default. Posting an existing label returns that category *unchanged*
+rather than recolouring it — otherwise typing a familiar word mid-note would
+silently undo a choice made in Pengaturan. The one place that can recolour is
+the settings screen, which is a PATCH: `{ color }` alone is a valid request, so
+recolouring never has to echo back a label it might have read one render stale.
+
+**The column is CHECK-constrained as well as validated in the handler**
+(hard rule 9). The value ends up in an inline `style` attribute, so "the
+handler always checks it" is one mechanism and therefore a hope. `domains.color`
+has no equivalent constraint; that is a gap in `00001`, not a precedent — it
+needs its own migration, because it has to cope with whatever the existing rows
+contain.
+
+---
+
+### D-075 — Ulangan absorbs Ujian *(supersedes D-048; renames the tables of D-049 – D-051)*
+
+They were one feature with two names. Both ask a card, both take `ingat` /
+`lupa`, both are answered on a screen that says "prompt, reveal, judge", and
+their answers have shared one table since `00002` — `review_logs.source` has
+been telling them apart for as long as both have existed. What separated them
+was build order: the due queue shipped in `03`, exams in `00002`, each with its
+own screen, its own nav entry and its own vocabulary for the same act.
+
+Migration `00012` renames `exams` → `review_sets`, `exam_attempts` →
+`review_runs`, and their two child tables to match. `review_logs.source`
+becomes `'due'` / `'set'`. `/api/exams` and `/api/attempts` collapse into
+`/api/review/{due,sets,runs}`, and "Ujian" disappears from the nav.
+
+**The due queue stays the default path, and that is the load-bearing part.**
+`/review` leads with "Ulangan hari ini" and a Mulai button; saved sets are a
+second section underneath. The temptation in a merge like this is to make the
+configurable thing the front door, because it is the thing with options. That
+would be a regression disguised as a feature: the scheduled queue is what
+answers *"cepat paham tapi cepat lupa"* (`GOALS.md` #5), and it only works if
+it is what you land on. A queue you have to choose to configure your way into
+is a queue that depends on discipline, which is problem #1.
+
+**Why not `review_sessions`.** `auth_sessions` and `focus_sessions` already
+exist, and D-052 renamed a table specifically to end the "which sessions table"
+ambiguity. A third one would undo that for nothing. A saved configuration is a
+`review_set`; one sitting of it is a `review_run`.
+
+**What the merge fixed while the tables were open anyway:** a set filters on
+many domains and many categories instead of one nullable `domain_id` — the
+organising axis the user actually uses day to day was invisible to the one
+feature that most needed it. And a set can be unarchived, which an exam never
+could; archiving is supposed to be the safe alternative to deleting, and a safe
+alternative you cannot undo is only half of one.
+
+**Unchanged, deliberately:** an answer inside a set still never moves
+`card_schedules` (D-049), attempts are still snapshotted and resumable (D-050),
+and a set that has been run still archives rather than deletes (D-051). Only
+the names moved.
+
+**Rejected:** deleting the due queue's separate screen and folding it in as
+"just another set" — that is exactly the demotion described above.
+
+### D-076 — Question format belongs to the set, not the card
+
+A review set carries `format`: `recall` (prompt, reveal, self-judge) or
+`choice` (four options, graded on the server).
+
+`cards.type` exists and admits `'cloze'` and `'feynman'`, and it would have
+been the obvious place to hang this. It is the wrong place. The same card
+should be free recall today and multiple choice tomorrow — that is what makes
+the second format worth having at all — and a property of the card cannot
+express that. Format is a property of *the asking*.
+
+It also keeps a promise. D-055 said explicitly that standalone card CRUD makes
+a type picker easy to add, "which is exactly why it is worth saying no here
+explicitly." Putting the choice on the set adds the feature without adding the
+picker: cloze and feynman stay deferred (D-031), and the card editor gains
+nothing to fill in.
+
+**Rejected:** a per-card format field, and reusing `cards.type` for it.
+
+### D-077 — Distractors are sampled, snapshotted, and the answer is tagged
+
+Three decisions that only make sense together.
+
+**Sampled, not authored.** The wrong answers in a choice question are the
+`back` of the user's other cards, drawn at run start. Asking someone to write
+three plausible wrong answers per card would tax capture, which is the one cost
+this product protects above everything (hard rule 7), and it would make the
+format unavailable on every card already written. One pool is read per run
+rather than three per question — a 50-question run would otherwise be 50 extra
+round trips inside the transaction that starts it, and distractors repeating
+across a quiz is ordinary rather than a defect. A set whose filters are too
+narrow to fill four options widens to the whole account; an account too small
+even for that asks the question as plain recall instead of refusing to start.
+
+**Snapshotted.** `review_run_cards` gains `options` and `correct_index`, filled
+at draw time for the same reason the draw itself is (D-050): options
+regenerated on resume would mean the second half of a run is answering a
+different question from the first. The option *text* is stored, not card ids —
+that table has no foreign key to `cards`, so a distractor whose card is later
+deleted would otherwise leave a blank option in finished history.
+
+`correct_index` is stored and never serialized. `ListRunQuestions` does not
+select it and the wire type has no field for it; it is read one row at a time,
+on the request that grades. Shipping it with the question list would put the
+answer key one dev-tools glance away, which is D-003 defeated by a different
+route than the one that decision was written about.
+
+**Tagged.** `review_logs.format` records whether the answer was recalled or
+recognised. Multiple choice is strictly easier — a 1-in-4 guess is worth a
+quarter of a mark and D-004's headline number would count it as remembering.
+The tag lets the retention metric default to `format = 'recall'` and include
+recognition only when asked. It lives on the log row rather than being joined
+from the set because `run_id` is `ON DELETE SET NULL`: discarding a run must
+not quietly reclassify its answers, and D-029's whole point is that this cannot
+be reconstructed afterwards.
+
+**Said out loud in the UI**, not buried: the create form tells the user that
+recognising an answer is easier than recalling it and that the number will read
+higher. A metric that flatters without saying so is the failure this app is
+supposed to be the opposite of.
+
+**Rejected:** authored options per card; a `choice` answer that moves the
+schedule; and logging choice answers indistinguishably from recall.
+
+---
+
 ## Open questions
 
 None blocking. Deferred details, intentionally left until the feature is being built:
 
 - **Feynman grading output format** (D-036) — v0.3
 - **Progressive focus N** (D-037) — currently 5, tune against real session data
-- **Do random exam draws include mastered cards?** (D-048) — currently yes.
+- **Do random set draws include mastered cards?** (D-048, renamed by D-075) — currently yes.
+- **Review over notes** — cards only for now. A note has no `back` to hide and
+  no ladder to sit on, so it is a different interaction rather than a filter
+  on this one. Nothing in `00012` blocks it.
 
 **Closed:** *per-user settings have nowhere to live* — `user_settings` lands in
 migration `00007` (`07` L1), carrying progressive focus N, default timer

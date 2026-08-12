@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -20,6 +21,29 @@ import (
 // write anything.
 
 const signupPassword = "correct-horse-battery-staple"
+
+// maxSignupName mirrors maxNameLength in the handler and the CHECK constraint
+// in migration 00010. Repeated rather than imported because these tests are in
+// package api_test and the constant is unexported — which is the right trade:
+// the test asserts the boundary the API promises, not the one it happens to
+// have compiled in.
+const maxSignupName = 80
+
+// signupBody is a complete, valid signup request.
+//
+// A helper rather than a literal at each call site: every test in this file
+// that is *not* about validation wants "a request that would succeed", and
+// spelling that out eight times means the next required field is eight edits
+// and at least one missed one.
+func signupBody(email string) map[string]string {
+	return map[string]string{
+		"email":     email,
+		"password":  signupPassword,
+		"firstName": "Sena",
+		// lastName is deliberately absent, not empty: the optional field must
+		// work by being left out, which is what a client that omits it does.
+	}
+}
 
 // errMailDown stands in for a provider outage.
 var errMailDown = errors.New("smtp: provider unavailable")
@@ -126,13 +150,13 @@ func TestSignupDoesNotLeakThatTheAddressExists(t *testing.T) {
 	email := signupAddress(t, a)
 
 	firstStatus, firstBody := statusOf(t, post(t, a, "/auth/signup",
-		map[string]string{"email": email, "password": signupPassword}))
+		signupBody(email)))
 	if firstStatus != http.StatusNoContent {
 		t.Fatalf("first signup status = %d, want 204: %s", firstStatus, firstBody)
 	}
 
 	secondStatus, secondBody := statusOf(t, post(t, a, "/auth/signup",
-		map[string]string{"email": email, "password": signupPassword}))
+		signupBody(email)))
 
 	if secondStatus != firstStatus {
 		t.Errorf("second signup status = %d, first was %d; the difference tells "+
@@ -158,7 +182,7 @@ func TestUnverifiedAccountCannotReadOrWriteAnything(t *testing.T) {
 	email := signupAddress(t, a)
 
 	if status, body := statusOf(t, post(t, a, "/auth/signup",
-		map[string]string{"email": email, "password": signupPassword})); status != http.StatusNoContent {
+		signupBody(email))); status != http.StatusNoContent {
 		t.Fatalf("signup status = %d, want 204: %s", status, body)
 	}
 
@@ -188,7 +212,7 @@ func TestUnverifiedAccountCannotReadOrWriteAnything(t *testing.T) {
 		{http.MethodGet, "/review/due"},
 		{http.MethodGet, "/sessions"},
 		{http.MethodPost, "/sessions"},
-		{http.MethodGet, "/exams"},
+		{http.MethodGet, "/review/sets"},
 		{http.MethodGet, "/domains"},
 	}
 
@@ -230,7 +254,7 @@ func TestVerification(t *testing.T) {
 	email := signupAddress(t, a)
 
 	if status, body := statusOf(t, post(t, a, "/auth/signup",
-		map[string]string{"email": email, "password": signupPassword})); status != http.StatusNoContent {
+		signupBody(email))); status != http.StatusNoContent {
 		t.Fatalf("signup status = %d, want 204: %s", status, body)
 	}
 
@@ -279,7 +303,7 @@ func TestBadTokensAllFailIdentically(t *testing.T) {
 	// "random string is rejected".
 	email := signupAddress(t, a)
 	if status, _ := statusOf(t, post(t, a, "/auth/signup",
-		map[string]string{"email": email, "password": signupPassword})); status != http.StatusNoContent {
+		signupBody(email))); status != http.StatusNoContent {
 		t.Fatalf("signup failed")
 	}
 	spent := a.mail.lastTo(t, email).token
@@ -322,7 +346,7 @@ func TestResendIsLimitedByAddress(t *testing.T) {
 	email := signupAddress(t, a)
 
 	if status, _ := statusOf(t, post(t, a, "/auth/signup",
-		map[string]string{"email": email, "password": signupPassword})); status != http.StatusNoContent {
+		signupBody(email))); status != http.StatusNoContent {
 		t.Fatalf("signup failed")
 	}
 
@@ -362,7 +386,7 @@ func TestSignupSeedsDomainsAndSettings(t *testing.T) {
 	email := signupAddress(t, a)
 
 	if status, _ := statusOf(t, post(t, a, "/auth/signup",
-		map[string]string{"email": email, "password": signupPassword})); status != http.StatusNoContent {
+		signupBody(email))); status != http.StatusNoContent {
 		t.Fatalf("signup failed")
 	}
 
@@ -416,7 +440,7 @@ func TestSignupSucceedsWhenMailFails(t *testing.T) {
 	})
 
 	status, body := statusOf(t, post(t, a, "/auth/signup",
-		map[string]string{"email": email, "password": signupPassword}))
+		signupBody(email)))
 	if status != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204 even with the transport down: %s", status, body)
 	}
@@ -435,24 +459,150 @@ func TestSignupSucceedsWhenMailFails(t *testing.T) {
 func TestSignupValidation(t *testing.T) {
 	a := newApp(t)
 
+	// Each case is a valid body with exactly one thing wrong, so a failure
+	// names the rule that broke rather than "signup rejects things".
+	with := func(field, value string) map[string]string {
+		body := signupBody("someone-" + uuid.NewString() + "@example.com")
+		body[field] = value
+		return body
+	}
+
 	cases := []struct {
-		name     string
-		email    string
-		password string
+		name string
+		body map[string]string
 	}{
-		{"no email", "", signupPassword},
-		{"not an address", "nope", signupPassword},
-		{"display-name form", "Someone <a@b.com>", signupPassword},
-		{"two at signs", "a@b@c.com", signupPassword},
-		{"short password", "someone-" + uuid.NewString() + "@example.com", "short"},
+		{"no email", with("email", "")},
+		{"not an address", with("email", "nope")},
+		{"display-name form", with("email", "Someone <a@b.com>")},
+		{"two at signs", with("email", "a@b@c.com")},
+		{"short password", with("password", "short")},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			status, _ := statusOf(t, post(t, a, "/auth/signup",
-				map[string]string{"email": tc.email, "password": tc.password}))
+			status, _ := statusOf(t, post(t, a, "/auth/signup", tc.body))
 			if status != http.StatusBadRequest {
 				t.Errorf("status = %d, want 400", status)
+			}
+		})
+	}
+}
+
+// rejectsSignup asserts a 400 for one bad field.
+//
+// Each caller gets its own app, and that is a constraint of the endpoint
+// rather than tidiness: signup allows five attempts per IP per hour, so a
+// table of more than five bad requests stops testing validation and starts
+// testing the rate limiter — every case after the fifth comes back 429 and
+// "want 400" is then true but meaningless.
+func rejectsSignup(t *testing.T, cases []struct{ name, field, value string }) {
+	t.Helper()
+	if len(cases) > 5 {
+		t.Fatalf("%d cases share one IP budget of 5; split the test", len(cases))
+	}
+
+	a := newApp(t)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := signupBody("someone-" + uuid.NewString() + "@example.com")
+			body[tc.field] = tc.value
+
+			status, got := statusOf(t, post(t, a, "/auth/signup", body))
+			if status != http.StatusBadRequest {
+				t.Errorf("status = %d, want 400: %s", status, got)
+			}
+		})
+	}
+}
+
+// A first name is required, and "required" means after trimming.
+//
+// The ordering matters and is easy to get backwards: check-then-trim accepts
+// a name of three spaces, stores it, and produces an account greeted as "Halo
+// ," with no way for its owner to see why.
+func TestSignupRequiresAFirstName(t *testing.T) {
+	rejectsSignup(t, []struct{ name, field, value string }{
+		{"empty", "firstName", ""},
+		{"only spaces", "firstName", "   "},
+		{"only a tab", "firstName", "\t"},
+	})
+}
+
+// Names are bounded, and not only by the handler: migration 00010 carries the
+// same limit as a CHECK, so a future call site that forgets to validate still
+// cannot write an unbounded row (hard rule 9).
+func TestSignupBoundsNameLength(t *testing.T) {
+	rejectsSignup(t, []struct{ name, field, value string }{
+		{"first name too long", "firstName", strings.Repeat("a", maxSignupName+1)},
+		{"last name too long", "lastName", strings.Repeat("a", maxSignupName+1)},
+	})
+}
+
+// The check with teeth rather than manners.
+//
+// A name is the obvious thing to greet someone by in mail, and a CR or LF in a
+// value that reaches a header is header injection — the "Bcc:" case below is
+// what that attack actually looks like. Rejecting control characters at the
+// boundary means no future template has to remember, which is the only version
+// of this that survives someone writing a new template in a year.
+func TestSignupRejectsControlCharactersInNames(t *testing.T) {
+	rejectsSignup(t, []struct{ name, field, value string }{
+		{"CRLF header injection", "firstName", "Sena\r\nBcc: victim@example.com"},
+		{"bare newline", "lastName", "Putri\nX"},
+		{"NUL", "lastName", "Putri\x00"},
+	})
+}
+
+// The names actually land on the account, and the optional one stays optional.
+//
+// Worth its own test because the failure mode is silent: a form that collects
+// a name and drops it looks identical to one that stores it, right up until
+// someone exports their data and finds the field empty.
+func TestSignupStoresTheName(t *testing.T) {
+	a := newApp(t)
+
+	cases := []struct {
+		name      string
+		firstName string
+		lastName  string
+		wantFirst string
+		wantLast  string
+	}{
+		{"both names", "Sena", "Prawira", "Sena", "Prawira"},
+		// One name is a whole name. A person with no family name must be able
+		// to finish this form.
+		{"first name only", "Sena", "", "Sena", ""},
+		// Trimmed, not rejected: a trailing space is a typo, not an attack,
+		// and refusing the form over one is the kind of friction hard rule 7
+		// exists to prevent.
+		{"surrounding whitespace", "  Sena  ", "  Prawira  ", "Sena", "Prawira"},
+		// No pattern match on letters — there is no character class that spans
+		// the names people actually have, and every attempt at one rejects
+		// somebody real.
+		{"apostrophes and hyphens", "Ni'mah", "Al-Rasyid", "Ni'mah", "Al-Rasyid"},
+		{"non-latin script", "李", "明", "李", "明"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			email := signupAddress(t, a)
+			body := signupBody(email)
+			body["firstName"] = tc.firstName
+			body["lastName"] = tc.lastName
+
+			if status, got := statusOf(t, post(t, a, "/auth/signup", body)); status != http.StatusNoContent {
+				t.Fatalf("status = %d, want 204: %s", status, got)
+			}
+
+			var first, last string
+			if err := a.store.Pool().QueryRow(a.ctx,
+				"SELECT first_name, last_name FROM users WHERE email = $1", email,
+			).Scan(&first, &last); err != nil {
+				t.Fatalf("reading the account: %v", err)
+			}
+			if first != tc.wantFirst || last != tc.wantLast {
+				t.Errorf("stored (%q, %q), want (%q, %q)",
+					first, last, tc.wantFirst, tc.wantLast)
 			}
 		})
 	}

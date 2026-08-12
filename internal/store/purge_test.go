@@ -14,7 +14,7 @@ import (
 // Emptying Terhapus.
 //
 // The rule this file exists to pin down: a card that was ever studied is never
-// purged, whatever the window says. review_logs and exam_attempt_cards have no
+// purged, whatever the window says. review_logs and review_run_cards have no
 // foreign key to cards on purpose (D-050), so nothing in the database would
 // stop a purge from orphaning them — only this predicate does.
 
@@ -73,7 +73,7 @@ func seedPurgeFixture(t *testing.T, st *store.Store, ctx context.Context) purgeF
 	exec(`INSERT INTO cards (id, user_id, type, front, back, deleted_at) VALUES ($1,$2,'basic','f','b',$3)`,
 		f.studiedCard, f.userID, long)
 	// The one thing that must protect a card from the purge.
-	exec(`INSERT INTO review_logs (user_id, card_id, rating, source) VALUES ($1,$2,'ingat','review')`,
+	exec(`INSERT INTO review_logs (user_id, card_id, rating, source) VALUES ($1,$2,'ingat','due')`,
 		f.userID, f.studiedCard)
 
 	return f

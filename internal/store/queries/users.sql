@@ -10,8 +10,13 @@
 -- passes now(), since the operator typed the address at a shell and that is a
 -- stronger check than clicking a link in a mailbox; public signup passes NULL
 -- and sends the mail (07 L3).
-INSERT INTO users (id, email, password_hash, email_verified_at)
-VALUES ($1, $2, $3, $4)
+--
+-- first_name and last_name are parameters for the same reason: public signup
+-- collects them, `konku seed-user` has nobody to ask and passes ''. Both are
+-- NOT NULL DEFAULT '' in the schema (migration 00010), so '' is the honest
+-- "not given" rather than a placeholder.
+INSERT INTO users (id, email, password_hash, email_verified_at, first_name, last_name)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
 
 -- name: CreateUserSettings :one

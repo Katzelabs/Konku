@@ -9,6 +9,8 @@ import {
   Settings,
 } from 'lucide-react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { displayName, initialsFor } from '../../features/auth/displayName'
+import type { User } from '../../features/auth/useAuth'
 import { Avatar } from '../ui/avatar'
 import {
   DropdownMenu,
@@ -31,12 +33,12 @@ import { crumbsFor } from './Nav'
  * container.
  */
 export function TopBar({
-  email,
+  user,
   onLogout,
   sidebarCollapsed,
   onToggleSidebar,
 }: {
-  email: string
+  user: User
   onLogout: () => void
   sidebarCollapsed: boolean
   onToggleSidebar: () => void
@@ -62,7 +64,7 @@ export function TopBar({
       <div className="ml-auto flex items-center gap-2 md:gap-3">
         <NoteSearch />
         <FocusPill />
-        <AccountMenu email={email} onLogout={onLogout} />
+        <AccountMenu user={user} onLogout={onLogout} />
       </div>
     </header>
   )
@@ -173,8 +175,9 @@ function isTyping(target: EventTarget | null) {
   )
 }
 
-function AccountMenu({ email, onLogout }: { email: string; onLogout: () => void }) {
+function AccountMenu({ user, onLogout }: { user: User; onLogout: () => void }) {
   const navigate = useNavigate()
+  const name = displayName(user)
 
   return (
     <DropdownMenu>
@@ -182,16 +185,29 @@ function AccountMenu({ email, onLogout }: { email: string; onLogout: () => void 
         aria-label="Akun"
         className="rounded-full transition-opacity hover:opacity-80"
       >
-        <Avatar email={email} />
+        <Avatar initials={initialsFor(user)} />
       </DropdownMenuTrigger>
       <DropdownMenuContent>
-        <DropdownMenuLabel className="truncate">{email}</DropdownMenuLabel>
+        {/*
+          The name is the heading and the address is the detail under it —
+          except for an account with no name, where the address is the heading
+          and repeating it underneath would be the menu stuttering. `name`
+          already falls back to the address, so the second line is the one that
+          has to check.
+        */}
+        <DropdownMenuLabel className="truncate text-sm font-medium text-surface-fg">
+          {name}
+        </DropdownMenuLabel>
+        {name !== user.email && (
+          <DropdownMenuLabel className="-mt-1 truncate">{user.email}</DropdownMenuLabel>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => navigate('/settings')}>
           <Settings />
           Pengaturan
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={onLogout}>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem variant="destructive" onSelect={onLogout}>
           <LogOut />
           Keluar
         </DropdownMenuItem>

@@ -90,53 +90,54 @@ func tenancyCases() []tenancyCase {
 			},
 		},
 		{
-			resource: "exams",
+			resource: "review sets",
 			setup: func(t *testing.T, a *testClient) []probe {
 				cards := a.seedCards(2, nil)
-				e := a.createExam(map[string]any{
-					"title": "Ujian A", "questionCount": 2, "selection": "fixed",
+				e := a.createSet(map[string]any{
+					"title": "Latihan A", "questionCount": 2, "selection": "fixed",
 				})
 				pinned := []map[string]any{{"cardId": cards[0].ID}, {"cardId": cards[1].ID}}
 				return []probe{
-					{http.MethodGet, "/exams/" + e.ID, nil},
-					{http.MethodPatch, "/exams/" + e.ID, map[string]any{"title": "dibajak"}},
-					{http.MethodDelete, "/exams/" + e.ID, nil},
-					{http.MethodPost, "/exams/" + e.ID + "/archive", nil},
-					{http.MethodPut, "/exams/" + e.ID + "/cards", map[string]any{"cards": pinned}},
-					{http.MethodPost, "/exams/" + e.ID + "/attempts", map[string]any{"attemptDate": today()}},
+					{http.MethodGet, "/review/sets/" + e.ID, nil},
+					{http.MethodPatch, "/review/sets/" + e.ID, map[string]any{"title": "dibajak"}},
+					{http.MethodDelete, "/review/sets/" + e.ID, nil},
+					{http.MethodPost, "/review/sets/" + e.ID + "/archive", nil},
+					{http.MethodPost, "/review/sets/" + e.ID + "/unarchive", nil},
+					{http.MethodPut, "/review/sets/" + e.ID + "/cards", map[string]any{"cards": pinned}},
+					{http.MethodPost, "/review/sets/" + e.ID + "/runs", map[string]any{"runDate": today()}},
 				}
 			},
 		},
 		{
-			resource: "attempts",
+			resource: "review runs",
 			setup: func(t *testing.T, a *testClient) []probe {
 				cards := a.seedCards(2, nil)
-				// selection: fixed, because only a fixed exam has a pinned
-				// card list to PUT.
-				e := a.createExam(map[string]any{
-					"title": "Ujian A", "questionCount": 2, "selection": "fixed",
+				// selection: fixed, because only a fixed set has a pinned card
+				// list to PUT.
+				e := a.createSet(map[string]any{
+					"title": "Latihan A", "questionCount": 2, "selection": "fixed",
 				})
-				a.expect(a.do(http.MethodPut, "/exams/"+e.ID+"/cards",
+				a.expect(a.do(http.MethodPut, "/review/sets/"+e.ID+"/cards",
 					map[string]any{"cards": []map[string]any{
 						{"cardId": cards[0].ID}, {"cardId": cards[1].ID},
 					}}), http.StatusNoContent, nil)
-				at := a.startAttempt(e.ID, http.StatusCreated)
+				at := a.startRun(e.ID, http.StatusCreated)
 				return []probe{
-					{http.MethodGet, "/attempts/" + at.ID, nil},
-					{http.MethodDelete, "/attempts/" + at.ID, nil},
-					{http.MethodPost, "/attempts/" + at.ID + "/finish", nil},
-					{http.MethodGet, "/attempts/" + at.ID + "/" + cards[0].ID + "/answer", nil},
-					{http.MethodPost, "/attempts/" + at.ID + "/" + cards[0].ID, map[string]any{"rating": "ingat"}},
+					{http.MethodGet, "/review/runs/" + at.ID, nil},
+					{http.MethodDelete, "/review/runs/" + at.ID, nil},
+					{http.MethodPost, "/review/runs/" + at.ID + "/finish", nil},
+					{http.MethodGet, "/review/runs/" + at.ID + "/" + cards[0].ID + "/answer", nil},
+					{http.MethodPost, "/review/runs/" + at.ID + "/" + cards[0].ID, map[string]any{"rating": "ingat"}},
 				}
 			},
 		},
 		{
-			resource: "review",
+			resource: "review due",
 			setup: func(t *testing.T, a *testClient) []probe {
 				c := a.createCard(map[string]any{"front": "soal A", "back": "jawab A"})
 				return []probe{
-					{http.MethodGet, "/review/" + c.ID + "/answer", nil},
-					{http.MethodPost, "/review/" + c.ID, map[string]any{"rating": "ingat"}},
+					{http.MethodGet, "/review/due/" + c.ID + "/answer", nil},
+					{http.MethodPost, "/review/due/" + c.ID, map[string]any{"rating": "ingat"}},
 				}
 			},
 		},
@@ -207,7 +208,7 @@ func TestTenancyListsNeverLeakAnotherAccountsRows(t *testing.T) {
 	alice.expect(alice.do(http.MethodPost, "/sessions", map[string]any{
 		"durationMinutes": 25, "sessionDate": today(),
 	}), http.StatusCreated, nil)
-	exam := alice.createExam(map[string]any{"title": "Ujian A", "questionCount": 1})
+	set := alice.createSet(map[string]any{"title": "Latihan A", "questionCount": 1})
 
 	// Every list Bob can reach, and the id that must not appear in it.
 	for _, tc := range []struct {
@@ -221,7 +222,7 @@ func TestTenancyListsNeverLeakAnotherAccountsRows(t *testing.T) {
 		{"/cards?deleted=true", card.ID, "a deleted card"},
 		{"/categories", cat.ID, "a category"},
 		{"/domains", alice.domainID("math"), "a domain"},
-		{"/exams", exam.ID, "an exam"},
+		{"/review/sets", set.ID, "a review set"},
 		{"/sessions", "", "a focus session"},
 		{"/review/due", card.ID, "a due card"},
 	} {

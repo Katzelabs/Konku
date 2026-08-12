@@ -54,6 +54,26 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+// Filling in the signup form, all of it.
+//
+// A helper rather than four lines per test: the form gained first name and a
+// confirm field, and every test that is not *about* validation wants "a
+// filled-in form that would succeed". Spelling that out per test is how one of
+// them gets left behind on the next change.
+async function fillSignup(overrides: Partial<Record<string, string>> = {}) {
+  const values: Record<string, string> = {
+    'Nama depan': 'Sena',
+    Email: 'murid@example.com',
+    'Kata sandi': 'kalimat-yang-panjang',
+    'Ulangi kata sandi': 'kalimat-yang-panjang',
+    ...overrides,
+  }
+  for (const [label, value] of Object.entries(values)) {
+    if (!value) continue
+    await userEvent.type(screen.getByLabelText(label), value)
+  }
+}
+
 describe('SignupPage', () => {
   it('confirms that a link was sent, never that an account was created', async () => {
     // The server answers 204 for an address that is already registered, so a
@@ -64,8 +84,7 @@ describe('SignupPage', () => {
 
     renderAt(<SignupPage />)
 
-    await userEvent.type(screen.getByLabelText('Email'), 'murid@example.com')
-    await userEvent.type(screen.getByLabelText('Kata sandi'), 'kalimat-yang-panjang')
+    await fillSignup()
     await userEvent.click(screen.getByRole('button', { name: 'Buat akun' }))
 
     const heading = await screen.findByRole('heading', { name: 'Cek email kamu' })
@@ -91,8 +110,7 @@ describe('SignupPage', () => {
 
     renderAt(<SignupPage />)
 
-    await userEvent.type(screen.getByLabelText('Email'), 'a@b.co')
-    await userEvent.type(screen.getByLabelText('Kata sandi'), 'kalimat-yang-panjang')
+    await fillSignup({ Email: 'a@b.co' })
     await userEvent.click(screen.getByRole('button', { name: 'Buat akun' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Alamat email tidak valid.')
@@ -226,6 +244,10 @@ describe('ResetPasswordPage', () => {
     renderAt(<ResetPasswordPage />, '/reset-password?token=tok-abc')
 
     await userEvent.type(screen.getByLabelText('Kata sandi baru'), 'kalimat-yang-panjang')
+    await userEvent.type(
+      screen.getByLabelText('Ulangi kata sandi baru'),
+      'kalimat-yang-panjang',
+    )
     await userEvent.click(screen.getByRole('button', { name: 'Simpan kata sandi' }))
 
     await screen.findByRole('heading', { name: 'Kata sandi diperbarui' })
@@ -245,6 +267,10 @@ describe('ResetPasswordPage', () => {
     renderAt(<ResetPasswordPage />, '/reset-password?token=tok-abc')
 
     await userEvent.type(screen.getByLabelText('Kata sandi baru'), 'kalimat-yang-panjang')
+    await userEvent.type(
+      screen.getByLabelText('Ulangi kata sandi baru'),
+      'kalimat-yang-panjang',
+    )
     await userEvent.click(screen.getByRole('button', { name: 'Simpan kata sandi' }))
 
     await screen.findByRole('heading', { name: 'Kata sandi diperbarui' })
@@ -259,6 +285,10 @@ describe('ResetPasswordPage', () => {
     renderAt(<ResetPasswordPage />, '/reset-password?token=stale')
 
     await userEvent.type(screen.getByLabelText('Kata sandi baru'), 'kalimat-yang-panjang')
+    await userEvent.type(
+      screen.getByLabelText('Ulangi kata sandi baru'),
+      'kalimat-yang-panjang',
+    )
     await userEvent.click(screen.getByRole('button', { name: 'Simpan kata sandi' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Tautan ini tidak berlaku lagi.')

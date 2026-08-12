@@ -1,9 +1,23 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { api, ApiError } from '../../api/client'
 
 export interface User {
   id: string
   email: string
+  /**
+   * The account's name, either half of which may be "" (migration 00010).
+   *
+   * Not optional in the type even though it is often empty: the server always
+   * sends both keys, and "" is a value the UI acts on — it is what makes it
+   * fall back to the address. Marking them `?` would let a caller confuse
+   * "this account has no name" with "this response predates the field", which
+   * are different things with the same fix and different bugs.
+   *
+   * Never read directly for display. `displayName.ts` owns the fallback, so
+   * the same account is not greeted two ways on two screens.
+   */
+  firstName: string
+  lastName: string
   /**
    * False until the address is confirmed (07 L3).
    *
@@ -16,6 +30,43 @@ export interface User {
 
 export const meQueryKey = ['auth', 'me'] as const
 export const authConfigQueryKey = ['auth', 'config'] as const
+
+/**
+ * Drop the outgoing account's cache and report the app as signed out.
+ *
+ * The order is the whole point, and getting it backwards is what made logout
+ * appear to do nothing.
+ *
+ * `queryClient.clear()` **removes** every query, and an observer bound to a
+ * removed query is never notified: it keeps returning its last result until
+ * something else re-renders it. `useMe` is called by `App`, while `useLogout`
+ * is called by `AppShell` underneath it — so the settled mutation re-rendered
+ * the child and left the parent holding the signed-in user. Writing null
+ * afterwards did not help either, because `setQueryData` on a removed key
+ * builds a *new* query that the stale observer is not watching. The cache was
+ * genuinely empty and the screen genuinely did not care; only a reload, which
+ * remounts the observer, got anyone to the login page.
+ *
+ * So: write null first, through the query the observer is actually bound to,
+ * and only then remove the rest. `removeQueries` rather than `clear` because
+ * `clear` would take `auth/me` straight back out again.
+ *
+ * Every path that ends a session goes through here — logout, revoking the
+ * current session, a password reset, and deleting the account — because they
+ * all had the same bug and it is not worth fixing four times.
+ */
+function reportSignedOut(qc: QueryClient) {
+  qc.setQueryData(meQueryKey, null)
+  qc.removeQueries({
+    // Everything except who is signed in and what this instance allows.
+    // Cached notes and due cards belong to the account that just left and
+    // must not survive into the next one; `allowSignup` is instance config
+    // with nobody's data in it, and dropping it would blink the signup link
+    // off the login screen we are about to show.
+    predicate: (q) =>
+      !(q.queryKey[0] === 'auth' && (q.queryKey[1] === 'me' || q.queryKey[1] === 'config')),
+  })
+}
 
 /**
  * The current user, or null when signed out.
@@ -80,8 +131,13 @@ export function useAuthConfig() {
  */
 export function useSignup() {
   return useMutation({
-    mutationFn: (creds: { email: string; password: string }) =>
-      api.post<void>('/auth/signup', creds),
+    mutationFn: (account: {
+      email: string
+      password: string
+      firstName: string
+      /** Optional; sent as "" when it was left blank (migration 00010). */
+      lastName: string
+    }) => api.post<void>('/auth/signup', account),
   })
 }
 
@@ -154,8 +210,7 @@ export function useResetPassword() {
     mutationFn: (vars: { token: string; password: string }) =>
       api.post<void>('/auth/reset', vars),
     onSuccess: () => {
-      qc.clear()
-      qc.setQueryData(meQueryKey, null)
+      reportSignedOut(qc)
     },
   })
 }
@@ -208,8 +263,7 @@ export function useRevokeAuthSession() {
       // Braces, never a returned promise: returning the invalidate would make
       // the mutate callbacks wait on a refetch (see CLAUDE.md).
       if (session.current) {
-        qc.clear()
-        qc.setQueryData(meQueryKey, null)
+        reportSignedOut(qc)
         return
       }
       qc.invalidateQueries({ queryKey: authSessionsQueryKey })
@@ -243,8 +297,7 @@ export function useDeleteAccount() {
   return useMutation({
     mutationFn: (password: string) => api.del<void>('/account', { password }),
     onSuccess: () => {
-      qc.clear()
-      qc.setQueryData(meQueryKey, null)
+      reportSignedOut(qc)
     },
   })
 }
@@ -254,10 +307,7 @@ export function useLogout() {
   return useMutation({
     mutationFn: () => api.post<void>('/auth/logout'),
     onSuccess: () => {
-      // Clear everything, not just the user: cached notes and due cards belong
-      // to the account that just signed out and must not leak into the next.
-      qc.clear()
-      qc.setQueryData(meQueryKey, null)
+      reportSignedOut(qc)
     },
   })
 }

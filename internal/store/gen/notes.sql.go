@@ -119,7 +119,7 @@ func (q *Queries) GetNote(ctx context.Context, arg GetNoteParams) (Note, error) 
 }
 
 const listCategoriesForNote = `-- name: ListCategoriesForNote :many
-SELECT cat.id, cat.user_id, cat.slug, cat.label, cat.archived_at, cat.created_at FROM categories cat
+SELECT cat.id, cat.user_id, cat.slug, cat.label, cat.archived_at, cat.created_at, cat.color FROM categories cat
 JOIN note_categories nc ON nc.category_id = cat.id AND nc.user_id = cat.user_id
 WHERE nc.note_id = $1 AND nc.user_id = $2
 ORDER BY cat.label
@@ -146,6 +146,7 @@ func (q *Queries) ListCategoriesForNote(ctx context.Context, arg ListCategoriesF
 			&i.Label,
 			&i.ArchivedAt,
 			&i.CreatedAt,
+			&i.Color,
 		); err != nil {
 			return nil, err
 		}

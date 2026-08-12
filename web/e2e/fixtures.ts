@@ -116,7 +116,10 @@ export const test = base.extend<Fixtures, { account: string }>({
     // directly, on purpose: login is part of the loop being tested.
     await page.goto('/')
     await page.getByLabel('Email').fill(email)
-    await page.getByLabel('Kata sandi').fill(PASSWORD)
+    // Exact: the reveal toggle beside this input is labelled "Tampilkan kata
+    // sandi", and getByLabel matches substrings, so the loose form now finds
+    // two controls.
+    await page.getByLabel('Kata sandi', { exact: true }).fill(PASSWORD)
     await page.getByRole('button', { name: 'Masuk' }).click()
     await expect(page).toHaveURL(/\/home/)
 

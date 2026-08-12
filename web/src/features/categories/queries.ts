@@ -45,6 +45,11 @@ function useCategoryMutation<V, R>(fn: (v: V) => Promise<R>) {
  * Create-on-type. The endpoint is idempotent: a label whose slug already
  * exists comes back as that category rather than a 409, so the picker never
  * has to put a conflict dialog in front of capture (hard rule 7).
+ *
+ * It sends a label and no colour on purpose. The server picks the neutral
+ * default, and an existing category keeps whatever colour it already had —
+ * typing a familiar label mid-note must not repaint something chosen in
+ * Pengaturan.
  */
 export function useCreateCategory() {
   return useCategoryMutation((label: string) =>
@@ -52,10 +57,23 @@ export function useCreateCategory() {
   )
 }
 
-export function useRenameCategory() {
-  return useCategoryMutation((v: { id: string; label: string }) =>
-    api.patch<Category>(`/categories/${v.id}`, { label: v.label }),
-  )
+export interface CategoryInput {
+  label: string
+  color: string
+}
+
+/**
+ * Rename, recolour, or both.
+ *
+ * A PATCH, so a caller sends only what changed. That matters for colour: the
+ * settings row can send `{ color }` alone without having to echo a label back
+ * that it might have read one render stale.
+ */
+export function useUpdateCategory() {
+  return useCategoryMutation((v: { id: string } & Partial<CategoryInput>) => {
+    const { id, ...body } = v
+    return api.patch<Category>(`/categories/${id}`, body)
+  })
 }
 
 export function useArchiveCategory() {

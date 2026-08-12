@@ -9,6 +9,7 @@ import { CategoryChips } from '../../components/ui/category'
 import { ConfirmDialog } from '../../components/ui/confirm-dialog'
 import { EmptyState } from '../../components/ui/empty-state'
 import { Input } from '../../components/ui/input'
+import { DetailPlaceholder, ListDetail } from '../../components/ui/list-detail'
 import { MarkdownInline } from '../../components/ui/markdown'
 import { Notice } from '../../components/ui/notice'
 import { PageHeader } from '../../components/ui/page-header'
@@ -22,6 +23,7 @@ import { useSelection } from '../../lib/use-selection'
 import { cn } from '../../lib/utils'
 import { useAllCategories } from '../categories/queries'
 import { useDomains } from '../domains/queries'
+import { CardPeek } from './CardPeek'
 import { CARD_LIMIT, useCards, useDeleteCards, useRestoreCards } from './queries'
 
 /**
@@ -43,8 +45,10 @@ export default function CardsPage() {
   const [params, setParams] = useSearchParams()
 
   // The peek is a URL — `/cards/:id` — so Back closes it and the link is
-  // copyable. App renders the panel; this list stays mounted underneath.
-  const [peekMode] = usePeekMode()
+  // copyable, while App keeps this list mounted against the background
+  // location. The preview is the second column of this page rather than a
+  // panel floating over it; see ListDetail.
+  const [peekMode, setPeekMode] = usePeekMode()
   const peek = usePeekNavigation()
   const peekId = usePeekedId('/cards/')
 
@@ -112,6 +116,26 @@ export default function CardsPage() {
     restoreMany.mutate(ids, { onSuccess: () => selection.clear() })
   }
 
+  /*
+   * The preview, and whether the page splits in two to hold it. Not in the
+   * Terhapus view: a deleted card answers 404 everywhere else, so there is
+   * nothing to preview and the second column would be permanently empty.
+   */
+  const split = peekMode === 'side' && !deleted
+  const preview = peekId ? (
+    <CardPeek
+      cardId={peekId}
+      // 'full' never reaches the preview: choosing it is a navigation, not a
+      // rendering mode, so peekId is already null by the time it matters.
+      mode={peekMode === 'full' ? 'side' : peekMode}
+      onModeChange={(next) => {
+        if (next === 'full') peek.openFull(`/cards/${peekId}`)
+        else setPeekMode(next)
+      }}
+      onClose={peek.close}
+    />
+  ) : null
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -134,7 +158,7 @@ export default function CardsPage() {
                 Terhapus
               </Button>
               <Button asChild variant="secondary">
-                <Link to="/review">Mulai ulangan</Link>
+                <Link to="/review/due">Mulai ulangan</Link>
               </Button>
               <Button asChild variant="primary">
                 <Link to="/cards/new">
@@ -146,63 +170,6 @@ export default function CardsPage() {
           )
         }
       />
-
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle-fg" />
-            <Input
-              value={query}
-              onChange={(e) => setParam('q', e.target.value)}
-              placeholder="Cari isi kartu…"
-              className="pl-9"
-            />
-          </div>
-          <ViewToggle mode={view} onChange={setView} />
-        </div>
-
-        {domains && domains.length > 0 && (
-          <ToggleGroup>
-            <ToggleGroupItem
-              selected={domainId === null}
-              onClick={() => setParam('domainId', null)}
-            >
-              Semua domain
-            </ToggleGroupItem>
-            {domains.map((d) => (
-              <ToggleGroupItem
-                key={d.id}
-                selected={domainId === d.id}
-                onClick={() => setParam('domainId', d.id)}
-                className="inline-flex items-center gap-1.5"
-              >
-                <DomainDot color={d.color} />
-                {d.label}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-        )}
-
-        {categories && categories.length > 0 && (
-          <ToggleGroup>
-            <ToggleGroupItem
-              selected={categoryId === null}
-              onClick={() => setParam('categoryId', null)}
-            >
-              Semua kategori
-            </ToggleGroupItem>
-            {categories.map((c) => (
-              <ToggleGroupItem
-                key={c.id}
-                selected={categoryId === c.id}
-                onClick={() => setParam('categoryId', c.id)}
-              >
-                {c.label}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-        )}
-      </div>
 
       {isPending && <Loading />}
       {error && <Notice>{error.message}</Notice>}
@@ -250,76 +217,149 @@ export default function CardsPage() {
         </SelectionBar>
       )}
 
-      {data && cards.length === 0 && !filtering && (
-        <EmptyState
-          title={deleted ? 'Tidak ada kartu terhapus.' : 'Belum ada kartu.'}
-          description={
-            deleted
-              ? 'Kartu yang kamu hapus akan muncul di sini.'
-              : 'Satu pertanyaan yang ingin kamu ingat sudah cukup untuk mulai.'
-          }
-          action={
-            !deleted && (
-              <Button asChild variant="primary" size="sm">
-                <Link to="/cards/new">Kartu baru</Link>
-              </Button>
-            )
-          }
-        />
-      )}
+      <ListDetail
+        split={split}
+        peeked={peekId !== null}
+        detail={preview}
+        placeholder={<DetailPlaceholder>Pilih kartu untuk melihat isinya.</DetailPlaceholder>}
+      >
+        {/*
+          Search, both filter rows and the list in one panel. They belong
+          together — all of them are about narrowing the same list — and it is
+          what makes the left column a thing rather than loose controls stacked
+          beside a card.
+        */}
+        <Card className="flex flex-col gap-3 p-3">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle-fg" />
+              <Input
+                value={query}
+                onChange={(e) => setParam('q', e.target.value)}
+                placeholder="Cari isi kartu…"
+                className="pl-9"
+              />
+            </div>
+            <ViewToggle mode={view} onChange={setView} />
+          </div>
 
-      {data && cards.length === 0 && filtering && (
-        <p className="py-4 text-sm text-muted-fg">Tidak ada kartu yang cocok.</p>
-      )}
-
-      {cards.length > 0 &&
-        (view === 'grid' ? (
-          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {cards.map((c) => (
-              <li key={c.id}>
-                <CardTile
-                  card={c}
-                  domains={domains}
-                  categories={categories}
-                  active={peekId === c.id}
-                  selected={selection.selected.has(c.id)}
-                  anySelected={selection.count > 0}
-                  onToggle={() => selection.toggle(c.id)}
-                  onOpen={() => open(c.id)}
-                />
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <Card>
-            <ul className="divide-y divide-border">
-              {cards.map((c) => (
-                <li key={c.id}>
-                  <CardRow
-                    card={c}
-                    domains={domains}
-                    categories={categories}
-                    active={peekId === c.id}
-                    selected={selection.selected.has(c.id)}
-                    anySelected={selection.count > 0}
-                    onToggle={() => selection.toggle(c.id)}
-                    onOpen={() => open(c.id)}
-                  />
-                </li>
+          {domains && domains.length > 0 && (
+            <ToggleGroup>
+              <ToggleGroupItem
+                selected={domainId === null}
+                onClick={() => setParam('domainId', null)}
+              >
+                Semua domain
+              </ToggleGroupItem>
+              {domains.map((d) => (
+                <ToggleGroupItem
+                  key={d.id}
+                  selected={domainId === d.id}
+                  onClick={() => setParam('domainId', d.id)}
+                  className="inline-flex items-center gap-1.5"
+                >
+                  <DomainDot color={d.color} />
+                  {d.label}
+                </ToggleGroupItem>
               ))}
-            </ul>
-          </Card>
-        ))}
+            </ToggleGroup>
+          )}
 
-      {/*
-        Said plainly rather than paginated. If this ever trips, paging is the
-        fix, not a silent truncation.
-      */}
-      {cards.length >= CARD_LIMIT && (
-        <p className="text-xs text-subtle-fg">
-          Menampilkan {CARD_LIMIT} kartu pertama.
-        </p>
-      )}
+          {categories && categories.length > 0 && (
+            <ToggleGroup>
+              <ToggleGroupItem
+                selected={categoryId === null}
+                onClick={() => setParam('categoryId', null)}
+              >
+                Semua kategori
+              </ToggleGroupItem>
+              {categories.map((c) => (
+                <ToggleGroupItem
+                  key={c.id}
+                  selected={categoryId === c.id}
+                  onClick={() => setParam('categoryId', c.id)}
+                >
+                  {c.label}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          )}
+
+          {data && cards.length === 0 && !filtering && (
+            <EmptyState
+              title={deleted ? 'Tidak ada kartu terhapus.' : 'Belum ada kartu.'}
+              description={
+                deleted
+                  ? 'Kartu yang kamu hapus akan muncul di sini.'
+                  : 'Satu pertanyaan yang ingin kamu ingat sudah cukup untuk mulai.'
+              }
+              action={
+                !deleted && (
+                  <Button asChild variant="primary" size="sm">
+                    <Link to="/cards/new">Kartu baru</Link>
+                  </Button>
+                )
+              }
+            />
+          )}
+
+          {data && cards.length === 0 && filtering && (
+            <p className="py-4 text-sm text-muted-fg">Tidak ada kartu yang cocok.</p>
+          )}
+
+          {/*
+            Container queries, not viewport ones: in the split layout this list
+            sits in a 24rem column, and `lg:grid-cols-3` would ask the screen
+            how wide it is and get an answer about the wrong box.
+          */}
+          {cards.length > 0 &&
+            (view === 'grid' ? (
+              <ul className="grid gap-2 @md:grid-cols-2 @3xl:grid-cols-3">
+                {cards.map((c) => (
+                  <li key={c.id}>
+                    <CardTile
+                      card={c}
+                      domains={domains}
+                      categories={categories}
+                      active={peekId === c.id}
+                      selected={selection.selected.has(c.id)}
+                      anySelected={selection.count > 0}
+                      onToggle={() => selection.toggle(c.id)}
+                      onOpen={() => open(c.id)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <ul className="-mx-3 divide-y divide-border border-t border-border">
+                {cards.map((c) => (
+                  <li key={c.id}>
+                    <CardRow
+                      card={c}
+                      domains={domains}
+                      categories={categories}
+                      active={peekId === c.id}
+                      selected={selection.selected.has(c.id)}
+                      anySelected={selection.count > 0}
+                      onToggle={() => selection.toggle(c.id)}
+                      onOpen={() => open(c.id)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            ))}
+
+          {/*
+            Said plainly rather than paginated. If this ever trips, paging is
+            the fix, not a silent truncation.
+          */}
+          {cards.length >= CARD_LIMIT && (
+            <p className="px-1 text-xs text-subtle-fg">
+              Menampilkan {CARD_LIMIT} kartu pertama.
+            </p>
+          )}
+        </Card>
+      </ListDetail>
 
       <ConfirmDialog
         open={confirming}

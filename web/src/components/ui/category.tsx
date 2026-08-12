@@ -2,27 +2,36 @@ import { Check, Plus, X } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import type { Category } from '../../api/types'
 import { cn } from '../../lib/utils'
-import { Badge } from './badge'
+import { Badge, DomainDot } from './badge'
 import { Input } from './input'
 
 /**
  * A category label.
  *
- * Neutral, with no colour of its own — deliberately. Domain colour is the one
- * colour signal in a row, and a second palette competing with it turns a list
- * into confetti. Categories earn their place by text (D-054's narrow palette).
+ * It carries a colour since 00011, which D-054 had ruled out. The rejected
+ * thing was a *second tinted palette* next to the domain badge — chips with
+ * coloured fills next to a coloured pill is what turns a row into confetti,
+ * and that is still not what this does. The colour arrives as the same 10px
+ * dot a domain wears, on the same neutral outline chip: enough to tell two
+ * labels apart at a glance, not enough to compete with the text.
+ *
+ * `color` is optional so the style guide and any caller that only has a label
+ * still renders. Missing means no dot, not a black one.
  */
 export function CategoryChip({
   label,
+  color,
   onRemove,
   className,
 }: {
   label: string
+  color?: string
   onRemove?: () => void
   className?: string
 }) {
   return (
     <Badge variant="outline" className={cn('gap-1', className)}>
+      {color && <DomainDot color={color} className="size-2" />}
       {label}
       {onRemove && (
         <button
@@ -119,6 +128,7 @@ export function CategoryPicker({
             <CategoryChip
               key={c.id}
               label={c.label}
+              color={c.color}
               onRemove={() => toggle(c.id)}
             />
           ))}
@@ -158,7 +168,10 @@ export function CategoryPicker({
                     : 'text-muted-fg hover:bg-muted hover:text-surface-fg',
                 )}
               >
-                <span className="truncate">{c.label}</span>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <DomainDot color={c.color} className="size-2" />
+                  <span className="truncate">{c.label}</span>
+                </span>
                 {on && <Check className="size-3.5 shrink-0" />}
               </button>
             </li>
@@ -209,7 +222,7 @@ export function CategoryChips({
   return (
     <div className={cn('flex flex-wrap gap-1', className)}>
       {labels.map((c) => (
-        <CategoryChip key={c.id} label={c.label} />
+        <CategoryChip key={c.id} label={c.label} color={c.color} />
       ))}
     </div>
   )

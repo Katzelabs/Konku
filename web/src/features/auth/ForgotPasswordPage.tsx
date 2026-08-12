@@ -1,22 +1,18 @@
-import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { MailCheck } from 'lucide-react'
 import { Button } from '../../components/ui/button'
 import { Card } from '../../components/ui/card'
+import { Field } from '../../components/ui/field'
 import { Input } from '../../components/ui/input'
-import { Label } from '../../components/ui/label'
 import { Notice } from '../../components/ui/notice'
+import { useZodForm } from '../../lib/useZodForm'
+import { forgotSchema } from './schemas'
 import { useForgotPassword } from './useAuth'
 import { AuthLayout } from './AuthLayout'
 
 export default function ForgotPasswordPage() {
-  const [email, setEmail] = useState('')
   const forgot = useForgotPassword()
-
-  function onSubmit(e: FormEvent) {
-    e.preventDefault()
-    forgot.mutate(email)
-  }
+  const form = useZodForm(forgotSchema, { email: '' })
 
   /*
    * The success copy is conditional, and has to be.
@@ -26,6 +22,12 @@ export default function ForgotPasswordPage() {
    * app (D-039, D-066). So this screen cannot say "we sent you an email"; it
    * says what is actually true, which is that a link is on its way *if* the
    * address is registered.
+   *
+   * Note there is no resend button here, unlike the verification screen, and
+   * that is deliberate rather than an omission: the way to ask again is to
+   * submit the form again, which is right there. A resend would need the
+   * address to be remembered across a screen whose whole point is that we will
+   * not say whether it exists.
    */
   if (forgot.isSuccess) {
     return (
@@ -35,8 +37,10 @@ export default function ForgotPasswordPage() {
             <MailCheck className="size-5" />
           </span>
           <p className="text-sm text-secondary-fg">
-            Kalau <span className="font-medium text-surface-fg">{email}</span> terdaftar,
-            kami sudah mengirim tautan untuk mengatur ulang kata sandi ke sana.
+            Kalau{' '}
+            <span className="font-medium text-surface-fg">{forgot.variables}</span>{' '}
+            terdaftar, kami sudah mengirim tautan untuk mengatur ulang kata sandi ke
+            sana.
           </p>
           <p className="text-sm text-muted-fg">
             Tautannya berlaku 1 jam. Kalau belum masuk juga, cek folder spam.
@@ -55,19 +59,22 @@ export default function ForgotPasswordPage() {
       subtitle="Kami kirimkan tautan untuk membuat kata sandi baru."
     >
       <Card className="p-6">
-        <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoComplete="username"
-              autoFocus
-            />
-          </div>
+        <form
+          onSubmit={form.handleSubmit(({ email }) => forgot.mutate(email))}
+          noValidate
+          className="flex flex-col gap-4"
+        >
+          <Field id="email" label="Email" error={form.errors.email}>
+            {(a11y) => (
+              <Input
+                {...a11y}
+                {...form.field('email')}
+                type="email"
+                autoComplete="username"
+                autoFocus
+              />
+            )}
+          </Field>
 
           {forgot.isError && <Notice role="alert">{forgot.error.message}</Notice>}
 

@@ -24,8 +24,8 @@ export default function PrivacyPage() {
   return (
     <LegalPage title="Kebijakan Privasi" updated="12 Agustus 2026">
       <p>
-        <strong>Singkatnya:</strong> Konku menyimpan apa yang kamu tulis dan alamat
-        email kamu. Datanya tidak dijual, tidak dipakai untuk iklan, dan tidak dipakai
+        <strong>Singkatnya:</strong> Konku menyimpan apa yang kamu tulis, nama kamu,
+        dan alamat email kamu. Datanya tidak dijual, tidak dipakai untuk iklan, dan tidak dipakai
         untuk melatih model AI apa pun. Tidak ada pelacak pihak ketiga di aplikasi ini.
       </p>
 
@@ -36,6 +36,12 @@ export default function PrivacyPage() {
           tautan reset kata sandi.
         </li>
         <li>
+          <strong>Nama.</strong> Nama depan, dan nama belakang kalau kamu mengisinya.
+          Dipakai untuk menyapa kamu di dalam aplikasi — tidak dikirim ke pihak mana
+          pun, dan tidak terlihat oleh pengguna lain, karena tidak ada halaman di
+          Konku yang menampilkan akun orang lain.
+        </li>
+        <li>
           <strong>Kata sandi.</strong> Disimpan sebagai hash argon2id, bukan sebagai
           teks. Tidak bisa dibaca kembali — termasuk oleh kami.
         </li>
@@ -44,7 +50,10 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Riwayat belajar.</strong> Jadwal ulang tiap kartu, catatan setiap kali
-          kamu me-review, sesi fokus, serta ujian dan hasilnya.
+          kamu mengulang sebuah kartu, sesi fokus, serta latihan yang kamu susun dan
+          hasil tiap kali dikerjakan. Untuk latihan berbentuk pilihan ganda, pilihan
+          yang muncul di layar ikut disimpan — kalau tidak, hasil yang lama tidak bisa
+          dibaca lagi sebagai soal yang pernah kamu kerjakan.
         </li>
         <li>
           <strong>Sesi login.</strong> Waktu masuk, waktu aktif terakhir, alamat IP, dan

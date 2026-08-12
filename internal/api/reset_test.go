@@ -25,7 +25,7 @@ func signedUpUser(t *testing.T, a *testApp) string {
 
 	email := signupAddress(t, a)
 	if status, body := statusOf(t, post(t, a, "/auth/signup",
-		map[string]string{"email": email, "password": signupPassword})); status != http.StatusNoContent {
+		signupBody(email))); status != http.StatusNoContent {
 		t.Fatalf("signup status = %d: %s", status, body)
 	}
 	token := a.mail.lastTo(t, email).token
@@ -104,7 +104,7 @@ func TestResetTokensAllFailIdentically(t *testing.T) {
 	// attacker gets to a valid one they were legitimately given.
 	third := signupAddress(t, a)
 	if status, _ := statusOf(t, post(t, a, "/auth/signup",
-		map[string]string{"email": third, "password": signupPassword})); status != http.StatusNoContent {
+		signupBody(third))); status != http.StatusNoContent {
 		t.Fatal("signup failed")
 	}
 	wrongKind := a.mail.lastTo(t, third).token
@@ -210,7 +210,7 @@ func TestResetAlsoVerifiesTheAddress(t *testing.T) {
 
 	email := signupAddress(t, a)
 	if status, _ := statusOf(t, post(t, a, "/auth/signup",
-		map[string]string{"email": email, "password": signupPassword})); status != http.StatusNoContent {
+		signupBody(email))); status != http.StatusNoContent {
 		t.Fatal("signup failed")
 	}
 	// Deliberately never verified.

@@ -16,7 +16,7 @@ const archiveCategory = `-- name: ArchiveCategory :one
 UPDATE categories
 SET archived_at = now()
 WHERE id = $1 AND user_id = $2 AND archived_at IS NULL
-RETURNING id, user_id, slug, label, archived_at, created_at
+RETURNING id, user_id, slug, label, archived_at, created_at, color
 `
 
 type ArchiveCategoryParams struct {
@@ -35,24 +35,31 @@ func (q *Queries) ArchiveCategory(ctx context.Context, arg ArchiveCategoryParams
 		&i.Label,
 		&i.ArchivedAt,
 		&i.CreatedAt,
+		&i.Color,
 	)
 	return i, err
 }
 
 const createCategory = `-- name: CreateCategory :one
-INSERT INTO categories (user_id, slug, label)
-VALUES ($1, $2, $3)
-RETURNING id, user_id, slug, label, archived_at, created_at
+INSERT INTO categories (user_id, slug, label, color)
+VALUES ($1, $2, $3, $4)
+RETURNING id, user_id, slug, label, archived_at, created_at, color
 `
 
 type CreateCategoryParams struct {
 	UserID uuid.UUID `json:"user_id"`
 	Slug   string    `json:"slug"`
 	Label  string    `json:"label"`
+	Color  string    `json:"color"`
 }
 
 func (q *Queries) CreateCategory(ctx context.Context, arg CreateCategoryParams) (Category, error) {
-	row := q.db.QueryRow(ctx, createCategory, arg.UserID, arg.Slug, arg.Label)
+	row := q.db.QueryRow(ctx, createCategory,
+		arg.UserID,
+		arg.Slug,
+		arg.Label,
+		arg.Color,
+	)
 	var i Category
 	err := row.Scan(
 		&i.ID,
@@ -61,6 +68,7 @@ func (q *Queries) CreateCategory(ctx context.Context, arg CreateCategoryParams) 
 		&i.Label,
 		&i.ArchivedAt,
 		&i.CreatedAt,
+		&i.Color,
 	)
 	return i, err
 }
@@ -87,7 +95,7 @@ func (q *Queries) DeleteCategory(ctx context.Context, arg DeleteCategoryParams) 
 }
 
 const getCategory = `-- name: GetCategory :one
-SELECT id, user_id, slug, label, archived_at, created_at FROM categories
+SELECT id, user_id, slug, label, archived_at, created_at, color FROM categories
 WHERE id = $1 AND user_id = $2
 `
 
@@ -106,12 +114,13 @@ func (q *Queries) GetCategory(ctx context.Context, arg GetCategoryParams) (Categ
 		&i.Label,
 		&i.ArchivedAt,
 		&i.CreatedAt,
+		&i.Color,
 	)
 	return i, err
 }
 
 const getCategoryBySlug = `-- name: GetCategoryBySlug :one
-SELECT id, user_id, slug, label, archived_at, created_at FROM categories
+SELECT id, user_id, slug, label, archived_at, created_at, color FROM categories
 WHERE slug = $1 AND user_id = $2
 `
 
@@ -133,13 +142,14 @@ func (q *Queries) GetCategoryBySlug(ctx context.Context, arg GetCategoryBySlugPa
 		&i.Label,
 		&i.ArchivedAt,
 		&i.CreatedAt,
+		&i.Color,
 	)
 	return i, err
 }
 
 const listCategories = `-- name: ListCategories :many
 
-SELECT c.id, c.user_id, c.slug, c.label, c.archived_at, c.created_at,
+SELECT c.id, c.user_id, c.slug, c.label, c.archived_at, c.created_at, c.color,
        (SELECT count(*) FROM note_categories nc
           JOIN notes n ON n.id = nc.note_id AND n.user_id = nc.user_id
          WHERE nc.category_id = c.id AND n.deleted_at IS NULL) AS note_count,
@@ -164,6 +174,7 @@ type ListCategoriesRow struct {
 	Label      string     `json:"label"`
 	ArchivedAt *time.Time `json:"archived_at"`
 	CreatedAt  time.Time  `json:"created_at"`
+	Color      string     `json:"color"`
 	NoteCount  int64      `json:"note_count"`
 	CardCount  int64      `json:"card_count"`
 }
@@ -195,6 +206,7 @@ func (q *Queries) ListCategories(ctx context.Context, arg ListCategoriesParams) 
 			&i.Label,
 			&i.ArchivedAt,
 			&i.CreatedAt,
+			&i.Color,
 			&i.NoteCount,
 			&i.CardCount,
 		); err != nil {
@@ -212,7 +224,7 @@ const unarchiveCategory = `-- name: UnarchiveCategory :one
 UPDATE categories
 SET archived_at = NULL
 WHERE id = $1 AND user_id = $2
-RETURNING id, user_id, slug, label, archived_at, created_at
+RETURNING id, user_id, slug, label, archived_at, created_at, color
 `
 
 type UnarchiveCategoryParams struct {
@@ -230,15 +242,16 @@ func (q *Queries) UnarchiveCategory(ctx context.Context, arg UnarchiveCategoryPa
 		&i.Label,
 		&i.ArchivedAt,
 		&i.CreatedAt,
+		&i.Color,
 	)
 	return i, err
 }
 
 const updateCategory = `-- name: UpdateCategory :one
 UPDATE categories
-SET slug = $3, label = $4
+SET slug = $3, label = $4, color = $5
 WHERE id = $1 AND user_id = $2
-RETURNING id, user_id, slug, label, archived_at, created_at
+RETURNING id, user_id, slug, label, archived_at, created_at, color
 `
 
 type UpdateCategoryParams struct {
@@ -246,16 +259,20 @@ type UpdateCategoryParams struct {
 	UserID uuid.UUID `json:"user_id"`
 	Slug   string    `json:"slug"`
 	Label  string    `json:"label"`
+	Color  string    `json:"color"`
 }
 
 // Renaming is the whole reason categories are rows rather than strings on the
-// note: every label already applied follows the rename.
+// note: every label already applied follows the rename. Recolouring works the
+// same way — the dot changes everywhere the category is shown, because there
+// is one row behind all of them.
 func (q *Queries) UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (Category, error) {
 	row := q.db.QueryRow(ctx, updateCategory,
 		arg.ID,
 		arg.UserID,
 		arg.Slug,
 		arg.Label,
+		arg.Color,
 	)
 	var i Category
 	err := row.Scan(
@@ -265,6 +282,7 @@ func (q *Queries) UpdateCategory(ctx context.Context, arg UpdateCategoryParams) 
 		&i.Label,
 		&i.ArchivedAt,
 		&i.CreatedAt,
+		&i.Color,
 	)
 	return i, err
 }

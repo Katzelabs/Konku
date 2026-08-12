@@ -1,50 +1,56 @@
 import { useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
-import type { AttemptDetail, AttemptQuestion, Rating } from '../../api/types'
+import type { AnswerResult, Rating, RunDetail, RunQuestion } from '../../api/types'
 import { Button } from '../../components/ui/button'
 import { Card } from '../../components/ui/card'
 import { Notice } from '../../components/ui/notice'
 import { PageHeader } from '../../components/ui/page-header'
 import { Loading } from '../../components/ui/spinner'
+import { cn } from '../../lib/utils'
 import {
   useAnswerQuestion,
-  useAttempt,
-  useAttemptAnswer,
-  useFinishAttempt,
-} from './queries'
+  useFinishRun,
+  useRun,
+  useRunAnswer,
+} from './setQueries'
 
 /**
- * One sitting of an exam.
+ * One sitting of a review set.
  *
- * Deliberately the same interaction as the review screen: prompt, reveal,
- * ingat/lupa. Nothing new to learn, and recall-before-reveal (D-003) applies
- * here for exactly the same reason it does there.
+ * A recall question is deliberately the same interaction as the due queue:
+ * prompt, reveal, ingat/lupa. Nothing new to learn, and recall-before-reveal
+ * (D-003) applies here for exactly the same reason it does there.
+ *
+ * A choice question has no separate reveal step, and that is not a shortcut:
+ * committing to an option *is* the recall attempt D-003 protects. The reveal
+ * arrives on the response, once the answer is already given and cannot be
+ * changed.
  *
  * There is no running score. A live tally during the sitting is a scoreboard,
  * and the score is only useful afterwards as a pointer to what to revisit.
  */
-export default function SitExamPage() {
+export default function RunPage() {
   const { id = '' } = useParams()
-  const { data: attempt, isPending, error } = useAttempt(id)
+  const { data: run, isPending, error } = useRun(id)
 
   if (isPending) return <Loading />
   if (error) return <Notice>{error.message}</Notice>
-  if (!attempt) return null
+  if (!run) return null
 
-  if (attempt.finishedAt !== null) return <Result attempt={attempt} />
-  return <Sitting attempt={attempt} />
+  if (run.finishedAt !== null) return <Result run={run} />
+  return <Sitting run={run} />
 }
 
-function Sitting({ attempt }: { attempt: AttemptDetail }) {
+function Sitting({ run }: { run: RunDetail }) {
   // Resuming lands on the first unanswered question rather than the start, so
   // a run picked up later carries on where it stopped (D-050).
-  const firstUnanswered = attempt.questions.findIndex((q) => q.rating === null)
+  const firstUnanswered = run.questions.findIndex((q) => q.rating === null)
   const [index, setIndex] = useState(firstUnanswered === -1 ? 0 : firstUnanswered)
-  const finish = useFinishAttempt()
+  const finish = useFinishRun()
 
-  const remaining = attempt.questions.filter((q) => q.rating === null).length
-  const question = attempt.questions[index]
+  const remaining = run.questions.filter((q) => q.rating === null).length
+  const question = run.questions[index]
 
   if (remaining === 0 || !question) {
     return (
@@ -56,7 +62,7 @@ function Sitting({ attempt }: { attempt: AttemptDetail }) {
         <Button
           variant="primary"
           size="lg"
-          onClick={() => finish.mutate(attempt.id)}
+          onClick={() => finish.mutate(run.id)}
           disabled={finish.isPending}
           className="self-start"
         >
@@ -70,24 +76,24 @@ function Sitting({ attempt }: { attempt: AttemptDetail }) {
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-bold tracking-tight text-surface-fg">Ujian</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-surface-fg">Ulangan</h1>
         <span className="text-sm text-subtle-fg tabular-nums">
-          Soal {index + 1} dari {attempt.questions.length}
+          Soal {index + 1} dari {run.questions.length}
         </span>
       </div>
 
       <div className="h-1 overflow-hidden rounded-full bg-muted">
         <div
           className="h-full bg-primary transition-[width] duration-(--animate-duration-calm) ease-(--ease-quiet)"
-          style={{ width: `${(index / attempt.questions.length) * 100}%` }}
+          style={{ width: `${(index / run.questions.length) * 100}%` }}
         />
       </div>
 
       <Question
-        // Remounting per question resets the reveal state, so the next prompt
-        // can never arrive already showing its answer.
+        // Remounting per question resets the reveal and the chosen option, so
+        // the next prompt can never arrive already answered.
         key={question.cardId}
-        attemptId={attempt.id}
+        runId={run.id}
         question={question}
         onAnswered={() => setIndex((i) => i + 1)}
       />
@@ -96,25 +102,14 @@ function Sitting({ attempt }: { attempt: AttemptDetail }) {
 }
 
 function Question({
-  attemptId,
+  runId,
   question,
   onAnswered,
 }: {
-  attemptId: string
-  question: AttemptQuestion
+  runId: string
+  question: RunQuestion
   onAnswered: () => void
 }) {
-  const [reveal, setReveal] = useState(false)
-  const answer = useAttemptAnswer(attemptId, question.cardId, reveal)
-  const submit = useAnswerQuestion()
-
-  function rate(rating: Rating) {
-    submit.mutate(
-      { attemptId, cardId: question.cardId, rating },
-      { onSuccess: onAnswered },
-    )
-  }
-
   // A card deleted after the draw still holds its place in the score, but
   // there is nothing left to ask.
   if (question.missing) {
@@ -128,6 +123,29 @@ function Question({
         </Button>
       </div>
     )
+  }
+
+  if (question.options.length > 0) {
+    return <ChoiceQuestion runId={runId} question={question} onAnswered={onAnswered} />
+  }
+  return <RecallQuestion runId={runId} question={question} onAnswered={onAnswered} />
+}
+
+function RecallQuestion({
+  runId,
+  question,
+  onAnswered,
+}: {
+  runId: string
+  question: RunQuestion
+  onAnswered: () => void
+}) {
+  const [reveal, setReveal] = useState(false)
+  const answer = useRunAnswer(runId, question.cardId, reveal)
+  const submit = useAnswerQuestion()
+
+  function rate(rating: Rating) {
+    submit.mutate({ runId, cardId: question.cardId, rating }, { onSuccess: onAnswered })
   }
 
   return (
@@ -184,8 +202,88 @@ function Question({
   )
 }
 
-function Result({ attempt }: { attempt: AttemptDetail }) {
-  const missed = attempt.questions.filter((q) => q.rating === 'lupa')
+/**
+ * A multiple-choice question.
+ *
+ * Picking an option submits it. Grading happens on the server — the client is
+ * never told which option is right until it has sent one, so the answer key is
+ * not sitting in the page waiting to be read (D-077).
+ */
+function ChoiceQuestion({
+  runId,
+  question,
+  onAnswered,
+}: {
+  runId: string
+  question: RunQuestion
+  onAnswered: () => void
+}) {
+  const [picked, setPicked] = useState<number | null>(null)
+  const [result, setResult] = useState<AnswerResult | null>(null)
+  const submit = useAnswerQuestion()
+
+  function choose(choice: number) {
+    if (result) return
+    setPicked(choice)
+    submit.mutate(
+      { runId, cardId: question.cardId, choice },
+      { onSuccess: setResult },
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-5">
+      <Card className="px-6 py-8">
+        <p className="text-reading text-card-fg">{question.front}</p>
+      </Card>
+
+      <ul className="flex flex-col gap-2">
+        {question.options.map((option, i) => {
+          const isCorrect = result !== null && result.correctIndex === i
+          const isWrongPick = result !== null && picked === i && !isCorrect
+          return (
+            <li key={i}>
+              <button
+                type="button"
+                onClick={() => choose(i)}
+                disabled={result !== null || submit.isPending}
+                className={cn(
+                  'w-full rounded-md border px-4 py-3 text-left text-sm transition-colors',
+                  'border-input bg-card text-card-fg',
+                  result === null && 'hover:bg-muted',
+                  // The right answer is marked with the primary token, not a
+                  // green one — the palette has no success colour on purpose
+                  // (D-054). A wrong pick is merely dimmed: getting it wrong is
+                  // the ordinary case the whole schedule is built around.
+                  isCorrect && 'border-primary bg-primary/10 text-card-fg',
+                  isWrongPick && 'border-border bg-muted text-muted-fg line-through',
+                )}
+              >
+                {option}
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+
+      {result !== null && (
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-muted-fg">
+            {result.rating === 'ingat' ? 'Betul.' : 'Belum kena — jawabannya yang ditandai.'}
+          </p>
+          <Button variant="primary" size="lg" onClick={onAnswered} className="self-start">
+            Lanjut
+          </Button>
+        </div>
+      )}
+
+      {submit.isError && <Notice>{submit.error.message}</Notice>}
+    </div>
+  )
+}
+
+function Result({ run }: { run: RunDetail }) {
+  const missed = run.questions.filter((q) => q.rating === 'lupa')
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
@@ -199,8 +297,8 @@ function Result({ attempt }: { attempt: AttemptDetail }) {
       */}
       <Card className="px-6 py-8">
         <p className="text-3xl font-semibold text-card-fg tabular-nums">
-          {attempt.correctCount}
-          <span className="text-subtle-fg"> / {attempt.totalCount}</span>
+          {run.correctCount}
+          <span className="text-subtle-fg"> / {run.totalCount}</span>
         </p>
         <p className="mt-2 text-sm text-muted-fg">
           Ini tidak mengubah jadwal ulangan kartu-kartu ini.
@@ -228,9 +326,9 @@ function Result({ attempt }: { attempt: AttemptDetail }) {
       )}
 
       <Button asChild variant="secondary" className="self-start">
-        <Link to={`/exams/${attempt.examId}`}>
+        <Link to={`/review/sets/${run.setId}`}>
           <ArrowLeft />
-          Kembali ke ujian
+          Kembali ke latihan
         </Link>
       </Button>
     </div>

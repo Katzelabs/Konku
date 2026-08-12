@@ -60,10 +60,12 @@ type Archive struct {
 	ReviewLogs    []gen.ExportReviewLogsRow
 	FocusSessions []gen.ExportFocusSessionsRow
 
-	Exams            []gen.ExportExamsRow
-	ExamCards        []gen.ExportExamCardsRow
-	ExamAttempts     []gen.ExportExamAttemptsRow
-	ExamAttemptCards []gen.ExportExamAttemptCardsRow
+	ReviewSets          []gen.ExportReviewSetsRow
+	ReviewSetDomains    []gen.ExportReviewSetDomainsRow
+	ReviewSetCategories []gen.ExportReviewSetCategoriesRow
+	ReviewSetCards      []gen.ExportReviewSetCardsRow
+	ReviewRuns          []gen.ExportReviewRunsRow
+	ReviewRunCards      []gen.ExportReviewRunCardsRow
 }
 
 // Load reads everything the account owns.
@@ -101,10 +103,12 @@ func Load(ctx context.Context, st *store.Store, userID uuid.UUID) (*Archive, err
 			{"schedules", func() (err error) { a.Schedules, err = q.ExportCardSchedules(ctx, userID); return }},
 			{"review logs", func() (err error) { a.ReviewLogs, err = q.ExportReviewLogs(ctx, userID); return }},
 			{"focus sessions", func() (err error) { a.FocusSessions, err = q.ExportFocusSessions(ctx, userID); return }},
-			{"exams", func() (err error) { a.Exams, err = q.ExportExams(ctx, userID); return }},
-			{"exam cards", func() (err error) { a.ExamCards, err = q.ExportExamCards(ctx, userID); return }},
-			{"exam attempts", func() (err error) { a.ExamAttempts, err = q.ExportExamAttempts(ctx, userID); return }},
-			{"exam attempt cards", func() (err error) { a.ExamAttemptCards, err = q.ExportExamAttemptCards(ctx, userID); return }},
+			{"review sets", func() (err error) { a.ReviewSets, err = q.ExportReviewSets(ctx, userID); return }},
+			{"review set domains", func() (err error) { a.ReviewSetDomains, err = q.ExportReviewSetDomains(ctx, userID); return }},
+			{"review set categories", func() (err error) { a.ReviewSetCategories, err = q.ExportReviewSetCategories(ctx, userID); return }},
+			{"review set cards", func() (err error) { a.ReviewSetCards, err = q.ExportReviewSetCards(ctx, userID); return }},
+			{"review runs", func() (err error) { a.ReviewRuns, err = q.ExportReviewRuns(ctx, userID); return }},
+			{"review run cards", func() (err error) { a.ReviewRunCards, err = q.ExportReviewRunCards(ctx, userID); return }},
 		} {
 			if err := step.read(); err != nil {
 				return fmt.Errorf("export: %s: %w", step.name, err)
@@ -197,10 +201,12 @@ func (a *Archive) Write(w io.Writer) error {
 		{"data/schedules.json", a.Schedules},
 		{"data/reviews.json", a.ReviewLogs},
 		{"data/focus-sessions.json", a.FocusSessions},
-		{"data/exams.json", a.Exams},
-		{"data/exam-cards.json", a.ExamCards},
-		{"data/exam-attempts.json", a.ExamAttempts},
-		{"data/exam-attempt-cards.json", a.ExamAttemptCards},
+		{"data/review-sets.json", a.ReviewSets},
+		{"data/review-set-domains.json", a.ReviewSetDomains},
+		{"data/review-set-categories.json", a.ReviewSetCategories},
+		{"data/review-set-cards.json", a.ReviewSetCards},
+		{"data/review-runs.json", a.ReviewRuns},
+		{"data/review-run-cards.json", a.ReviewRunCards},
 	} {
 		buf, err := json.MarshalIndent(f.v, "", "  ")
 		if err != nil {

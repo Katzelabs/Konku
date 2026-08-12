@@ -28,6 +28,23 @@ var ErrNothingToSend = errors.New("auth: nothing to send")
 // handler can skip sending mail, and so the log line can say what happened.
 var ErrEmailTaken = errors.New("auth: email already registered")
 
+// NewAccount is everything public signup collects.
+//
+// A struct rather than four positional strings: Email, Password, FirstName and
+// LastName are all `string`, so a transposed pair compiles cleanly and shows
+// up as an account named after its own password. The compiler cannot help with
+// positional arguments here; it can with fields.
+type NewAccount struct {
+	Email    string
+	Password string
+	// FirstName is required by the handler; LastName is optional and arrives
+	// as "" when it was left blank (migration 00010). Both are already
+	// trimmed and length-checked by the time they get here — this package
+	// stores what it is given.
+	FirstName string
+	LastName  string
+}
+
 // Signup creates an unverified account and mints its verification token.
 //
 // Everything commits together: the account, its five starter domains (D-046),
@@ -38,8 +55,8 @@ var ErrEmailTaken = errors.New("auth: email already registered")
 // The raw token is returned rather than stored. It exists in exactly two
 // places after this call: the caller's memory, and the mailbox it is about to
 // be sent to.
-func (s *Service) Signup(ctx context.Context, email, password string) (gen.User, string, error) {
-	hash, err := Hash(password)
+func (s *Service) Signup(ctx context.Context, acct NewAccount) (gen.User, string, error) {
+	hash, err := Hash(acct.Password)
 	if err != nil {
 		return gen.User{}, "", err
 	}
@@ -60,8 +77,10 @@ func (s *Service) Signup(ctx context.Context, email, password string) (gen.User,
 		// whatever address an attacker types (07 L3).
 		user, err = q.CreateUser(ctx, gen.CreateUserParams{
 			ID:           id,
-			Email:        normalizeEmail(email),
+			Email:        normalizeEmail(acct.Email),
 			PasswordHash: hash,
+			FirstName:    acct.FirstName,
+			LastName:     acct.LastName,
 		})
 		if err != nil {
 			if isUniqueViolation(err) {

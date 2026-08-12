@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ArrowLeft, Play } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import type { Attempt, CardRef } from '../../api/types'
+import type { CardRef, Run } from '../../api/types'
 import { DomainDot } from '../../components/ui/badge'
 import { Button } from '../../components/ui/button'
 import { Card } from '../../components/ui/card'
@@ -9,38 +9,42 @@ import { Notice } from '../../components/ui/notice'
 import { Separator } from '../../components/ui/separator'
 import { Loading } from '../../components/ui/spinner'
 import { humanDay, today } from '../../lib/date'
+import { useCategories } from '../categories/queries'
 import { useDomains } from '../domains/queries'
 import {
-  useArchiveExam,
-  useDeleteExam,
-  useExam,
+  useArchiveReviewSet,
+  useDeleteReviewSet,
   usePickableCards,
-  useSetExamCards,
-  useStartAttempt,
-} from './queries'
+  useReviewSet,
+  useSetReviewSetCards,
+  useStartRun,
+} from './setQueries'
 
-export default function ExamPage() {
+export default function ReviewSetPage() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
-  const { data: exam, isPending, error } = useExam(id)
+  const { data: set, isPending, error } = useReviewSet(id)
   const { data: domains } = useDomains()
+  const { data: categories } = useCategories()
 
-  const start = useStartAttempt()
-  const archive = useArchiveExam()
-  const del = useDeleteExam()
+  const start = useStartRun()
+  const archive = useArchiveReviewSet()
+  const del = useDeleteReviewSet()
 
   if (isPending) return <Loading />
   if (error) return <Notice>{error.message}</Notice>
-  if (!exam) return null
+  if (!set) return null
 
-  const domain = domains?.find((d) => d.id === exam.domainId)
-  const open = exam.attempts.find((a) => a.finishedAt === null)
-  const finished = exam.attempts.filter((a) => a.finishedAt !== null)
+  const pickedDomains = domains?.filter((d) => set.domainIds.includes(d.id)) ?? []
+  const pickedCategories =
+    categories?.filter((c) => set.categoryIds.includes(c.id)) ?? []
+  const open = set.runs.find((a) => a.finishedAt === null)
+  const finished = set.runs.filter((a) => a.finishedAt !== null)
 
   function begin() {
     start.mutate(
-      { examId: id, attemptDate: today() },
-      { onSuccess: (attempt) => navigate(`/attempts/${attempt.id}`) },
+      { setId: id, runDate: today() },
+      { onSuccess: (run) => navigate(`/review/runs/${run.id}`) },
     )
   }
 
@@ -48,32 +52,40 @@ export default function ExamPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3">
         <Button asChild variant="link" size="inline" className="self-start">
-          <Link to="/exams">
+          <Link to="/review">
             <ArrowLeft />
-            Semua ujian
+            Semua ulangan
           </Link>
         </Button>
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-surface-fg">
-            {exam.title}
+            {set.title}
           </h1>
-          <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-fg">
-            {exam.selection === 'random'
-              ? `${exam.questionCount} soal acak`
+          <p className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted-fg">
+            {set.selection === 'random'
+              ? `${set.questionCount} soal acak`
               : 'soal tetap'}
-            {domain && (
-              <>
+            <span aria-hidden>·</span>
+            {set.format === 'choice' ? 'pilihan ganda' : 'ingat sendiri'}
+            {pickedDomains.map((d) => (
+              <span key={d.id} className="flex items-center gap-1">
                 <span aria-hidden>·</span>
-                <DomainDot color={domain.color} />
-                {domain.label}
-              </>
-            )}
+                <DomainDot color={d.color} />
+                {d.label}
+              </span>
+            ))}
+            {pickedCategories.map((c) => (
+              <span key={c.id}>
+                <span aria-hidden> · </span>
+                {c.label}
+              </span>
+            ))}
           </p>
         </div>
       </div>
 
-      {exam.description && (
-        <p className="text-reading text-reading-fg">{exam.description}</p>
+      {set.description && (
+        <p className="text-reading text-reading-fg">{set.description}</p>
       )}
 
       <div className="flex flex-col gap-2">
@@ -88,9 +100,9 @@ export default function ExamPage() {
           {open ? 'Lanjutkan' : 'Mulai'}
         </Button>
         {/*
-          An unfinished attempt is picked up, not replaced. The server returns
-          the same attempt with the same questions (D-050), so this is a plain
-          statement of where things stand rather than a warning.
+          An unfinished run is picked up, not replaced. The server returns the
+          same run with the same questions and the same options (D-050), so
+          this is a plain statement of where things stand, not a warning.
         */}
         {open && (
           <p className="text-sm text-muted-fg">Ada percobaan yang belum selesai.</p>
@@ -98,8 +110,8 @@ export default function ExamPage() {
         {start.isError && <Notice>{start.error.message}</Notice>}
       </div>
 
-      {exam.selection === 'fixed' && (
-        <CardPicker examId={id} domainId={exam.domainId} pinned={exam.cards} />
+      {set.selection === 'fixed' && (
+        <CardPicker setId={id} domainIds={set.domainIds} pinned={set.cards} />
       )}
 
       <section className="flex flex-col gap-3">
@@ -110,7 +122,7 @@ export default function ExamPage() {
           <Card>
             <ul className="divide-y divide-border">
               {finished.map((a) => (
-                <AttemptRow key={a.id} attempt={a} />
+                <RunRow key={a.id} run={a} />
               ))}
             </ul>
           </Card>
@@ -124,21 +136,26 @@ export default function ExamPage() {
           <Button
             variant="link"
             size="inline"
-            onClick={() => archive.mutate(id, { onSuccess: () => navigate('/exams') })}
+            onClick={() =>
+              archive.mutate(
+                { id, archived: true },
+                { onSuccess: () => navigate('/review') },
+              )
+            }
           >
             Arsipkan
           </Button>
           <Button
             variant="link"
             size="inline"
-            onClick={() => del.mutate(id, { onSuccess: () => navigate('/exams') })}
+            onClick={() => del.mutate(id, { onSuccess: () => navigate('/review') })}
           >
             Hapus
           </Button>
         </div>
 
         {/*
-          An exam that has been sat cannot be deleted: that would destroy its
+          A set that has been run cannot be deleted: that would destroy its
           score history while the answers survive in review_logs (D-051). The
           server's message says to archive instead.
         */}
@@ -149,22 +166,22 @@ export default function ExamPage() {
 }
 
 /**
- * Pins the question set of a 'fixed' exam.
+ * Pins the question set of a 'fixed' set.
  *
  * Shows prompts only — the point of a fixed set is knowing what will be asked,
  * not reading the answers while choosing (D-003 in spirit).
  */
 function CardPicker({
-  examId,
-  domainId,
+  setId,
+  domainIds,
   pinned,
 }: {
-  examId: string
-  domainId: string | null
+  setId: string
+  domainIds: string[]
   pinned: CardRef[]
 }) {
-  const { data: candidates, isPending } = usePickableCards(domainId)
-  const save = useSetExamCards()
+  const { data: candidates, isPending } = usePickableCards(domainIds)
+  const save = useSetReviewSetCards()
 
   const [chosen, setChosen] = useState<string[]>(() => pinned.map((c) => c.cardId))
 
@@ -176,7 +193,7 @@ function CardPicker({
 
   function submit() {
     save.mutate({
-      examId,
+      setId,
       // Selection order is the order they will be asked in.
       cards: chosen.map((cardId) => ({ cardId })),
     })
@@ -203,22 +220,19 @@ function CardPicker({
         <>
           <Card className="max-h-80 overflow-y-auto p-2">
             <ul className="flex flex-col gap-0.5">
-              {cards.map((c) => {
-                const key = c.id
-                return (
-                  <li key={key}>
-                    <label className="flex cursor-pointer items-start gap-2.5 rounded-md px-2 py-2 text-sm text-secondary-fg hover:bg-muted">
-                      <input
-                        type="checkbox"
-                        checked={chosen.includes(key)}
-                        onChange={() => toggle(key)}
-                        className="mt-1 accent-primary"
-                      />
-                      <span className="flex-1">{c.front}</span>
-                    </label>
-                  </li>
-                )
-              })}
+              {cards.map((c) => (
+                <li key={c.id}>
+                  <label className="flex cursor-pointer items-start gap-2.5 rounded-md px-2 py-2 text-sm text-secondary-fg hover:bg-muted">
+                    <input
+                      type="checkbox"
+                      checked={chosen.includes(c.id)}
+                      onChange={() => toggle(c.id)}
+                      className="mt-1 accent-primary"
+                    />
+                    <span className="flex-1">{c.front}</span>
+                  </label>
+                </li>
+              ))}
             </ul>
           </Card>
 
@@ -237,17 +251,17 @@ function CardPicker({
   )
 }
 
-function AttemptRow({ attempt }: { attempt: Attempt }) {
+function RunRow({ run }: { run: Run }) {
   return (
     <li className="flex items-baseline justify-between px-4 py-2.5">
-      <span className="text-sm text-muted-fg">{humanDay(attempt.startedAt)}</span>
+      <span className="text-sm text-muted-fg">{humanDay(run.startedAt)}</span>
       {/*
         A plain ratio, no colour and no pass mark. There is no threshold to
         fall below here — the number is information about what to revisit, not
         a verdict (rule 6).
       */}
       <span className="text-sm text-card-fg tabular-nums">
-        {attempt.correctCount} / {attempt.totalCount}
+        {run.correctCount} / {run.totalCount}
       </span>
     </li>
   )

@@ -12,6 +12,11 @@ import { DialogOverlay, DialogPortal } from './dialog'
  * preview and navigates. The point of a peek is that scanning a list and
  * reading one item are the same task — losing your place in the list to read
  * one note is the friction this removes.
+ *
+ * `side` is a column of the page now, not a panel over it (see ListDetail). The
+ * name survives because it is what the stored preference already says on every
+ * machine this has ever run on, and a migration to rename a localStorage value
+ * would be work in exchange for nothing.
  */
 export type PeekMode = 'side' | 'center' | 'full'
 
@@ -44,18 +49,21 @@ function read(): PeekMode | null {
 }
 
 /**
- * A preview of one item, over the list it came from.
+ * A preview of one item from the list it came from.
  *
  * The two modes are genuinely different components, not one styled twice:
  *
- * **Side** is deliberately *not* a modal. There is no overlay, no focus trap
- * and no scroll lock, so the list stays live underneath — clicking another row
- * swaps what the panel shows instead of dismissing it, which is the whole
- * reason to peek rather than navigate. Escape closes it, because a panel you
- * can only dismiss with the mouse is worse than no panel.
+ * **Side** is deliberately *not* a modal, and no longer floats at all. It is a
+ * card the page places in its second column, so the list stays live beside it —
+ * clicking another row swaps what the card shows instead of dismissing it,
+ * which is the whole reason to peek rather than navigate. Escape still closes
+ * it, because reaching for the mouse to dismiss a preview is the friction this
+ * was supposed to remove.
  *
  * **Center** covers the list, so it *is* a modal and gets Radix: focus trap,
- * focus restore, scroll lock, `aria-modal`.
+ * focus restore, scroll lock, `aria-modal`. It portals out of wherever it is
+ * mounted, which is what lets both modes be rendered from the same place in
+ * the page.
  *
  * `full` never reaches this component — the caller navigates instead.
  */
@@ -101,17 +109,21 @@ export function PeekPanel({
 
   if (mode === 'side') {
     return (
-      <aside
+      <section
         aria-label={title}
         className={cn(
-          'fixed inset-y-0 right-0 z-40 flex w-full max-w-xl flex-col',
-          'border-l border-border bg-card text-card-fg shadow-dialog',
-          'animate-slide-in-right',
+          'flex flex-col overflow-hidden rounded-lg border border-border',
+          'bg-card text-card-fg',
         )}
       >
         {header}
-        <div className="flex-1 overflow-y-auto px-6 py-6">{children}</div>
-      </aside>
+        {/*
+          No scroll container of its own: the column around it is the one that
+          scrolls (ListDetail), so a second one here would produce the nested
+          scrollbars that make a long note impossible to read.
+        */}
+        <div className="px-5 py-5 md:px-6">{children}</div>
+      </section>
     )
   }
 

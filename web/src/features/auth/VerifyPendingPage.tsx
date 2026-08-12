@@ -1,8 +1,8 @@
-import { MailCheck } from 'lucide-react'
+import { useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '../../components/ui/button'
-import { Card } from '../../components/ui/card'
-import { Notice } from '../../components/ui/notice'
-import { useLogout, useResendVerification } from './useAuth'
+import { CheckYourMail } from './CheckYourMail'
+import { meQueryKey, useLogout } from './useAuth'
 import { AuthLayout } from './AuthLayout'
 
 /**
@@ -14,62 +14,55 @@ import { AuthLayout } from './AuthLayout'
  * wrong — they are waiting on an email — so the copy says exactly that and
  * offers the two things that help (D-057's "never punitive" applies here as
  * much as anywhere).
+ *
+ * The body is shared with the signup success screen, which is the same
+ * sentence to the same person a moment earlier. Only the way out differs: from
+ * here you are signed in, so the escape is signing out rather than a link back
+ * to a login form you have already been through.
  */
 export default function VerifyPendingPage({ email }: { email: string }) {
-  const resend = useResendVerification()
   const logout = useLogout()
+  const qc = useQueryClient()
+
+  /*
+   * Re-read the account when the tab comes back to the front.
+   *
+   * The journey this screen is in the middle of leaves the browser: you open
+   * your mail, click the link, it opens in another tab, and you come back
+   * here. Until now the copy handled that by asking people to reload the page,
+   * which works and is also the app admitting it does not notice.
+   *
+   * Scoped to this screen rather than turning `refetchOnWindowFocus` back on
+   * globally (D-044's cache settings are deliberate): this is the one screen
+   * whose whole content is a fact that routinely changes while you are looking
+   * at a different window.
+   */
+  useEffect(() => {
+    function recheck() {
+      if (document.visibilityState === 'visible') {
+        qc.invalidateQueries({ queryKey: meQueryKey })
+      }
+    }
+    document.addEventListener('visibilitychange', recheck)
+    window.addEventListener('focus', recheck)
+    return () => {
+      document.removeEventListener('visibilitychange', recheck)
+      window.removeEventListener('focus', recheck)
+    }
+  }, [qc])
 
   return (
     <AuthLayout title="Cek email kamu" subtitle="Tinggal satu langkah lagi.">
-      <Card className="flex flex-col items-center gap-4 p-6 text-center">
-        <span className="flex size-11 items-center justify-center rounded-full bg-muted text-secondary-fg">
-          <MailCheck className="size-5" />
-        </span>
-
-        <p className="text-sm text-secondary-fg">
-          Kami sudah mengirim tautan verifikasi ke{' '}
-          <span className="font-medium text-surface-fg">{email}</span>. Buka tautannya,
-          lalu muat ulang halaman ini.
-        </p>
-        <p className="text-sm text-muted-fg">
-          Belum ada emailnya? Cek folder spam, atau minta tautan baru.
-        </p>
-
-        {/*
-          Always the same reassurance, because the server always answers 204 —
-          it will not say whether a message actually went out, and this screen
-          must not pretend to know more than the response carries.
-        */}
-        {resend.isSuccess && (
-          <Notice role="status" className="w-full">
-            Tautan baru sudah dikirim kalau akunnya memang belum terverifikasi.
-          </Notice>
-        )}
-        {resend.isError && (
-          <Notice role="alert" className="w-full">
-            {resend.error.message}
-          </Notice>
-        )}
-
-        <div className="mt-1 flex w-full flex-col gap-2">
-          <Button
-            variant="primary"
-            size="lg"
-            disabled={resend.isPending}
-            onClick={() => resend.mutate(email)}
-          >
-            {resend.isPending ? 'Mengirim…' : 'Kirim ulang tautan'}
-          </Button>
-          <Button
-            variant="ghost"
-            size="lg"
-            disabled={logout.isPending}
-            onClick={() => logout.mutate()}
-          >
-            Keluar
-          </Button>
-        </div>
-      </Card>
+      <CheckYourMail email={email}>
+        <Button
+          variant="ghost"
+          size="lg"
+          disabled={logout.isPending}
+          onClick={() => logout.mutate()}
+        >
+          Keluar
+        </Button>
+      </CheckYourMail>
     </AuthLayout>
   )
 }

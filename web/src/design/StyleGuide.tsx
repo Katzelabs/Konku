@@ -317,15 +317,19 @@ export default function StyleGuide() {
 
         <Section
           title="Category"
-          hint="Shared by notes and cards. Neutral on purpose — domain colour is the only colour signal in a row."
+          hint="Shared by notes and cards. Coloured since 00011 — but as a dot on a neutral chip, never as a fill: a row of tinted chips beside a domain badge is the confetti D-054 rejected."
         >
           <Row label="chip">
-            <CategoryChip label="Probabilitas" />
-            <CategoryChip label="Aljabar linear" />
-            <CategoryChip label="math/statistik" />
+            <CategoryChip label="Probabilitas" color="#4F7CAC" />
+            <CategoryChip label="Aljabar linear" color="#8E7DBE" />
+            <CategoryChip label="math/statistik" color="#B08968" />
+          </Row>
+          <Row label="uncoloured">
+            {/* No colour means no dot, not a black one. */}
+            <CategoryChip label="Tanpa warna" />
           </Row>
           <Row label="removable">
-            <CategoryChip label="Bisa dihapus" onRemove={() => {}} />
+            <CategoryChip label="Bisa dihapus" color="#AA6C6C" onRemove={() => {}} />
           </Row>
         </Section>
 
@@ -452,24 +456,35 @@ export default function StyleGuide() {
           </Row>
         </Section>
 
-        <Section title="Account" hint="Initials, not a photo — there is no name field.">
+        <Section
+          title="Account"
+          hint="Initials, not a photo. From the name when there is one, from the address when there is not."
+        >
           <Row label="avatar">
-            <Avatar email="zidan.hafiz@contoh.com" />
-            <Avatar email="konku@contoh.com" />
+            <Avatar initials="SP" />
+            <Avatar initials="ZH" />
           </Row>
           <Row label="menu">
             <DropdownMenu>
               <DropdownMenuTrigger className="rounded-full">
-                <Avatar email="zidan.hafiz@contoh.com" />
+                <Avatar initials="SP" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
-                <DropdownMenuLabel>zidan.hafiz@contoh.com</DropdownMenuLabel>
+                <DropdownMenuLabel className="text-sm font-medium text-surface-fg">
+                  Sena Prawira
+                </DropdownMenuLabel>
+                <DropdownMenuLabel className="-mt-1">
+                  zidan.hafiz@contoh.com
+                </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem>
                   <Settings />
                   Pengaturan
                 </DropdownMenuItem>
-                <DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {/* Destructive: the one item that throws away what you are in
+                    the middle of, sitting directly under Pengaturan. */}
+                <DropdownMenuItem variant="destructive">
                   <LogOut />
                   Keluar
                 </DropdownMenuItem>

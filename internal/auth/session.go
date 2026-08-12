@@ -240,6 +240,11 @@ func (s *Service) CreateUser(ctx context.Context, email, password string) (gen.U
 			Email:           normalizeEmail(email),
 			PasswordHash:    hash,
 			EmailVerifiedAt: &now,
+			// Stated rather than left to the zero value: seed-user has nobody
+			// to ask for a name, and '' is the schema's "not given" (00010).
+			// The UI falls back to the address for these accounts.
+			FirstName: "",
+			LastName:  "",
 		})
 		if err != nil {
 			return fmt.Errorf("auth: creating user: %w", err)

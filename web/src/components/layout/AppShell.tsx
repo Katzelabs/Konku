@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { useLogout } from '../../features/auth/useAuth'
+import { useLogout, type User } from '../../features/auth/useAuth'
 import { useDueCards } from '../../features/review/queries'
 import { CaptureGate } from '../../features/timer/CaptureGate'
 import { MobileBottomNav } from './MobileNav'
@@ -17,10 +17,13 @@ import { useSidebar } from './useSidebar'
  * a settings form and a note editor do not want the same width.
  */
 export function AppShell({
-  email,
+  user,
   children,
 }: {
-  email: string
+  // The whole user, not just the address: since 00010 the account menu shows a
+  // name when there is one, and passing two or three fields down separately is
+  // how one of them gets forgotten at the next call site.
+  user: User
   children: ReactNode
 }) {
   const logout = useLogout()
@@ -34,7 +37,7 @@ export function AppShell({
 
       <div className="flex min-w-0 flex-1 flex-col md:overflow-hidden">
         <TopBar
-          email={email}
+          user={user}
           onLogout={() => logout.mutate()}
           sidebarCollapsed={sidebar.collapsed}
           onToggleSidebar={sidebar.toggle}

@@ -65,6 +65,7 @@ type Category struct {
 	Label      string     `json:"label"`
 	ArchivedAt *time.Time `json:"archived_at"`
 	CreatedAt  time.Time  `json:"created_at"`
+	Color      string     `json:"color"`
 }
 
 type Domain struct {
@@ -77,45 +78,6 @@ type Domain struct {
 	SortOrder   int32      `json:"sort_order"`
 	ArchivedAt  *time.Time `json:"archived_at"`
 	CreatedAt   time.Time  `json:"created_at"`
-}
-
-type Exam struct {
-	ID               uuid.UUID  `json:"id"`
-	UserID           uuid.UUID  `json:"user_id"`
-	DomainID         *uuid.UUID `json:"domain_id"`
-	Title            string     `json:"title"`
-	Description      string     `json:"description"`
-	Selection        string     `json:"selection"`
-	QuestionCount    *int32     `json:"question_count"`
-	TimeLimitMinutes *int32     `json:"time_limit_minutes"`
-	ArchivedAt       *time.Time `json:"archived_at"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
-}
-
-type ExamAttempt struct {
-	ID           uuid.UUID  `json:"id"`
-	ExamID       uuid.UUID  `json:"exam_id"`
-	UserID       uuid.UUID  `json:"user_id"`
-	StartedAt    time.Time  `json:"started_at"`
-	FinishedAt   *time.Time `json:"finished_at"`
-	AttemptDate  time.Time  `json:"attempt_date"`
-	TotalCount   int32      `json:"total_count"`
-	CorrectCount int32      `json:"correct_count"`
-}
-
-type ExamAttemptCard struct {
-	AttemptID uuid.UUID `json:"attempt_id"`
-	UserID    uuid.UUID `json:"user_id"`
-	CardID    uuid.UUID `json:"card_id"`
-	Position  int32     `json:"position"`
-}
-
-type ExamCard struct {
-	ExamID   uuid.UUID `json:"exam_id"`
-	UserID   uuid.UUID `json:"user_id"`
-	CardID   uuid.UUID `json:"card_id"`
-	Position int32     `json:"position"`
 }
 
 type FocusSession struct {
@@ -153,8 +115,62 @@ type ReviewLog struct {
 	IntervalAfter  int32      `json:"interval_after"`
 	ReviewedAt     time.Time  `json:"reviewed_at"`
 	Source         string     `json:"source"`
-	ExamAttemptID  *uuid.UUID `json:"exam_attempt_id"`
+	RunID          *uuid.UUID `json:"run_id"`
 	CardID         uuid.UUID  `json:"card_id"`
+	Format         string     `json:"format"`
+}
+
+type ReviewRun struct {
+	ID           uuid.UUID  `json:"id"`
+	SetID        uuid.UUID  `json:"set_id"`
+	UserID       uuid.UUID  `json:"user_id"`
+	StartedAt    time.Time  `json:"started_at"`
+	FinishedAt   *time.Time `json:"finished_at"`
+	RunDate      time.Time  `json:"run_date"`
+	TotalCount   int32      `json:"total_count"`
+	CorrectCount int32      `json:"correct_count"`
+}
+
+type ReviewRunCard struct {
+	RunID        uuid.UUID `json:"run_id"`
+	UserID       uuid.UUID `json:"user_id"`
+	CardID       uuid.UUID `json:"card_id"`
+	Position     int32     `json:"position"`
+	Options      []string  `json:"options"`
+	CorrectIndex *int32    `json:"correct_index"`
+}
+
+type ReviewSet struct {
+	ID               uuid.UUID  `json:"id"`
+	UserID           uuid.UUID  `json:"user_id"`
+	Title            string     `json:"title"`
+	Description      string     `json:"description"`
+	Selection        string     `json:"selection"`
+	QuestionCount    *int32     `json:"question_count"`
+	TimeLimitMinutes *int32     `json:"time_limit_minutes"`
+	ArchivedAt       *time.Time `json:"archived_at"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	Format           string     `json:"format"`
+}
+
+type ReviewSetCard struct {
+	SetID    uuid.UUID `json:"set_id"`
+	UserID   uuid.UUID `json:"user_id"`
+	CardID   uuid.UUID `json:"card_id"`
+	Position int32     `json:"position"`
+}
+
+type ReviewSetCategory struct {
+	UserID     uuid.UUID `json:"user_id"`
+	SetID      uuid.UUID `json:"set_id"`
+	CategoryID uuid.UUID `json:"category_id"`
+}
+
+type ReviewSetDomain struct {
+	UserID   uuid.UUID `json:"user_id"`
+	SetID    uuid.UUID `json:"set_id"`
+	DomainID uuid.UUID `json:"domain_id"`
 }
 
 type User struct {
@@ -163,6 +179,8 @@ type User struct {
 	PasswordHash    string     `json:"password_hash"`
 	CreatedAt       time.Time  `json:"created_at"`
 	EmailVerifiedAt *time.Time `json:"email_verified_at"`
+	FirstName       string     `json:"first_name"`
+	LastName        string     `json:"last_name"`
 }
 
 type UserSetting struct {

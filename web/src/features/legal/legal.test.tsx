@@ -30,6 +30,9 @@ describe('PrivacyPage', () => {
 
     for (const [what, needle] of [
       ['email address', 'alamat email'],
+      // Collected at signup since 00010. It is the field a reader checks
+      // first, so an omission here would be the most visible kind of untrue.
+      ['name', 'nama depan'],
       ['password hash', 'argon2id'],
       ['notes', 'catatan'],
       ['cards', 'kartu'],
@@ -37,7 +40,13 @@ describe('PrivacyPage', () => {
       ['domains', 'domain'],
       ['review history', 'riwayat'],
       ['focus sessions', 'sesi fokus'],
-      ['exams', 'ujian'],
+      // Ujian folded into Ulangan (D-075). The pair is updated rather than
+      // dropped: the feature still stores things, so it still needs covering.
+      ['review sets', 'latihan'],
+      // The option snapshot is card text stored a second time, in a row the
+      // user never wrote directly. If the policy did not say so it would be
+      // the one category of stored data a reader could not have guessed.
+      ['choice options', 'pilihan ganda'],
       ['login sessions', 'sesi login'],
       ['IP address', 'alamat ip'],
       ['browser identity', 'browser'],

@@ -237,7 +237,7 @@ func (q *Queries) GetCardWithSchedule(ctx context.Context, arg GetCardWithSchedu
 const insertReviewLog = `-- name: InsertReviewLog :one
 INSERT INTO review_logs (card_id, user_id, rating, interval_before, interval_after)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, user_id, rating, interval_before, interval_after, reviewed_at, source, exam_attempt_id, card_id
+RETURNING id, user_id, rating, interval_before, interval_after, reviewed_at, source, run_id, card_id, format
 `
 
 type InsertReviewLogParams struct {
@@ -268,8 +268,9 @@ func (q *Queries) InsertReviewLog(ctx context.Context, arg InsertReviewLogParams
 		&i.IntervalAfter,
 		&i.ReviewedAt,
 		&i.Source,
-		&i.ExamAttemptID,
+		&i.RunID,
 		&i.CardID,
+		&i.Format,
 	)
 	return i, err
 }
@@ -368,7 +369,7 @@ func (q *Queries) ListCards(ctx context.Context, arg ListCardsParams) ([]ListCar
 }
 
 const listCategoriesForCard = `-- name: ListCategoriesForCard :many
-SELECT cat.id, cat.user_id, cat.slug, cat.label, cat.archived_at, cat.created_at FROM categories cat
+SELECT cat.id, cat.user_id, cat.slug, cat.label, cat.archived_at, cat.created_at, cat.color FROM categories cat
 JOIN card_categories cc ON cc.category_id = cat.id AND cc.user_id = cat.user_id
 WHERE cc.card_id = $1 AND cc.user_id = $2
 ORDER BY cat.label
@@ -395,6 +396,7 @@ func (q *Queries) ListCategoriesForCard(ctx context.Context, arg ListCategoriesF
 			&i.Label,
 			&i.ArchivedAt,
 			&i.CreatedAt,
+			&i.Color,
 		); err != nil {
 			return nil, err
 		}

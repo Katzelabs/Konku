@@ -1,5 +1,5 @@
 import { Check, Plus, X } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useState, type ComponentProps, type ReactNode } from 'react'
 import type { Category, Domain } from '../../api/types'
 import { cn } from '../../lib/utils'
 import { DomainDot } from './badge'
@@ -48,28 +48,28 @@ export function PropertyRow({
   )
 }
 
-/** The borderless control a property value sits in. */
-function PropertyButton({
-  onClick,
-  children,
-  className,
-}: {
-  onClick?: () => void
-  children: ReactNode
-  className?: string
-}) {
+/**
+ * The borderless control a property value sits in.
+ *
+ * It takes and spreads the full set of button props, which is not decoration:
+ * it is used as a `DropdownMenuTrigger asChild`, and Radix opens a menu from
+ * `onPointerDown` and `onKeyDown`, not `onClick`. A version of this that
+ * accepted only `onClick` swallowed both, along with the ref the popper anchors
+ * to — so the domain property rendered, hovered, and did nothing at all when
+ * clicked. Every note and card in the database was untagged as a result, which
+ * looked like a missing feature rather than a dead button.
+ */
+function PropertyButton({ className, ...props }: ComponentProps<'button'>) {
   return (
     <button
       type="button"
-      onClick={onClick}
       className={cn(
         'flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left',
         'transition-colors duration-(--animate-duration-quick) ease-(--ease-quiet) hover:bg-muted',
         className,
       )}
-    >
-      {children}
-    </button>
+      {...props}
+    />
   )
 }
 
@@ -171,7 +171,9 @@ export function CategoryProperty({
       ) : (
         <PropertyButton onClick={() => setOpen(true)} className="flex-wrap gap-1.5">
           {chosen.length > 0 ? (
-            chosen.map((c) => <CategoryChip key={c.id} label={c.label} />)
+            chosen.map((c) => (
+              <CategoryChip key={c.id} label={c.label} color={c.color} />
+            ))
           ) : (
             <span className="text-subtle-fg">Tambah kategori</span>
           )}

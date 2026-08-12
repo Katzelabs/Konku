@@ -19,7 +19,11 @@
 -- to lose an account, not a way to own your data.
 
 -- name: ExportUser :one
-SELECT id, email, created_at, email_verified_at
+-- The name is part of what the account holds about the person, so it is part
+-- of what "everything we have on you" means (07 L6). Omitting it would make
+-- the archive quietly incomplete in exactly the field a reader would check
+-- first.
+SELECT id, email, first_name, last_name, created_at, email_verified_at
 FROM users
 WHERE id = $1;
 
@@ -36,7 +40,9 @@ WHERE user_id = $1
 ORDER BY sort_order, created_at;
 
 -- name: ExportCategories :many
-SELECT id, slug, label, archived_at, created_at
+-- Colour travels with the archive (00011). It is a thing the user chose, and
+-- an export that silently drops the choices they made is not the whole account.
+SELECT id, slug, label, color, archived_at, created_at
 FROM categories
 WHERE user_id = $1
 ORDER BY created_at;
@@ -75,7 +81,7 @@ WHERE user_id = $1;
 -- recreated after the fact (D-029). Oldest first, so the file reads as a
 -- timeline.
 SELECT id, card_id, rating, interval_before, interval_after, reviewed_at,
-       source, exam_attempt_id
+       source, run_id, format
 FROM review_logs
 WHERE user_id = $1
 ORDER BY reviewed_at;
@@ -86,28 +92,45 @@ FROM focus_sessions
 WHERE user_id = $1
 ORDER BY session_date, completed_at;
 
--- name: ExportExams :many
-SELECT id, domain_id, title, description, selection, question_count,
-       time_limit_minutes, archived_at, created_at, updated_at
-FROM exams
+-- name: ExportReviewSets :many
+SELECT id, title, description, selection, question_count,
+       time_limit_minutes, format, archived_at, created_at, updated_at
+FROM review_sets
 WHERE user_id = $1
 ORDER BY created_at;
 
--- name: ExportExamCards :many
-SELECT exam_id, card_id, position
-FROM exam_cards
+-- name: ExportReviewSetDomains :many
+-- The filters are part of the configuration, so an export that omitted them
+-- would describe a set that draws from everything (07 L6: the archive is the
+-- whole account, not a summary of it).
+SELECT set_id, domain_id
+FROM review_set_domains
 WHERE user_id = $1
-ORDER BY exam_id, position;
+ORDER BY set_id, domain_id;
 
--- name: ExportExamAttempts :many
-SELECT id, exam_id, started_at, finished_at, attempt_date, total_count,
+-- name: ExportReviewSetCategories :many
+SELECT set_id, category_id
+FROM review_set_categories
+WHERE user_id = $1
+ORDER BY set_id, category_id;
+
+-- name: ExportReviewSetCards :many
+SELECT set_id, card_id, position
+FROM review_set_cards
+WHERE user_id = $1
+ORDER BY set_id, position;
+
+-- name: ExportReviewRuns :many
+SELECT id, set_id, started_at, finished_at, run_date, total_count,
        correct_count
-FROM exam_attempts
+FROM review_runs
 WHERE user_id = $1
 ORDER BY started_at;
 
--- name: ExportExamAttemptCards :many
-SELECT attempt_id, card_id, position
-FROM exam_attempt_cards
+-- name: ExportReviewRunCards :many
+-- options and correct_index included: they are what the question actually
+-- looked like, and a run's history without them is not the run.
+SELECT run_id, card_id, position, options, correct_index
+FROM review_run_cards
 WHERE user_id = $1
-ORDER BY attempt_id, position;
+ORDER BY run_id, position;

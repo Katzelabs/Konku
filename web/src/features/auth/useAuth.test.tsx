@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { useLogout, useMe } from './useAuth'
+import { meQueryKey, useLogout, useMe } from './useAuth'
 
 // A 401 from /auth/me is a normal answer — "not signed in" — not an error.
 // Letting it surface as an error makes the app flash a failure state on every
@@ -99,5 +99,46 @@ describe('useLogout', () => {
 
     expect(qc.getQueryData(['notes'])).toBeUndefined()
     expect(qc.getQueryData(['auth', 'me'])).toBeNull()
+  })
+
+  /*
+   * The bug this test exists for: logging out left the app on the page it was
+   * on, and only a manual reload got you to the login screen.
+   *
+   * Asserting the cache is not enough to catch it, which is exactly why the
+   * test above passed the whole time. `App` does not read the cache — it reads
+   * a mounted `useMe` observer, and an observer bound to a query that
+   * `clear()` removed keeps its last result forever. The user stayed in the
+   * cache as far as the *screen* was concerned while `getQueryData` correctly
+   * reported null.
+   *
+   * So this asserts the thing the redirect actually depends on: the mounted
+   * observer reports signed out, without a remount.
+   */
+  it('reports signed out through an already-mounted useMe', async () => {
+    fetchMock.mockImplementation((input: string) =>
+      Promise.resolve(
+        String(input).endsWith('/auth/logout')
+          ? new Response(null, { status: 204 })
+          : new Response(
+              JSON.stringify({ error: { code: 'unauthorized', message: 'Belum masuk.' } }),
+              { status: 401, headers: { 'Content-Type': 'application/json' } },
+            ),
+      ),
+    )
+
+    const qc = newClient()
+    qc.setQueryData(meQueryKey, { id: 'u-1', email: 'a@example.com', emailVerified: true })
+
+    const { result } = renderHook(
+      () => ({ me: useMe(), logout: useLogout() }),
+      { wrapper: wrapper(qc) },
+    )
+
+    await waitFor(() => expect(result.current.me.data).not.toBeUndefined())
+
+    result.current.logout.mutate()
+
+    await waitFor(() => expect(result.current.me.data).toBeNull())
   })
 })

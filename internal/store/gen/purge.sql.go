@@ -63,8 +63,8 @@ WHERE c.user_id = $1
         SELECT 1 FROM review_logs rl
         WHERE rl.user_id = c.user_id AND rl.card_id = c.id)
   AND NOT EXISTS (
-        SELECT 1 FROM exam_attempt_cards ac
-        WHERE ac.user_id = c.user_id AND ac.card_id = c.id)
+        SELECT 1 FROM review_run_cards rc
+        WHERE rc.user_id = c.user_id AND rc.card_id = c.id)
 `
 
 type PurgeDeletedCardsParams struct {
@@ -75,12 +75,12 @@ type PurgeDeletedCardsParams struct {
 // A card only goes if it carries no learning history.
 //
 // The two NOT EXISTS clauses are the whole design. review_logs and
-// exam_attempt_cards deliberately have no foreign key to cards (D-050), so
+// review_run_cards deliberately have no foreign key to cards (D-050), so
 // deleting a card cannot erase the evidence that it was studied — but that
 // also means a purge would leave those rows pointing at nothing, and a
-// finished exam attempt would render a question with no text.
+// finished review run would render a question with no text.
 //
-// So a card that was ever reviewed, or ever sat in an exam attempt, is kept
+// So a card that was ever reviewed, or ever drawn into a review run, is kept
 // indefinitely even after the window. That is not a hedge: the history is the
 // part of a card that matters, and this app's thesis is that it does not
 // vanish. What the purge is actually for is the other kind of card — created,

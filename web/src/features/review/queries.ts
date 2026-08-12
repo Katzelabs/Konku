@@ -30,7 +30,7 @@ export function useDueCards() {
 export function useAnswer(cardId: string, reveal: boolean) {
   return useQuery({
     queryKey: reviewKeys.answer(cardId),
-    queryFn: () => api.get<CardAnswer>(`/review/${cardId}/answer`),
+    queryFn: () => api.get<CardAnswer>(`/review/due/${cardId}/answer`),
     enabled: reveal,
     staleTime: Infinity,
     gcTime: 0,
@@ -41,7 +41,7 @@ export function useRate() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (v: { cardId: string; rating: Rating }) =>
-      api.post<RatingResult>(`/review/${v.cardId}`, { rating: v.rating }),
+      api.post<RatingResult>(`/review/due/${v.cardId}`, { rating: v.rating }),
     onSuccess: (_result, v) => {
       // The answer is not kept around after the card is done with.
       qc.removeQueries({ queryKey: reviewKeys.answer(v.cardId) })

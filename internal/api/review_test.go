@@ -103,7 +103,7 @@ func TestDueListWithholdsTheAnswer(t *testing.T) {
 	var ans struct {
 		Back string `json:"back"`
 	}
-	c.expect(c.do(http.MethodGet, "/review/"+cardID+"/answer", nil), http.StatusOK, &ans)
+	c.expect(c.do(http.MethodGet, "/review/due/"+cardID+"/answer", nil), http.StatusOK, &ans)
 	if ans.Back != answer {
 		t.Errorf("back = %q, want %q", ans.Back, answer)
 	}
@@ -123,7 +123,7 @@ func TestRateLupa(t *testing.T) {
 		State          string  `json:"state"`
 		NextReviewDate *string `json:"nextReviewDate"`
 	}
-	c.expect(c.do(http.MethodPost, "/review/"+cardID, map[string]any{
+	c.expect(c.do(http.MethodPost, "/review/due/"+cardID, map[string]any{
 		"rating": "lupa",
 	}), http.StatusOK, &rated)
 
@@ -179,7 +179,7 @@ func TestRateIngatAdvances(t *testing.T) {
 		State          string  `json:"state"`
 		NextReviewDate *string `json:"nextReviewDate"`
 	}
-	c.expect(c.do(http.MethodPost, "/review/"+cardID, map[string]any{
+	c.expect(c.do(http.MethodPost, "/review/due/"+cardID, map[string]any{
 		"rating": "ingat",
 	}), http.StatusOK, &rated)
 
@@ -214,7 +214,7 @@ func TestMasteringClearsTheDueDate(t *testing.T) {
 		State          string  `json:"state"`
 		NextReviewDate *string `json:"nextReviewDate"`
 	}
-	c.expect(c.do(http.MethodPost, "/review/"+cardID, map[string]any{
+	c.expect(c.do(http.MethodPost, "/review/due/"+cardID, map[string]any{
 		"rating": "ingat",
 	}), http.StatusOK, &rated)
 
@@ -261,14 +261,14 @@ func TestReviewOwnershipAndValidation(t *testing.T) {
 	cardID := oneDueCard(t, alice, "rahasia", "jawaban rahasia")
 
 	t.Run("another user cannot read the answer", func(t *testing.T) {
-		res := bob.do(http.MethodGet, "/review/"+cardID+"/answer", nil)
+		res := bob.do(http.MethodGet, "/review/due/"+cardID+"/answer", nil)
 		if res.StatusCode != http.StatusNotFound {
 			t.Fatalf("status = %d, want 404", res.StatusCode)
 		}
 	})
 
 	t.Run("another user cannot rate the card", func(t *testing.T) {
-		res := bob.do(http.MethodPost, "/review/"+cardID, map[string]any{"rating": "ingat"})
+		res := bob.do(http.MethodPost, "/review/due/"+cardID, map[string]any{"rating": "ingat"})
 		if res.StatusCode != http.StatusNotFound {
 			t.Fatalf("status = %d, want 404", res.StatusCode)
 		}
@@ -287,14 +287,14 @@ func TestReviewOwnershipAndValidation(t *testing.T) {
 	})
 
 	t.Run("an unknown rating is a 400", func(t *testing.T) {
-		res := alice.do(http.MethodPost, "/review/"+cardID, map[string]any{"rating": "mungkin"})
+		res := alice.do(http.MethodPost, "/review/due/"+cardID, map[string]any{"rating": "mungkin"})
 		if res.StatusCode != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400", res.StatusCode)
 		}
 	})
 
 	t.Run("a card that does not exist is a 404", func(t *testing.T) {
-		res := alice.do(http.MethodGet, "/review/"+uuid.NewString()+"/answer", nil)
+		res := alice.do(http.MethodGet, "/review/due/"+uuid.NewString()+"/answer", nil)
 		if res.StatusCode != http.StatusNotFound {
 			t.Fatalf("status = %d, want 404", res.StatusCode)
 		}

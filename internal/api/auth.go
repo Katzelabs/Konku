@@ -142,6 +142,15 @@ type loginRequest struct {
 type userResponse struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`
+	// FirstName and LastName are both sent, both possibly empty (00010).
+	//
+	// Empty is the honest answer for an account created by `konku seed-user`
+	// and for anyone who signed up before the form asked. The client falls
+	// back to the address rather than inventing something, so these are not
+	// omitempty: "" is a value the UI acts on, and a missing key would make it
+	// look like the server forgot rather than that nobody ever said.
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
 	// EmailVerified is what lets the client tell "signed in, nothing works
 	// yet" apart from a broken session. Without it the only signal is a 403 on
 	// the first data request, which reads as a bug.
@@ -152,6 +161,8 @@ func toUserResponse(u gen.User) userResponse {
 	return userResponse{
 		ID:            u.ID.String(),
 		Email:         u.Email,
+		FirstName:     u.FirstName,
+		LastName:      u.LastName,
 		EmailVerified: u.EmailVerifiedAt != nil,
 	}
 }

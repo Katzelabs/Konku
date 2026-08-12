@@ -73,7 +73,7 @@ export function DeleteAccount() {
             <DialogHeader>
               <DialogTitle>Hapus akun</DialogTitle>
               <DialogDescription>
-                Catatan, kartu, jadwal ulang, riwayat review, sesi fokus, dan ujian
+                Catatan, kartu, jadwal ulang, riwayat ulangan, sesi fokus, dan latihan
                 kamu akan dihapus permanen. Ini tidak bisa dibatalkan.
               </DialogDescription>
             </DialogHeader>

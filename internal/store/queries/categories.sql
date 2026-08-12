@@ -35,15 +35,17 @@ SELECT * FROM categories
 WHERE slug = $1 AND user_id = $2;
 
 -- name: CreateCategory :one
-INSERT INTO categories (user_id, slug, label)
-VALUES ($1, $2, $3)
+INSERT INTO categories (user_id, slug, label, color)
+VALUES ($1, $2, $3, $4)
 RETURNING *;
 
 -- name: UpdateCategory :one
 -- Renaming is the whole reason categories are rows rather than strings on the
--- note: every label already applied follows the rename.
+-- note: every label already applied follows the rename. Recolouring works the
+-- same way — the dot changes everywhere the category is shown, because there
+-- is one row behind all of them.
 UPDATE categories
-SET slug = $3, label = $4
+SET slug = $3, label = $4, color = $5
 WHERE id = $1 AND user_id = $2
 RETURNING *;
 

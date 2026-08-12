@@ -9,6 +9,7 @@ import { CategoryChips } from '../../components/ui/category'
 import { ConfirmDialog } from '../../components/ui/confirm-dialog'
 import { EmptyState } from '../../components/ui/empty-state'
 import { Input } from '../../components/ui/input'
+import { DetailPlaceholder, ListDetail } from '../../components/ui/list-detail'
 import { Notice } from '../../components/ui/notice'
 import { PageHeader } from '../../components/ui/page-header'
 import { SelectCheckbox, SelectionBar } from '../../components/ui/selection-bar'
@@ -22,6 +23,7 @@ import { useSelection } from '../../lib/use-selection'
 import { cn } from '../../lib/utils'
 import { useAllCategories } from '../categories/queries'
 import { useDomains } from '../domains/queries'
+import { NotePeek } from './NotePeek'
 import { useCreateNote, useDeleteNotes, useNotes, useRestoreNotes } from './queries'
 
 /**
@@ -42,9 +44,13 @@ export default function NotesPage() {
 
   // Opening an item peeks at it rather than leaving the list, unless the
   // preference says otherwise. The peek is a URL — `/notes/:id` — so Back
-  // closes it and the link is copyable; App renders the panel and keeps this
-  // list mounted underneath. See lib/peek-route.
-  const [peekMode] = usePeekMode()
+  // closes it and the link is copyable, while App keeps this list mounted
+  // against the background location. See lib/peek-route.
+  //
+  // The preview is rendered *here* now, as the second column of this page,
+  // rather than by App as a panel floating over it. That is what lets the two
+  // share a header and a height.
+  const [peekMode, setPeekMode] = usePeekMode()
   const peek = usePeekNavigation()
   const peekId = usePeekedId('/notes/')
 
@@ -126,6 +132,28 @@ export default function NotesPage() {
     restoreMany.mutate(ids, { onSuccess: () => selection.clear() })
   }
 
+  /*
+   * The preview, and whether the page splits in two to hold it.
+   *
+   * Not in the Terhapus view: a deleted note answers 404 everywhere else, so
+   * there is nothing to preview, and a permanently empty second column would
+   * be half the screen spent saying nothing.
+   */
+  const split = peekMode === 'side' && !deleted
+  const preview = peekId ? (
+    <NotePeek
+      noteId={peekId}
+      // 'full' never reaches the preview: choosing it is a navigation, not a
+      // rendering mode, so peekId is already null by the time it matters.
+      mode={peekMode === 'full' ? 'side' : peekMode}
+      onModeChange={(next) => {
+        if (next === 'full') peek.openFull(`/notes/${peekId}`)
+        else setPeekMode(next)
+      }}
+      onClose={peek.close}
+    />
+  ) : null
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -161,41 +189,6 @@ export default function NotesPage() {
           )
         }
       />
-
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle-fg" />
-            <Input
-              value={query}
-              onChange={(e) => setParam('q', e.target.value)}
-              placeholder="Cari judul…"
-              className="pl-9"
-            />
-          </div>
-          <ViewToggle mode={view} onChange={setView} />
-        </div>
-
-        {categories && categories.length > 0 && (
-          <ToggleGroup>
-            <ToggleGroupItem
-              selected={categoryId === null}
-              onClick={() => setParam('categoryId', null)}
-            >
-              Semua
-            </ToggleGroupItem>
-            {categories.map((c) => (
-              <ToggleGroupItem
-                key={c.id}
-                selected={categoryId === c.id}
-                onClick={() => setParam('categoryId', c.id)}
-              >
-                {c.label}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-        )}
-      </div>
 
       {isPending && <Loading />}
       {error && <Notice>{error.message}</Notice>}
@@ -251,66 +244,117 @@ export default function NotesPage() {
         </SelectionBar>
       )}
 
-      {notes && notes.length === 0 && (
-        /*
-         * An empty library is a starting point, not a failure. No sad-box
-         * illustration and no "you haven't written anything yet" — the copy
-         * says what to do next and makes it small (GOALS.md).
-         */
-        <EmptyState
-          title={deleted ? 'Tidak ada catatan terhapus.' : 'Belum ada catatan.'}
-          description={
-            deleted
-              ? 'Catatan yang kamu hapus akan muncul di sini.'
-              : 'Mulai dari satu baris saja.'
-          }
-        />
-      )}
+      <ListDetail
+        split={split}
+        peeked={peekId !== null}
+        detail={preview}
+        placeholder={<DetailPlaceholder>Pilih catatan untuk membacanya di sini.</DetailPlaceholder>}
+      >
+        {/*
+          Search, filters and the list in one panel, which is what makes the
+          left column a thing rather than a stack of loose controls beside a
+          card. They belong together anyway: all three are about narrowing the
+          same list.
+        */}
+        <Card className="flex flex-col gap-3 p-3">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle-fg" />
+              <Input
+                value={query}
+                onChange={(e) => setParam('q', e.target.value)}
+                placeholder="Cari judul…"
+                className="pl-9"
+              />
+            </div>
+            <ViewToggle mode={view} onChange={setView} />
+          </div>
 
-      {notes && notes.length > 0 && filtered.length === 0 && (
-        <p className="px-1 py-4 text-sm text-muted-fg">
-          Tidak ada judul yang cocok.
-        </p>
-      )}
-
-      {filtered.length > 0 &&
-        (view === 'grid' ? (
-          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {filtered.map((note) => (
-              <li key={note.id}>
-                <NoteTile
-                  note={note}
-                  domains={domains}
-                  categories={categories}
-                  active={peekId === note.id}
-                  selected={selection.selected.has(note.id)}
-                  anySelected={selection.count > 0}
-                  onToggle={() => selection.toggle(note.id)}
-                  onOpen={() => open(note.id)}
-                />
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <Card>
-            <ul className="divide-y divide-border">
-              {filtered.map((note) => (
-                <li key={note.id}>
-                  <NoteRow
-                    note={note}
-                    domains={domains}
-                    categories={categories}
-                    active={peekId === note.id}
-                    selected={selection.selected.has(note.id)}
-                    anySelected={selection.count > 0}
-                    onToggle={() => selection.toggle(note.id)}
-                    onOpen={() => open(note.id)}
-                  />
-                </li>
+          {categories && categories.length > 0 && (
+            <ToggleGroup>
+              <ToggleGroupItem
+                selected={categoryId === null}
+                onClick={() => setParam('categoryId', null)}
+              >
+                Semua
+              </ToggleGroupItem>
+              {categories.map((c) => (
+                <ToggleGroupItem
+                  key={c.id}
+                  selected={categoryId === c.id}
+                  onClick={() => setParam('categoryId', c.id)}
+                >
+                  {c.label}
+                </ToggleGroupItem>
               ))}
-            </ul>
-          </Card>
-        ))}
+            </ToggleGroup>
+          )}
+
+          {notes && notes.length === 0 && (
+            /*
+             * An empty library is a starting point, not a failure. No sad-box
+             * illustration and no "you haven't written anything yet" — the copy
+             * says what to do next and makes it small (GOALS.md).
+             */
+            <EmptyState
+              title={deleted ? 'Tidak ada catatan terhapus.' : 'Belum ada catatan.'}
+              description={
+                deleted
+                  ? 'Catatan yang kamu hapus akan muncul di sini.'
+                  : 'Mulai dari satu baris saja.'
+              }
+            />
+          )}
+
+          {notes && notes.length > 0 && filtered.length === 0 && (
+            <p className="px-1 py-4 text-sm text-muted-fg">
+              Tidak ada judul yang cocok.
+            </p>
+          )}
+
+          {/*
+            Container queries, not viewport ones: in the split layout this list
+            sits in a 24rem column, and `lg:grid-cols-3` would ask the screen
+            how wide it is and get an answer about the wrong box.
+          */}
+          {filtered.length > 0 &&
+            (view === 'grid' ? (
+              <ul className="grid gap-2 @md:grid-cols-2 @3xl:grid-cols-3">
+                {filtered.map((note) => (
+                  <li key={note.id}>
+                    <NoteTile
+                      note={note}
+                      domains={domains}
+                      categories={categories}
+                      active={peekId === note.id}
+                      selected={selection.selected.has(note.id)}
+                      anySelected={selection.count > 0}
+                      onToggle={() => selection.toggle(note.id)}
+                      onOpen={() => open(note.id)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <ul className="-mx-3 divide-y divide-border border-t border-border">
+                {filtered.map((note) => (
+                  <li key={note.id}>
+                    <NoteRow
+                      note={note}
+                      domains={domains}
+                      categories={categories}
+                      active={peekId === note.id}
+                      selected={selection.selected.has(note.id)}
+                      anySelected={selection.count > 0}
+                      onToggle={() => selection.toggle(note.id)}
+                      onOpen={() => open(note.id)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            ))}
+        </Card>
+      </ListDetail>
 
       <ConfirmDialog
         open={confirming}

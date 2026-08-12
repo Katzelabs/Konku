@@ -72,7 +72,7 @@ konku/
     ├── package.json  vite.config.ts  tsconfig.json
     └── src/
         ├── api/                # client.ts · types.ts
-        ├── features/           # auth · notes · cards · review · exams · timer
+        ├── features/           # auth · notes · cards · review · timer
         ├── components/ui/
         └── lib/date.ts         # local YYYY-MM-DD, never UTC
 ```
@@ -136,22 +136,30 @@ card_schedules   -- card_id, user_id, stage, next_review_date, lapses, state
 
 review_logs      -- card_id, user_id, rating ('ingat'|'lupa'), reviewed_at,
                  -- interval_before, interval_after,
-                 -- source ('review'|'exam'), exam_attempt_id   (D-049)
+                 -- source ('due'|'set'), run_id                 (D-049, D-075)
+                 -- format ('recall'|'choice')                   (D-077)
 
 focus_sessions   -- id, user_id, domain_id, duration_minutes,
                  -- session_date, completed_at
 
-exams            -- id, user_id, domain_id?, title, selection ('fixed'|'random'),
-                 -- question_count, time_limit_minutes, archived_at   (D-048)
-exam_cards       -- exam_id, user_id, card_id, position
+review_sets      -- id, user_id, title, selection ('fixed'|'random'),
+                 -- question_count, time_limit_minutes, archived_at,
+                 -- format ('recall'|'choice')          (D-048, D-075, D-076)
+review_set_domains    -- set_id, user_id, domain_id     -- empty = unfiltered
+review_set_categories -- set_id, user_id, category_id   -- AND'ed with domains
+review_set_cards -- set_id, user_id, card_id, position
                  -- the pinned set, selection = 'fixed' only
-exam_attempts    -- id, exam_id, user_id, started_at, finished_at,
-                 -- attempt_date, total_count, correct_count
-exam_attempt_cards -- attempt_id, user_id, card_id, position
-                 -- the draw, snapshotted at start so attempts resume  (D-050)
+review_runs      -- id, set_id, user_id, started_at, finished_at,
+                 -- run_date, total_count, correct_count
+review_run_cards -- run_id, user_id, card_id, position,
+                 -- options text[], correct_index
+                 -- the draw and its options, snapshotted at start so a run
+                 -- resumes without reshuffling either   (D-050, D-077)
 ```
 
-There is no `exam_answers` table: an exam answer is a `review_logs` row with `source = 'exam'`, and it never moves `card_schedules` (D-049).
+There is no answers table: an answer inside a set is a `review_logs` row with `source = 'set'`, and it never moves `card_schedules` (D-049).
+
+`review_run_cards.correct_index` is stored and **never serialized** — `ListRunQuestions` does not select it, and it is read one row at a time on the request that grades. Shipping it with the question list would put the answer key one dev-tools glance away (D-077).
 
 Auth tokens are stored **hashed**, single-use and expiring — a leaked database dump must not be a set of working password-reset links (D-058).
 
@@ -161,9 +169,9 @@ Auth tokens are stored **hashed**, single-use and expiring — a leaked database
 
 **RLS backs it, it does not replace it** (D-059). Every owned table carries a policy on `user_id = current_setting('app.user_id')::uuid`, applied by `SET LOCAL` inside the transaction that runs the query — so user-scoped reads move into `WithUserTx`. Two details decide whether this is real RLS or the appearance of it: **`ALTER TABLE ... FORCE ROW LEVEL SECURITY`**, because a table owner bypasses its own policies and the app currently connects as the database owner; and a **non-owner application role** (`konku_app`), so migrations and the running app are not the same principal.
 
-**Writes are guarded by composite foreign keys, not by handler discipline** (D-047). The `WHERE` clause protects reads; it does nothing for a request body carrying someone else's `domainId`. Every owned reference therefore carries the owner — `FOREIGN KEY (user_id, domain_id) REFERENCES domains (user_id, id)` — so a cross-tenant write is rejected by Postgres. History tables (`review_logs`, `exam_attempt_cards`) are the deliberate exception: no FK to `cards`, so deleting a card cannot erase retention evidence (D-050).
+**Writes are guarded by composite foreign keys, not by handler discipline** (D-047). The `WHERE` clause protects reads; it does nothing for a request body carrying someone else's `domainId`. Every owned reference therefore carries the owner — `FOREIGN KEY (user_id, domain_id) REFERENCES domains (user_id, id)` — so a cross-tenant write is rejected by Postgres. History tables (`review_logs`, `review_run_cards`) are the deliberate exception: no FK to `cards`, so deleting a card cannot erase retention evidence (D-050).
 
-**Domains, exams and categories archive; they do not delete** (D-051). Every reference is `ON DELETE NO ACTION`, so a referenced row cannot be removed and an unreferenced one still can. Handlers map `foreign_key_violation` to a 409, never a 500.
+**Domains, review sets and categories archive; they do not delete** (D-051). Every reference is `ON DELETE NO ACTION`, so a referenced row cannot be removed and an unreferenced one still can. Handlers map `foreign_key_violation` to a 409, never a 500.
 
 **`review_logs` is non-negotiable and must exist from day one.** It is what makes the retention metric computable, and it cannot be reconstructed retroactively. Log every single review.
 
@@ -187,11 +195,11 @@ That requirement did not go away; the mechanism did. A card is now identified by
 
 ### Deletion
 
-Soft delete, always. `deleted_at` is set and the schedule and review history stay untouched, so restoring is a real undo. Two reasons: a finished exam attempt renders its questions by joining `cards`, so a hard delete would blank out past results; and a destructive button should be recoverable.
+Soft delete, always. `deleted_at` is set and the schedule and review history stay untouched, so restoring is a real undo. Two reasons: a finished review run renders its questions by joining `cards`, so a hard delete would blank out past results; and a destructive button should be recoverable.
 
 ### Recall before reveal reaches the list
 
-`GET /cards` returns prompts only — no `back` — exactly like the review and exam question lists. This is not caution about the management screen; it is that an index visited daily which ships every answer leaves D-003 one dev-tools glance from being defeated. The editor fetches a single card when it needs the answer.
+`GET /cards` returns prompts only — no `back` — exactly like the due list and a run's question list. This is not caution about the management screen; it is that an index visited daily which ships every answer leaves D-003 one dev-tools glance from being defeated. The editor fetches a single card when it needs the answer.
 
 ---
 
@@ -230,10 +238,12 @@ POST   /api/cards                     create              (+ bulk-delete, bulk-r
 GET    /api/cards                     prompts only, never `back` (D-003)
 GET    /api/categories                shared by notes and cards (D-055)
 GET    /api/review/due                capped due list
-GET    /api/review/:cardId/answer     reveal, as its own request (D-003)
-POST   /api/review/:cardId            {rating} → reschedule + log
-POST   /api/exams/:id/attempts        start; the draw is snapshotted (D-050)
-POST   /api/attempts/:id/:cardId      answer → review_logs, schedule unmoved (D-049)
+GET    /api/review/due/:cardId/answer reveal, as its own request (D-003)
+POST   /api/review/due/:cardId        {rating} → reschedule + log
+GET    /api/review/sets?archived=     saved configurations (D-075)
+POST   /api/review/sets/:id/runs      start; draw + options snapshotted (D-050)
+POST   /api/review/runs/:id/:cardId   {rating} or {choice} → review_logs,
+                                      graded server-side, schedule unmoved (D-049)
 POST   /api/sessions                  log a completed focus session
 GET    /api/domains                   per-user, editable (D-046)
 GET    /api/stats/retention           headline metric
@@ -501,7 +511,7 @@ Buys: free version history per note, an Obsidian-readable folder, and zero lock-
 
 ## 12. Build order
 
-**Done.** Repo skeleton and dev compose · goose migrations and schema · auth with argon2id and server-side sessions · notes CRUD · **the scheduler** · cards as their own resource and shared categories (D-055) · review API and screen with recall-before-reveal · focus timer with capture-at-session-end · per-user domains · exams with resumable attempts · soft delete on both resources.
+**Done.** Repo skeleton and dev compose · goose migrations and schema · auth with argon2id and server-side sessions · notes CRUD · **the scheduler** · cards as their own resource and shared categories (D-055) · review API and screen with recall-before-reveal · focus timer with capture-at-session-end · per-user domains · review sets with resumable runs · soft delete on both resources.
 
 **Next, in order.** The sequencing rule is D-067's: use it daily starting now, build everything that needs no server, then deploy, then open. Steps 1–8 are **local**, against `docker-compose.yml`.
 

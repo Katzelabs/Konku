@@ -27,7 +27,7 @@ func readme(a *Archive) string {
 	b.WriteString("| `notes/terhapus/` | Catatan yang sudah kamu hapus, tetap disimpan di sini. |\n")
 	b.WriteString("| `cards/` | Kartu hafalan, satu file per kartu. |\n")
 	b.WriteString("| `cards/terhapus/` | Kartu yang sudah dihapus. |\n")
-	b.WriteString("| `data/` | Sisanya: jadwal ulang, riwayat review, sesi fokus, domain, kategori, ujian. |\n\n")
+	b.WriteString("| `data/` | Sisanya: jadwal ulang, riwayat ulangan, sesi fokus, domain, kategori, latihan tersimpan. |\n\n")
 
 	b.WriteString("## Membuka di Obsidian\n\n")
 	b.WriteString("Buka folder `notes/` sebagai vault. Judul, domain, dan kategori\n")
@@ -47,7 +47,7 @@ func readme(a *Archive) string {
 	b.WriteString(fmt.Sprintf("- %d kartu\n", len(a.Cards)))
 	b.WriteString(fmt.Sprintf("- %d riwayat review\n", len(a.ReviewLogs)))
 	b.WriteString(fmt.Sprintf("- %d sesi fokus\n", len(a.FocusSessions)))
-	b.WriteString(fmt.Sprintf("- %d ujian\n", len(a.Exams)))
+	b.WriteString(fmt.Sprintf("- %d latihan tersimpan\n", len(a.ReviewSets)))
 
 	return b.String()
 }

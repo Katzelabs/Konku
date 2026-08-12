@@ -106,7 +106,11 @@ Only `basic` ships; cloze and feynman stay deferred to v1.2 (D-031, restated in 
 - `[[wikilinks]]` between notes, backlinks panel — Later.
 - Full-text search (Postgres FTS) — v1.2; semantic search — v1.3.
 
-### 5.2 Review queue (P0 — the product)
+### 5.2 Ulangan (P0 — the product)
+
+One feature with two ways in (D-075). **Ujian used to be a separate section and is not one any more** — it was the same act under a different name, and it now lives here as a saved *latihan*.
+
+#### The scheduled queue — the default path
 
 - Cards are their own resource, scheduled independently (D-055). They are not parsed from notes — that was true until D-055 and is the single most common stale assumption in this document's history.
 - Interval ladder: **`[1, 3, 7, 14, 30, 90, 180]` days**.
@@ -117,6 +121,23 @@ Only `basic` ships; cloze and feynman stay deferred to v1.2 (D-031, restated in 
 - **Recall before reveal (mandatory).** The review screen shows only the prompt. You attempt recall, *then* reveal, *then* self-rate. Showing the answer immediately turns the whole thing into passive re-reading, which `GOALS.md` says explicitly does not work. This one hidden div is the difference between a retention system and a list of things you once wrote down.
 - **Due list is capped** at ~10 cards/day, oldest first, with the rest quietly deferred. Coming back to 40 due items after two weeks away is demotivating regardless of styling.
 - Overdue is surfaced calmly — a count, no red, no alarm.
+- **It leads the screen.** `/review` opens on "Ulangan hari ini" with a Mulai button; saved latihan sit underneath. Making the configurable half the front door would turn the automatic queue into something you have to choose, which is the failure it exists to prevent (D-075).
+
+#### Saved latihan (P1 — built)
+
+Practice over cards that already exist. Not a second question bank — a second place for knowledge to live is what D-005 collapsed and D-055 was careful not to reintroduce.
+
+- A set configures **how many questions, which domains, which categories, and in what form**. Domains OR together, categories OR together, and the two groups AND: Matematika + "rumus" means cards that are both. Empty means the whole knowledge base.
+- Two selection modes: `fixed` pins a card set so scores are comparable across runs; `random` draws N cards at run time — better practice, non-comparable scores.
+- Two formats (D-076): `recall` is the same prompt→reveal→self-rate as the queue; `choice` offers four options and grades on the server. Format belongs to the set, not the card — the same card is recall in one and multiple choice in another.
+- **Distractors are sampled from the user's other cards' answers and snapshotted with the draw** (D-077). Nothing is authored per card. A question that cannot reach four distinct options is asked as plain recall instead.
+- **An answer inside a set never moves the schedule** (D-049). It is a `review_logs` row with `source = 'set'`. Advancing the ladder on cards that were not due scrambles the capped due list, and a `lupa` in a practice run wiping a month of real progress is a punishment mechanic.
+- A choice answer is **tagged** `format = 'choice'` so the retention metric can exclude recognition-level evidence. Recognising an answer among four is easier than recalling it, and the UI says so.
+- Runs are **resumable** — the draw *and its options* are snapshotted at start (D-050, D-077), so closing the tab does not cost the run or reshuffle the choices.
+- Scores are a count, not a grade. No percentages framed as pass/fail, no letter grades, no red (D-054).
+- Sets **archive and unarchive**; one that has been run cannot be deleted (D-051).
+
+Review over **notes** is not built. Cards only for now.
 
 ### 5.3 Focus timer (P0)
 
@@ -170,15 +191,9 @@ Exposes the same operations as the HTTP API so an existing Claude subscription c
 
 Reverse-chronological log of sessions, reviews, and quota fills. Filterable by domain. Scaffolding — defer.
 
-### 5.11 Exams (P1 — built)
+### 5.11 Exams
 
-In-app practice tests over cards that already exist. Not a second question bank — a second place for knowledge to live is what D-005 collapsed and D-055 was careful not to reintroduce.
-
-- Two selection modes: `fixed` pins a card set so scores are comparable across attempts; `random` draws N cards at attempt time — better practice, non-comparable scores.
-- An exam with no domain draws from the whole knowledge base.
-- **An exam answer never moves the schedule** (D-049). It is a `review_logs` row with `source = 'exam'`. Advancing the ladder on cards that were not due scrambles the capped due list, and a `lupa` in a mock test wiping a month of real progress is a punishment mechanic.
-- Attempts are **resumable** — the draw is snapshotted at start (D-050), so closing the tab does not cost the run.
-- Scores are a count, not a grade. No percentages framed as pass/fail, no letter grades, no red (D-054).
+Folded into §5.2 by D-075. Ujian is no longer a separate feature.
 
 ### 5.12 Accounts and data (P0 for public launch)
 
@@ -254,7 +269,7 @@ The retention loop, the focus timer that feeds it, real auth, and the schema-v2 
 - **Retention loop:** notes CRUD, cards as their own resource (D-055), shared categories, the scheduler, review with recall-before-reveal, soft delete with a Terhapus view
 - **Focus timer:** 15–45 min, default 20, session logged on completion, **capture-at-session-end** — "Apa yang kamu pelajari?", one skippable field
 - **Auth:** argon2id, server-side revocable sessions, rate-limited login, seed-user CLI, `user_id` scoping on every table since the first migration
-- **Schema v2:** per-user domains with a UI, exams over existing cards, resumable attempts
+- **Schema v2:** per-user domains with a UI, review sets over existing cards, resumable runs
 
 **What it existed to test:** not whether spaced repetition works — that is known — but *whether notes and cards actually get written*. That question is answered by daily use, which is what the next milestone is for.
 

@@ -213,13 +213,42 @@ func (s *Server) Routes() http.Handler {
 					r.Post("/{id}/unarchive", s.handleUnarchiveCategory)
 				})
 
-				// A card is addressed by its own uuid. It used to take a note and
-				// an ID together, because card IDs were unique only within the
-				// note they were parsed out of (D-055).
+				// Ulangan is one feature with two ways in (D-075).
+				//
+				// /due is the scheduled queue: no configuration, capped, and
+				// the only path that moves card_schedules. /sets are saved
+				// configurations; /runs are sittings of one, addressed on
+				// their own once started rather than nested under the set.
+				//
+				// A card is addressed by its own uuid. It used to take a note
+				// and an ID together, because card IDs were unique only within
+				// the note they were parsed out of (D-055).
 				r.Route("/review", func(r chi.Router) {
-					r.Get("/due", s.handleDueCards)
-					r.Get("/{cardID}/answer", s.handleCardAnswer)
-					r.Post("/{cardID}", s.handleRate)
+					r.Route("/due", func(r chi.Router) {
+						r.Get("/", s.handleDueCards)
+						r.Get("/{cardID}/answer", s.handleCardAnswer)
+						r.Post("/{cardID}", s.handleRate)
+					})
+
+					r.Route("/sets", func(r chi.Router) {
+						r.Get("/", s.handleListReviewSets)
+						r.Post("/", s.handleCreateReviewSet)
+						r.Get("/{id}", s.handleGetReviewSet)
+						r.Patch("/{id}", s.handleUpdateReviewSet)
+						r.Delete("/{id}", s.handleDeleteReviewSet)
+						r.Post("/{id}/archive", s.handleArchiveReviewSet)
+						r.Post("/{id}/unarchive", s.handleUnarchiveReviewSet)
+						r.Put("/{id}/cards", s.handleSetReviewSetCards)
+						r.Post("/{id}/runs", s.handleStartRun)
+					})
+
+					r.Route("/runs/{runID}", func(r chi.Router) {
+						r.Get("/", s.handleGetRun)
+						r.Delete("/", s.handleDeleteRun)
+						r.Post("/finish", s.handleFinishRun)
+						r.Get("/{cardID}/answer", s.handleRunAnswer)
+						r.Post("/{cardID}", s.handleAnswerQuestion)
+					})
 				})
 
 				r.Get("/sessions", s.handleListSessions)
@@ -249,28 +278,6 @@ func (s *Server) Routes() http.Handler {
 				// Domains are per-user and editable (D-046). Deletion only
 				// succeeds for a domain nothing references; archiving is the
 				// normal path (D-051).
-				// Exams are practice tests over existing cards (D-048). Attempts
-				// hang off /attempts rather than nesting under the exam: an
-				// attempt is addressed on its own once it has started.
-				r.Route("/exams", func(r chi.Router) {
-					r.Get("/", s.handleListExams)
-					r.Post("/", s.handleCreateExam)
-					r.Get("/{id}", s.handleGetExam)
-					r.Patch("/{id}", s.handleUpdateExam)
-					r.Delete("/{id}", s.handleDeleteExam)
-					r.Post("/{id}/archive", s.handleArchiveExam)
-					r.Put("/{id}/cards", s.handleSetExamCards)
-					r.Post("/{id}/attempts", s.handleStartAttempt)
-				})
-
-				r.Route("/attempts/{attemptID}", func(r chi.Router) {
-					r.Get("/", s.handleGetAttempt)
-					r.Delete("/", s.handleDeleteAttempt)
-					r.Post("/finish", s.handleFinishAttempt)
-					r.Get("/{cardID}/answer", s.handleAttemptAnswer)
-					r.Post("/{cardID}", s.handleAnswerQuestion)
-				})
-
 				r.Route("/domains", func(r chi.Router) {
 					r.Get("/", s.handleListDomains)
 					r.Post("/", s.handleCreateDomain)

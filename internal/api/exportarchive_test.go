@@ -87,7 +87,7 @@ func seedEverything(t *testing.T, c *testClient) {
 
 	// Rating a card writes both a schedule and a review log — the two rows
 	// that cannot be reconstructed from the notes (D-029).
-	c.expect(c.do(http.MethodPost, "/review/"+card.ID, map[string]any{"rating": "ingat"}),
+	c.expect(c.do(http.MethodPost, "/review/due/"+card.ID, map[string]any{"rating": "ingat"}),
 		http.StatusOK, nil)
 
 	c.expect(c.do(http.MethodPost, "/sessions", map[string]any{
@@ -96,17 +96,18 @@ func seedEverything(t *testing.T, c *testClient) {
 		"sessionDate":     today(),
 	}), http.StatusCreated, nil)
 
-	var exam struct {
-		ID string `json:"id"`
-	}
-	c.expect(c.do(http.MethodPost, "/exams", map[string]any{
-		"title":     "Ulangan aljabar",
-		"selection": "fixed",
-	}), http.StatusCreated, &exam)
-	c.expect(c.do(http.MethodPut, "/exams/"+exam.ID+"/cards", map[string]any{
+	// A set with both kinds of filter attached, so the export has to carry the
+	// join tables and not just the set row.
+	set := c.createSet(map[string]any{
+		"title":       "Ulangan aljabar",
+		"selection":   "fixed",
+		"domainIds":   []string{domain},
+		"categoryIds": []string{category.ID},
+	})
+	c.expect(c.do(http.MethodPut, "/review/sets/"+set.ID+"/cards", map[string]any{
 		"cards": []map[string]any{{"cardId": card.ID}},
 	}), http.StatusNoContent, nil)
-	c.startAttempt(exam.ID, http.StatusCreated)
+	c.startRun(set.ID, http.StatusCreated)
 }
 
 // The acceptance criterion, stated as a comparison against the database.
@@ -130,10 +131,12 @@ func TestExportContainsEveryRowTheAccountOwns(t *testing.T) {
 		"card_schedules":     "data/schedules.json",
 		"review_logs":        "data/reviews.json",
 		"focus_sessions":     "data/focus-sessions.json",
-		"exams":              "data/exams.json",
-		"exam_cards":         "data/exam-cards.json",
-		"exam_attempts":      "data/exam-attempts.json",
-		"exam_attempt_cards": "data/exam-attempt-cards.json",
+		"review_sets":           "data/review-sets.json",
+		"review_set_domains":    "data/review-set-domains.json",
+		"review_set_categories": "data/review-set-categories.json",
+		"review_set_cards":      "data/review-set-cards.json",
+		"review_runs":           "data/review-runs.json",
+		"review_run_cards":      "data/review-run-cards.json",
 	}
 
 	for table, file := range tables {

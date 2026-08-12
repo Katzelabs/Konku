@@ -20,7 +20,7 @@ export function ExportData() {
       <div>
         <p className="text-sm text-secondary-fg">
           Catatan dan kartu sebagai file markdown biasa, sisanya JSON — jadwal ulang,
-          riwayat review, sesi fokus, domain, kategori, dan ujian.
+          riwayat ulangan, sesi fokus, domain, kategori, dan latihan tersimpan.
         </p>
         <p className="mt-2 text-sm text-muted-fg">
           Bisa dibuka di Obsidian atau editor teks apa pun. Tidak ada yang dikunci di

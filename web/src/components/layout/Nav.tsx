@@ -1,5 +1,4 @@
 import {
-  ClipboardList,
   Clock,
   FileText,
   Home,
@@ -32,9 +31,10 @@ export const PRIMARY_NAV: NavItem[] = [
   { to: '/home', label: 'Beranda', icon: Home, end: true },
   { to: '/notes', label: 'Catatan', icon: FileText },
   { to: '/cards', label: 'Kartu', icon: Layers },
+  // One entry, not two. Ujian used to sit here as a sibling; it was the same
+  // feature with a different name, and it now lives inside Ulangan (D-075).
   { to: '/review', label: 'Ulangan', icon: Repeat, showsDue: true },
   { to: '/timer', label: 'Timer', icon: Clock },
-  { to: '/exams', label: 'Ujian', icon: ClipboardList },
 ]
 
 export const SECONDARY_NAV: NavItem[] = [
@@ -51,20 +51,22 @@ export interface Crumb {
  * The breadcrumb trail for a path.
  *
  * A flat table rather than something derived from the URL segments: Domain
- * lives under Pengaturan in the trail but at `/domains` in the router, and an
- * attempt is a child of Ujian without `/exams` appearing in its path. Deriving
- * from segments would get both wrong.
+ * lives under Pengaturan in the trail but at `/domains` in the router.
+ * Deriving from segments would get that wrong, and would also spell a run's
+ * trail as Ulangan / Sets / Runs.
+ *
+ * Order matters — the first match wins, so the deeper patterns come first.
  */
 const TRAIL: { match: RegExp; crumbs: Crumb[] }[] = [
   { match: /^\/home/, crumbs: [{ label: 'Beranda' }] },
   { match: /^\/notes\/.+/, crumbs: [{ label: 'Catatan', to: '/notes' }] },
   { match: /^\/notes/, crumbs: [{ label: 'Catatan' }] },
   { match: /^\/cards/, crumbs: [{ label: 'Kartu' }] },
+  { match: /^\/review\/due/, crumbs: [{ label: 'Ulangan', to: '/review' }, { label: 'Hari ini' }] },
+  { match: /^\/review\/sets/, crumbs: [{ label: 'Ulangan', to: '/review' }, { label: 'Latihan' }] },
+  { match: /^\/review\/runs/, crumbs: [{ label: 'Ulangan', to: '/review' }, { label: 'Latihan' }] },
   { match: /^\/review/, crumbs: [{ label: 'Ulangan' }] },
   { match: /^\/timer/, crumbs: [{ label: 'Timer' }] },
-  { match: /^\/exams\/.+/, crumbs: [{ label: 'Ujian', to: '/exams' }] },
-  { match: /^\/exams/, crumbs: [{ label: 'Ujian' }] },
-  { match: /^\/attempts/, crumbs: [{ label: 'Ujian', to: '/exams' }] },
   {
     match: /^\/domains/,
     crumbs: [{ label: 'Pengaturan', to: '/settings' }, { label: 'Domain' }],
