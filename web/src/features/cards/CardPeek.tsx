@@ -5,24 +5,32 @@ import { DomainBadge } from '../../components/ui/badge'
 import { Button } from '../../components/ui/button'
 import { CategoryChips } from '../../components/ui/category'
 import { ConfirmDialog } from '../../components/ui/confirm-dialog'
+import { Flashcard } from '../../components/ui/flashcard'
 import { MarkdownInline } from '../../components/ui/markdown'
 import { Notice } from '../../components/ui/notice'
 import { PeekPanel, type PeekMode } from '../../components/ui/peek-panel'
-import { Separator } from '../../components/ui/separator'
 import { Loading } from '../../components/ui/spinner'
+import { humanDay } from '../../lib/date'
 import { useAllCategories } from '../categories/queries'
 import { useAllDomains } from '../domains/queries'
 import { useCard, useDeleteCard } from './queries'
 
 /**
- * A card, previewed over the list.
+ * A card, previewed over the list — as a card, with two sides.
  *
- * It shows the answer, and that is not a hole in D-003. Recall before reveal
- * governs being tested — the review screen and an exam sitting. This is the
+ * It used to be the note peek with different labels: the question, a rule, the
+ * answer, both at once down one column. Nothing was wrong with the data it
+ * showed and everything was wrong with what it said the thing *was* — a card
+ * read as a short note with two fields, which is exactly the shape D-055 spent
+ * a migration getting away from.
+ *
+ * It shows the answer at all, and that is not a hole in D-003. Recall before
+ * reveal governs being *tested* — the review screen and a set run — and it is
+ * enforced on the server, which ships no `back` with a prompt. This is the
  * management screen: you opened this card on purpose to see what it says, and
- * hiding the answer behind a second click here would be ceremony, not a
- * safeguard. The *list* still withholds it, which is where an accidental
- * glance would actually happen.
+ * the flip is a way of handling the object rather than a lock on it. The
+ * *list* still withholds the answer, which is where an accidental glance would
+ * actually happen.
  */
 export function CardPeek({
   cardId,
@@ -58,23 +66,37 @@ export function CardPeek({
           <div className="flex flex-wrap items-center gap-2">
             {domain && <DomainBadge color={domain.color} label={domain.label} />}
             <CategoryChips ids={card.categoryIds} categories={categories} />
+            <span className="ml-auto text-xs text-subtle-fg">
+              {humanDay(card.updatedAt)}
+            </span>
           </div>
 
-          <section className="flex flex-col gap-2">
-            <span className="text-xs font-medium text-subtle-fg">Pertanyaan</span>
-            <MarkdownInline className="text-reading text-card-fg">
-              {card.front}
-            </MarkdownInline>
-          </section>
+          {/*
+            Keyed by the card, so clicking the next row in the list hands you a
+            new card question-side up. Without it the state survives the swap
+            and the second card opens already answered — which is the one thing
+            a flashcard must never do, even on a screen that is not testing you.
 
-          <Separator />
-
-          <section className="flex flex-col gap-2">
-            <span className="text-xs font-medium text-subtle-fg">Jawaban</span>
-            <MarkdownInline className="text-reading text-reading-fg">
-              {card.back}
-            </MarkdownInline>
-          </section>
+            Taller in a modal than in the column: the grid view has the whole
+            page to give it, and a card floating in the middle of a 42rem dialog
+            at the height of a list row reads as a fragment of something.
+          */}
+          <Flashcard
+            key={card.id}
+            className={mode === 'center' ? 'min-h-64' : undefined}
+            front={
+              // The question carries the page's full ink; the answer sits at
+              // reading weight, the way prose does everywhere else. Markdown
+              // maps every paragraph to `reading-fg` on its own, so the front
+              // says otherwise explicitly.
+              <MarkdownInline className="text-reading [&_p]:text-card-fg">
+                {card.front}
+              </MarkdownInline>
+            }
+            back={
+              <MarkdownInline className="text-reading">{card.back}</MarkdownInline>
+            }
+          />
 
           {/*
             Edit and delete together, because the peek is where you decide what
@@ -86,10 +108,10 @@ export function CardPeek({
             list underneath, and a preview of something no longer there is a
             dead end.
 
-            Pushed away from the answer rather than sharing the article's gap.
-            One of these deletes the card, and a destructive button sitting a
-            line's breath under the thing it destroys is one the eye can reach
-            before the brain does.
+            Pushed away from the card rather than sharing the article's gap.
+            One of these deletes it, and a destructive button sitting a line's
+            breath under the thing it destroys is one the eye can reach before
+            the brain does.
           */}
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <Button asChild variant="secondary" size="sm">

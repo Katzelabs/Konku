@@ -40,6 +40,7 @@ import {
   DialogTrigger,
 } from '../components/ui/dialog'
 import { EmptyState } from '../components/ui/empty-state'
+import { Flashcard } from '../components/ui/flashcard'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Notice } from '../components/ui/notice'
@@ -293,6 +294,29 @@ export default function StyleGuide() {
               </CardContent>
             </Card>
           </div>
+        </Section>
+
+        <Section
+          title="Flashcard"
+          hint="Two sides of one object. Click the card or the control; the answer is turned away, not deleted."
+        >
+          {/* On a panel, because that is where it lives: a peek column and a
+              dialog are both `bg-card`, which is why neither face is. */}
+          <Card className="max-w-lg p-5">
+            <Flashcard
+              front={
+                <p className="text-reading text-card-fg">
+                  Apa beda nilai eigen dan vektor eigen?
+                </p>
+              }
+              back={
+                <p className="text-reading text-reading-fg">
+                  Vektornya arah yang tidak berubah; nilainya seberapa jauh arah
+                  itu diregangkan.
+                </p>
+              }
+            />
+          </Card>
         </Section>
 
         <Section title="Badge & domain">

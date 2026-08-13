@@ -1291,6 +1291,70 @@ seven settings entries beside five daily destinations.
 
 ---
 
+### D-080 — A card previews as a card, with two sides
+
+The card peek was the note peek with different labels: a metadata row, the
+question, a rule, the answer, all at once down one column. Nothing it showed
+was wrong and everything it *said* was — a card read as a short note with two
+fields, which is precisely the shape D-055 spent a migration getting out of.
+The one screen where you handle cards as objects rendered them as documents.
+
+**It is the object now.** One face at a time — `Pertanyaan`, then `Jawaban` —
+and a turn between them you can watch happen. `components/ui/flashcard.tsx`,
+so the review screens can reach for it later without reimplementing it.
+
+**This is not recall-before-reveal and must never be mistaken for it.** D-003
+is a *server* guarantee: `/api/review/due` and `/api/cards` ship no `back` at
+all, so the answer is not in the page to be found. The peek already holds the
+whole card — you fetched it on purpose, to read it — and here the flip is a way
+of handling the thing, not a lock on it. Two consequences worth stating: both
+faces are in the DOM the whole time, and that is fine here and would be a
+defeat of D-003 anywhere that tests you. Anything that tests you asks the
+server at reveal time, the way `ReviewPage` does.
+
+**The faces share one grid cell.** Absolutely positioning them collapses the
+parent to zero height and forces a fixed one, which either clips a long answer
+or floats a three-word question in a box sized for something else. One cell
+makes the card as tall as its taller side and keeps that height across the
+turn — a card that resizes mid-flip reads as two panels swapping places, which
+is the impression this whole change exists to remove.
+
+**The flip is 300ms, not the 200ms `calm` token.** It is the one motion in the
+system that carries information rather than orientation, and under about 250ms
+the turn is not seen — the answer simply appears, which is the thing the flip
+exists to avoid saying. `--animate-duration-flip`, `ease-quiet`, no bounce.
+
+**Neither face is `bg-card`.** It sits inside a peek panel and inside a dialog,
+both of which are `bg-card` themselves, so a `card` face is a rectangle of
+border and nothing else — in both themes. The front is `surface` and the back
+`muted`: distinct from their container, distinct from each other, and neither
+tinted with the accent, which in this palette means "selected", nor with
+anything that could read as a verdict on an answer (D-054). Hover moves the
+*border*, because every neutral fill pairing is degenerate in one theme or the
+other (`border` = `input` in light, `muted` = `secondary` in dark).
+
+**The hidden face is `inert`.** It is turned away, not removed, so without it a
+tab lands on a link on the back of a card you are looking at the front of, and
+a screen reader reads out an answer to a question it has not read yet. The
+flip's own announcement is a polite live region, since both faces are mounted
+and nothing is inserted for a reader to notice.
+
+**The card is a click target and the button is the control.** A `<button>`
+cannot legally contain the links markdown renders, and `role="button"` on a div
+full of prose is a worse lie than no role — so the face takes a plain click
+handler that declines twice: on a link (notes and cards carry source URLs,
+D-013) and on a live text selection, because selecting an answer to copy it
+ends in a click, and turning the card over at that moment destroys the
+selection and the intent with it.
+
+**Rejected:** hiding the answer behind a second click *as a safeguard*, which
+would be ceremony imitating D-003 on a screen that already has the answer in
+hand; a stacked-deck edge behind the card, which implies a pile where there is
+one card; and tinting the answer face with the accent, which in this palette
+means "selected" and, on an answer, comes uncomfortably close to a verdict.
+
+---
+
 ## Open questions
 
 None blocking. Deferred details, intentionally left until the feature is being built:

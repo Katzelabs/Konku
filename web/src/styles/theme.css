@@ -268,6 +268,13 @@
   --ease-quiet: cubic-bezier(0.2, 0, 0, 1);
   --animate-duration-quick: 120ms;
   --animate-duration-calm: 200ms;
+  /* A card turning over, and the one motion here that carries information
+     rather than orientation: it says the two faces are two sides of one object
+     instead of two panels swapping places. That reading needs the turn to be
+     seen, and under ~250ms it is not — the answer simply appears, which is the
+     thing the flip exists to avoid saying. Still `ease-quiet`, still no
+     bounce, and `prefers-reduced-motion` cuts it in the base layer. */
+  --animate-duration-flip: 300ms;
 
   --animate-fade-in: fade-in var(--animate-duration-calm) var(--ease-quiet);
   --animate-fade-out: fade-out var(--animate-duration-quick) var(--ease-quiet);
