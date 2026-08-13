@@ -15,6 +15,7 @@ import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
 import { Notice } from '../../components/ui/notice'
 import { useDeleteAccount } from '../auth/useAuth'
+import { SettingsRow } from './SettingsSection'
 
 /**
  * Delete the account (07 L7).
@@ -53,18 +54,17 @@ export function DeleteAccount() {
 
   return (
     <>
-      <Card className="flex items-center justify-between gap-4 p-5">
-        <div>
-          <p className="text-sm font-medium text-card-fg">Hapus akun</p>
-          <p className="text-xs text-muted-fg">
-            Semua catatan, kartu, dan riwayat review ikut terhapus. Tidak bisa
-            dikembalikan.
-          </p>
-        </div>
-        <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
-          <Trash2 />
-          Hapus akun
-        </Button>
+      <Card className="p-5">
+        <SettingsRow
+          title="Hapus akun"
+          description="Semua catatan, kartu, dan riwayat review ikut terhapus. Tidak bisa dikembalikan."
+          action={
+            <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
+              <Trash2 />
+              Hapus akun
+            </Button>
+          }
+        />
       </Card>
 
       <Dialog open={open} onOpenChange={onOpenChange}>

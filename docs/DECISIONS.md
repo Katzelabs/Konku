@@ -1246,6 +1246,51 @@ exactly one package (D-065).
 
 ---
 
+### D-079 — Pengaturan is a shell with one section in it, not a column with all of them
+
+`/settings` was a single column of seven stacked sections: account, export,
+sessions, theme, delete-account, a paragraph of legal text, and two links out
+to `/domains` and `/categories`. Everything was on screen at once, which had
+three costs. The screen had no shape you could learn, so finding the theme
+meant scrolling and reading. The one irreversible action in the app sat two
+scrolls under the email address, on the path of every ordinary visit. And the
+two label screens were reached through a card that existed only because there
+was nowhere else to put a link — going from Domain to Kategori was two
+navigations through a page nobody wanted to be on.
+
+**Each section is a route now, under one shell.** A rail on the left says
+where you are and what else there is; the column on the right holds exactly
+one section. `/settings` redirects to `/settings/akun`, so every existing link
+— the sidebar, the account menu, Beranda's "Atur", a bookmark — still lands
+somewhere.
+
+**`/domains` and `/categories` keep their URLs** and render inside the shell,
+via a pathless layout route. They were linkable before this and moving them
+under `/settings/` to make the paths tidy would break that for nothing. The
+"← Pengaturan" link each of them opened with is gone: the rail never leaves,
+so there is nowhere to go back *to* that is not already on screen. The sidebar
+carries `alsoActiveOn` for the same reason — Pengaturan has to stay lit while
+you are on a settings screen that lives at its own URL.
+
+**The rail is a strip on phones**, not a menu. A phone has room for the nav or
+the section, not both, and a full-height list you walk back through is the
+shape this rework is undoing. The open section scrolls itself into the strip:
+seven items do not fit across a phone, and arriving at Data & privasi from a
+link put the current section off the right edge while the nav claimed you were
+on Profil.
+
+**Read-only account fields stopped being disabled `<Input>`s.** Nothing writes
+a name or an address yet (00010, D-071), and a greyed-out box still looks like
+a box you could type in. They are text with a line saying so.
+
+**Rejected:** a settings index page listing the sections, which is one more tap
+to everything and a screen whose only content is a menu; moving the label
+screens under `/settings/` and redirecting the old URLs, which is churn for
+tidiness; and putting Pengaturan's sections in the app sidebar, which would put
+seven settings entries beside five daily destinations.
+
+---
+
 ## Open questions
 
 None blocking. Deferred details, intentionally left until the feature is being built:

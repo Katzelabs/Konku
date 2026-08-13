@@ -45,18 +45,16 @@ export default function CategorySettings() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-start justify-between gap-4">
-        <p className="max-w-prose text-sm text-muted-fg">
-          Kategori dipakai bersama oleh catatan dan kartu. Biasanya kamu bikin
-          langsung sambil nulis — di sini tempatnya kalau mau dirapikan.
-        </p>
-        {!adding && (
+      {/* The explanation lives in the section description now — same as
+          DomainSettings, so the two label screens stay the same shape. */}
+      {!adding && (
+        <div className="flex justify-end">
           <Button variant="secondary" size="sm" onClick={() => setAdding(true)}>
             <Plus />
             Tambah
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       {adding && <NewCategoryForm onDone={() => setAdding(false)} />}
 

@@ -9,6 +9,7 @@ import {
   useRevokeOtherAuthSessions,
   type AuthSession,
 } from '../auth/useAuth'
+import { SettingsRow } from './SettingsSection'
 
 /**
  * Where the account is signed in (07 L5).
@@ -63,23 +64,22 @@ export function ActiveSessions() {
       )}
 
       {others.length > 0 && (
-        <div className="mt-3 flex items-center justify-between gap-4 border-t border-border pt-4">
-          <div>
-            <p className="text-sm font-medium text-card-fg">Keluar dari perangkat lain</p>
-            <p className="text-xs text-muted-fg">
-              Sesi di perangkat ini tetap aktif.
-            </p>
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={revokeOthers.isPending}
-            onClick={() => revokeOthers.mutate()}
-          >
-            <LogOut />
-            {revokeOthers.isPending ? 'Sebentar…' : 'Keluarkan'}
-          </Button>
-        </div>
+        <SettingsRow
+          className="mt-3 border-t border-border pt-4"
+          title="Keluar dari perangkat lain"
+          description="Sesi di perangkat ini tetap aktif."
+          action={
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={revokeOthers.isPending}
+              onClick={() => revokeOthers.mutate()}
+            >
+              <LogOut />
+              {revokeOthers.isPending ? 'Sebentar…' : 'Keluarkan'}
+            </Button>
+          }
+        />
       )}
     </Card>
   )

@@ -1,33 +1,20 @@
-import { ArrowLeft } from 'lucide-react'
-import { Link } from 'react-router-dom'
-import { Button } from '../../components/ui/button'
-import { PageHeader } from '../../components/ui/page-header'
+import { SettingsSection } from '../settings/SettingsSection'
 import CategorySettings from './CategorySettings'
 
 /**
- * Category management on its own route, the same shape as /domains.
+ * Category management on its own route, the same shape as `/domains`.
  *
- * Reached from Pengaturan rather than the nav — it is settings-shaped, not
- * somewhere you go daily — but it is a real page with a real URL, so it can be
- * linked to and bookmarked.
+ * Same reasoning as there: the URL is unchanged, the back link is gone because
+ * the settings rail never leaves, and the two label screens are now siblings
+ * you can move between directly rather than through Pengaturan.
  */
 export default function CategoriesPage() {
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3">
-        <Button asChild variant="link" size="inline" className="self-start">
-          <Link to="/settings">
-            <ArrowLeft />
-            Pengaturan
-          </Link>
-        </Button>
-        <PageHeader
-          title="Kategori"
-          description="Satu kosakata yang dipakai bersama oleh catatan dan kartu."
-        />
-      </div>
-
+    <SettingsSection
+      title="Kategori"
+      description="Satu kosakata yang dipakai bersama oleh catatan dan kartu. Biasanya kamu bikin langsung sambil nulis — di sini tempatnya kalau mau dirapikan."
+    >
       <CategorySettings />
-    </div>
+    </SettingsSection>
   )
 }

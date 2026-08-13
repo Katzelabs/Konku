@@ -1,6 +1,7 @@
 import { Download } from 'lucide-react'
 import { Button } from '../../components/ui/button'
 import { Card } from '../../components/ui/card'
+import { SettingsRow } from './SettingsSection'
 
 /**
  * Download everything (07 L6).
@@ -28,25 +29,24 @@ export function ExportData() {
         </p>
       </div>
 
-      <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
-        <div>
-          <p className="text-sm font-medium text-card-fg">Unduh arsip</p>
-          <p className="text-xs text-muted-fg">
-            Kata sandi dan sesi login tidak ikut diunduh.
-          </p>
-        </div>
-        {/*
-          asChild so the anchor keeps the button's styling. A <button> firing a
-          programmatic download would need JavaScript to do what an <a> does on
-          its own.
-        */}
-        <Button asChild variant="secondary" size="sm">
-          <a href="/api/export" download>
-            <Download />
-            Unduh
-          </a>
-        </Button>
-      </div>
+      <SettingsRow
+        className="border-t border-border pt-4"
+        title="Unduh arsip"
+        description="Kata sandi dan sesi login tidak ikut diunduh."
+        action={
+          /*
+            asChild so the anchor keeps the button's styling. A <button> firing
+            a programmatic download would need JavaScript to do what an <a>
+            does on its own.
+          */
+          <Button asChild variant="secondary" size="sm">
+            <a href="/api/export" download>
+              <Download />
+              Unduh
+            </a>
+          </Button>
+        }
+      />
     </Card>
   )
 }

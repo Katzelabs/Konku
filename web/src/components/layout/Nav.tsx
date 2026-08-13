@@ -7,6 +7,7 @@ import {
   Settings,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { settingsItemFor } from '../../features/settings/nav'
 
 /**
  * The destinations, in one place so the sidebar, the mobile bar and the
@@ -25,6 +26,15 @@ export interface NavItem {
   end?: boolean
   /** Show the due-card count beside this item. */
   showsDue?: boolean
+  /**
+   * Paths that belong to this destination without living under its URL.
+   *
+   * Pengaturan is the only one: `/domains` and `/categories` are settings
+   * screens, they render inside the settings shell, and they kept their own
+   * top-level URLs — so without this the sidebar goes blank the moment you
+   * open one from the rail.
+   */
+  alsoActiveOn?: RegExp
 }
 
 export const PRIMARY_NAV: NavItem[] = [
@@ -38,7 +48,12 @@ export const PRIMARY_NAV: NavItem[] = [
 ]
 
 export const SECONDARY_NAV: NavItem[] = [
-  { to: '/settings', label: 'Pengaturan', icon: Settings },
+  {
+    to: '/settings',
+    label: 'Pengaturan',
+    icon: Settings,
+    alsoActiveOn: /^\/(domains|categories)/,
+  },
 ]
 
 export interface Crumb {
@@ -71,9 +86,27 @@ const TRAIL: { match: RegExp; crumbs: Crumb[] }[] = [
     match: /^\/domains/,
     crumbs: [{ label: 'Pengaturan', to: '/settings' }, { label: 'Domain' }],
   },
+  {
+    match: /^\/categories/,
+    crumbs: [{ label: 'Pengaturan', to: '/settings' }, { label: 'Kategori' }],
+  },
   { match: /^\/settings/, crumbs: [{ label: 'Pengaturan' }] },
 ]
 
+/**
+ * The trail for a path.
+ *
+ * Settings sections are not in the table: they are a list that grows, and a
+ * second copy of it here would drift from `features/settings/nav.ts` the first
+ * time one is renamed. The section name comes from that list instead, appended
+ * to the Pengaturan crumb the table already supplies. Domain and Kategori are
+ * still spelled out above because their URLs are not under `/settings`.
+ */
 export function crumbsFor(pathname: string): Crumb[] {
-  return TRAIL.find((t) => t.match.test(pathname))?.crumbs ?? []
+  const crumbs = TRAIL.find((t) => t.match.test(pathname))?.crumbs ?? []
+  if (!pathname.startsWith('/settings/')) return crumbs
+
+  const section = settingsItemFor(pathname)
+  if (!section) return crumbs
+  return [{ label: 'Pengaturan', to: '/settings' }, { label: section.label }]
 }

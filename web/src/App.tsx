@@ -22,7 +22,12 @@ import ReviewHomePage from './features/review/ReviewHomePage'
 import ReviewPage from './features/review/ReviewPage'
 import ReviewSetPage from './features/review/ReviewSetPage'
 import RunPage from './features/review/RunPage'
-import SettingsPage from './features/settings/SettingsPage'
+import AboutSettings from './features/settings/AboutSettings'
+import AccountSettings from './features/settings/AccountSettings'
+import AppearanceSettings from './features/settings/AppearanceSettings'
+import DataSettings from './features/settings/DataSettings'
+import SessionsSettings from './features/settings/SessionsSettings'
+import SettingsLayout from './features/settings/SettingsLayout'
 import { PeekProvider, usePeekBackground } from './lib/peek-route'
 import { TimerProvider } from './features/timer/TimerProvider'
 import TimerPage from './features/timer/TimerPage'
@@ -136,11 +141,29 @@ export default function App() {
             <Route path="/review/sets/:id" element={<ReviewSetPage />} />
             <Route path="/review/runs/:id" element={<RunPage />} />
             <Route path="/timer" element={<TimerPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-
-            {/* Both reached from Pengaturan rather than the nav. */}
-            <Route path="/domains" element={<DomainsPage />} />
-            <Route path="/categories" element={<CategoriesPage />} />
+            {/*
+              Pengaturan is a shell with one section in it at a time, not a
+              column with all of them stacked. The layout route is pathless on
+              purpose: /domains and /categories were linkable before the split
+              and keep their URLs, while still rendering inside the rail that
+              says where you are.
+            */}
+            <Route element={<SettingsLayout />}>
+              <Route path="/settings/akun" element={<AccountSettings />} />
+              <Route path="/settings/perangkat" element={<SessionsSettings />} />
+              <Route path="/settings/tampilan" element={<AppearanceSettings />} />
+              <Route path="/settings/data" element={<DataSettings />} />
+              <Route path="/settings/tentang" element={<AboutSettings />} />
+              <Route path="/domains" element={<DomainsPage />} />
+              <Route path="/categories" element={<CategoriesPage />} />
+            </Route>
+            {/*
+              Everything that linked to Pengaturan before the split — the
+              sidebar, the account menu, Beranda's "Atur", a bookmark — lands
+              on the first section. `replace`, so Back from there goes where
+              you came from rather than bouncing through the redirect.
+            */}
+            <Route path="/settings" element={<Navigate to="/settings/akun" replace />} />
 
             <Route path="*" element={<Navigate to="/home" replace />} />
           </Routes>

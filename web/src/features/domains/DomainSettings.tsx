@@ -38,18 +38,19 @@ export default function DomainSettings() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-start justify-between gap-4">
-        <p className="max-w-prose text-sm text-muted-fg">
-          Target mingguan cuma penanda arah, bukan setoran. Nol berarti domain ini
-          tetap bisa dipakai tapi tidak ikut rotasi mingguan.
-        </p>
-        {!adding && (
+      {/*
+        The explanation that used to sit beside this button is the section's
+        description now — one grey paragraph per screen, written once, above
+        the list rather than beside the control that adds to it.
+      */}
+      {!adding && (
+        <div className="flex justify-end">
           <Button variant="secondary" size="sm" onClick={() => setAdding(true)}>
             <Plus />
             Tambah
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       {adding && <NewDomainForm onDone={() => setAdding(false)} />}
 

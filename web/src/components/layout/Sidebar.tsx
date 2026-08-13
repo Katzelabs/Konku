@@ -1,5 +1,5 @@
 import { GraduationCap } from 'lucide-react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { cn } from '../../lib/utils'
 import { Separator } from '../ui/separator'
 import { PRIMARY_NAV, SECONDARY_NAV, type NavItem } from './Nav'
@@ -64,6 +64,9 @@ function SidebarLink({
 }) {
   const Icon = item.icon
   const showDue = item.showsDue && due > 0
+  const { pathname } = useLocation()
+  // A settings screen that lives at its own URL still lights Pengaturan up.
+  const alsoActive = item.alsoActiveOn?.test(pathname) ?? false
 
   return (
     <NavLink
@@ -77,7 +80,7 @@ function SidebarLink({
         cn(
           'flex items-center gap-3 rounded-md py-2 text-sm transition-colors duration-(--animate-duration-quick) ease-(--ease-quiet)',
           collapsed ? 'justify-center px-0' : 'px-3',
-          isActive
+          isActive || alsoActive
             ? 'bg-accent font-semibold text-accent-fg'
             : 'font-medium text-muted-fg hover:bg-muted hover:text-surface-fg',
         )
