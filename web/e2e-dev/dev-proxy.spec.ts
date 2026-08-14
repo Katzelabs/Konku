@@ -39,7 +39,9 @@ test.describe('the dev proxy', () => {
     )
 
     await page.getByLabel('Email').fill(email)
-    await page.getByLabel('Kata sandi').fill(PASSWORD)
+    // exact, because the reveal toggle beside the field is labelled
+    // "Tampilkan kata sandi" and a substring match resolves to both.
+    await page.getByLabel('Kata sandi', { exact: true }).fill(PASSWORD)
     await page.getByRole('button', { name: 'Masuk' }).click()
 
     // Asserted before the URL, because the status is the diagnostic one. A
