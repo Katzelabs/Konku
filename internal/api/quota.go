@@ -103,6 +103,12 @@ const (
 	quotaNotes  quotaKind = "notes"
 	quotaCards  quotaKind = "cards"
 	quotaWrites quotaKind = "write_rate"
+	// Two paths that limitWrites does not cover, for opposite reasons: the
+	// export is a GET so limitWrites waves it through, and account deletion is
+	// a write but 300/minute is nowhere near tight enough for something that
+	// takes a password. See limitPerUser.
+	quotaExport        quotaKind = "export"
+	quotaAccountDelete quotaKind = "account_delete"
 )
 
 // rejectQuota answers 429 and counts the rejection.
@@ -189,6 +195,61 @@ func (s *Server) limitWrites(next http.Handler) http.Handler {
 
 // writeLimitWindow is the period the write limit is counted over.
 const writeLimitWindow = time.Minute
+
+// limitPerUser bounds one route for one account.
+//
+// limitWrites is a rate for the whole authenticated surface, tuned so a person
+// typing continuously never meets it. Two routes need something far tighter
+// than that and are not served by a shared budget:
+//
+//   - DELETE /account takes a password, so the 300/minute write limit is
+//     432.000 guesses a day for someone holding a stolen cookie — the precise
+//     threat the re-authentication exists to stop (07 L7).
+//   - GET /export is a GET, so limitWrites skips it entirely, and each call
+//     holds an open transaction and the whole account in memory. Ten at once
+//     exhaust a pool capped at 10 for every other project's sake (D-028).
+//
+// Keyed by user id rather than IP, for the same reason limitWrites is: behind
+// a phone network or an office NAT an IP is shared by strangers. Rejections go
+// through rejectQuota so they land in konku_quota_rejections_total beside the
+// others rather than being a 429 nothing counts.
+//
+// The limiter is consumed before the handler runs, so a *failed* attempt costs
+// a slot. That is the point on the deletion path: the budget has to bound
+// guesses, not successes.
+func (s *Server) limitPerUser(rl *rateLimiter, kind quotaKind, message string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			user, ok := UserFrom(r.Context())
+			if !ok {
+				// Unreachable behind requireUser. Refuse rather than pass
+				// through: an unkeyed request here would be an unlimited one,
+				// which is the failure this middleware exists to prevent.
+				writeError(w, http.StatusUnauthorized, CodeUnauthorized, "Kamu belum masuk.")
+				return
+			}
+			if !rl.allow(user.ID.String()) {
+				s.rejectQuota(w, kind, message)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// Both windows are an hour, and both are generous for the action they guard.
+//
+// Deleting an account is a once-ever action, so five an hour costs a real
+// person nothing at all. Exporting is something you might reasonably do twice
+// in a sitting — once to look, once to keep — and five leaves room to retry a
+// download that failed.
+const (
+	maxAccountDeletes   = 5
+	accountDeleteWindow = time.Hour
+
+	maxExports   = 5
+	exportWindow = time.Hour
+)
 
 // thousands formats a number the Indonesian way — 5.000, not 5,000 — because
 // the copy it lands in is Indonesian (hard rule 8).

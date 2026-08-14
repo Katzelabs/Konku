@@ -31,6 +31,32 @@ var (
 	ErrIncompatibleParams = errors.New("auth: incompatible argon2 version")
 )
 
+// hashSlots bounds how many argon2 computations run at once.
+//
+// The parameters above are correct per hash and say nothing about how many
+// hashes there are. Every limiter in front of a hashing endpoint is per-IP or
+// per-address, so 100 source addresses buy 100 concurrent verifications —
+// 6.4 GB resident — and /auth/signup, /auth/reset and DELETE /account each
+// carry their own budget, so the budgets add rather than sharing a ceiling.
+// On a shared VPS that is an OOM for every co-tenant project, the same
+// reasoning that caps the pgx pool at 10 (D-028).
+//
+// Four slots is 256 MiB of peak hashing against the container's mem_limit of
+// 512m, so the bound is stated twice and neither statement is the only one
+// (hard rule 9).
+//
+// Acquisition blocks rather than taking a context, and that is deliberate.
+// Requests queue behind chi's 30s Timeout middleware instead of the box
+// swapping, and a queued goroutine costs ~8 KiB — the bound that matters is
+// memory, not goroutines. Threading a context through Hash and Verify would
+// change every call site to solve a problem this does not have.
+var hashSlots = make(chan struct{}, maxConcurrentHashes)
+
+const maxConcurrentHashes = 4
+
+func acquireHashSlot() { hashSlots <- struct{}{} }
+func releaseHashSlot() { <-hashSlots }
+
 // argonThreads is capped at 4: more parallelism costs memory per login
 // without meaningfully raising the bar for an attacker with a GPU.
 func argonThreads() uint8 {
@@ -54,7 +80,10 @@ func Hash(password string) (string, error) {
 	}
 
 	threads := argonThreads()
+
+	acquireHashSlot()
 	sum := argon2.IDKey([]byte(password), salt, argonTime, argonMemory, threads, argonKeyLen)
+	releaseHashSlot()
 
 	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
 		argon2.Version, argonMemory, argonTime, threads,
@@ -101,7 +130,13 @@ func Verify(encoded, password string) (bool, error) {
 
 	// Use the stored parameters, not the current constants, so hashes written
 	// before a tuning change still verify.
+	//
+	// Bounded like Hash is, and for a stronger reason: the parameters here come
+	// off the stored hash rather than from the constants above, so a row written
+	// under a future tuning could cost more memory than argonMemory says.
+	acquireHashSlot()
 	got := argon2.IDKey([]byte(password), salt, time, memory, threads, uint32(len(want)))
+	releaseHashSlot()
 
 	return subtle.ConstantTimeCompare(got, want) == 1, nil
 }

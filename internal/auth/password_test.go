@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -138,5 +139,65 @@ func TestIncompatibleVersionIsReported(t *testing.T) {
 	_, err := Verify("$argon2id$v=16$m=65536,t=3,p=2$c2FsdA$aGFzaA", "x")
 	if !errors.Is(err, ErrIncompatibleParams) {
 		t.Errorf("got %v, want ErrIncompatibleParams", err)
+	}
+}
+
+// TestHashingIsBounded asserts the concurrency cap directly rather than
+// inferring it from timing.
+//
+// The bound is what stops 100 source addresses buying 100 concurrent 64 MiB
+// hashes on a shared box. It is invisible in normal operation, which is exactly
+// why it needs a test: nothing else would notice it being removed.
+func TestHashingIsBounded(t *testing.T) {
+	const password = "kata sandi yang panjang sekali"
+
+	encoded, err := Hash(password)
+	if err != nil {
+		t.Fatalf("Hash: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		call func() error
+	}{
+		{"Hash", func() error { _, err := Hash(password); return err }},
+		{"Verify", func() error { _, err := Verify(encoded, password); return err }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Hold every slot, so the call below has nowhere to run.
+			for range maxConcurrentHashes {
+				acquireHashSlot()
+			}
+			// Whatever happens, leave the pool as we found it — a leaked slot
+			// would wedge every later test in this package.
+			held := maxConcurrentHashes
+			t.Cleanup(func() {
+				for range held {
+					releaseHashSlot()
+				}
+			})
+
+			done := make(chan error, 1)
+			go func() { done <- tc.call() }()
+
+			select {
+			case <-done:
+				t.Fatal("completed while every slot was held — the concurrency bound is not being applied")
+			case <-time.After(100 * time.Millisecond):
+			}
+
+			// Release one slot; the queued call should take it.
+			releaseHashSlot()
+			held--
+
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatalf("call: %v", err)
+				}
+			case <-time.After(10 * time.Second):
+				t.Fatal("did not complete after a slot was released — the slot is not being handed back")
+			}
+		})
 	}
 }

@@ -40,6 +40,12 @@ type Server struct {
 	// IP limiters guard the paths where there is no account yet, and behind a
 	// phone network or an office NAT an IP is shared by strangers.
 	writeLimit *rateLimiter
+
+	// Two routes writeLimit does not adequately cover, each with its own
+	// budget rather than a share of one. See limitPerUser in quota.go for why
+	// a 300/minute write rate is the wrong bound for either.
+	deleteAccountLimit *rateLimiter
+	exportLimit        *rateLimiter
 }
 
 func NewServer(cfg config.Config, st *store.Store, au *auth.Service, mailer Mailer, dist fs.FS) *Server {
@@ -52,8 +58,10 @@ func NewServer(cfg config.Config, st *store.Store, au *auth.Service, mailer Mail
 		metrics: newMetrics(st),
 		// Three sends per address per hour. Generous for someone whose mail is
 		// slow to arrive, useless as a mailbomb.
-		signupAddrLimit: newRateLimiter(3, time.Hour),
-		writeLimit:      newRateLimiter(writesPerMinute(cfg), writeLimitWindow),
+		signupAddrLimit:    newRateLimiter(3, time.Hour),
+		writeLimit:         newRateLimiter(writesPerMinute(cfg), writeLimitWindow),
+		deleteAccountLimit: newRateLimiter(maxAccountDeletes, accountDeleteWindow),
+		exportLimit:        newRateLimiter(maxExports, exportWindow),
 	}
 }
 
@@ -257,14 +265,27 @@ func (s *Server) Routes() http.Handler {
 				// Everything the account owns, as one archive (07 L6). GET
 				// rather than POST: it creates nothing and a link the browser
 				// can follow is the whole interaction.
-				r.Get("/export", s.handleExport)
+				//
+				// Being a GET is also why it needs its own limiter: limitWrites
+				// waves reads through, and this read holds an open transaction
+				// and the whole account in memory while it runs.
+				r.With(s.limitPerUser(s.exportLimit, quotaExport,
+					"Terlalu banyak permintaan ekspor. Coba lagi satu jam lagi — "+
+						"arsip yang sudah diunduh tetap lengkap.",
+				)).Get("/export", s.handleExport)
 
 				// Irreversible, and the only endpoint that re-authenticates
 				// (07 L7). Inside requireVerified with everything else: an
 				// unverified account has nothing to delete but its own row,
 				// and letting it through would be a second deletion path to
 				// keep correct.
-				r.Delete("/account", s.handleDeleteAccount)
+				//
+				// Taking a password is what makes the tight limiter necessary
+				// rather than merely tidy: without one, the write rate is the
+				// only bound on guessing it.
+				r.With(s.limitPerUser(s.deleteAccountLimit, quotaAccountDelete,
+					"Terlalu banyak percobaan penghapusan akun. Coba lagi satu jam lagi.",
+				)).Delete("/account", s.handleDeleteAccount)
 
 				// Logins, not study time. Under /auth because /sessions has
 				// meant the focus timer's since 03, and "sessions" genuinely

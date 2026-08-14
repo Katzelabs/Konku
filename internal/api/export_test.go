@@ -7,3 +7,10 @@ package api
 // live request — a direct test can attach everything a caller might and check
 // that none of it survives.
 var ScrubEventForTest = scrubEvent
+
+// The per-route budgets from quota.go, so the 429 tests assert against the real
+// numbers rather than literals that drift the moment either is tuned.
+const (
+	MaxAccountDeletesForTest = maxAccountDeletes
+	MaxExportsForTest        = maxExports
+)

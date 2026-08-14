@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+
+	"github.com/Katzelabs/Konku/internal/api"
 )
 
 // Account deletion (07 L7).
@@ -143,6 +145,46 @@ func TestDeletionRequiresThePassword(t *testing.T) {
 	// And the account is untouched, or the refusal above meant nothing.
 	if got := statusWithCookie(t, a, http.MethodGet, "/notes", c.cookie); got != http.StatusOK {
 		t.Errorf("GET /notes = %d after a refused deletion, want 200", got)
+	}
+}
+
+// Requiring the password is only worth anything if guessing it is bounded.
+//
+// Before this limiter the only thing covering the route was limitWrites at 300
+// a minute, which is 432.000 guesses a day for exactly the actor the
+// re-authentication exists to stop: someone holding a stolen cookie. The
+// 12-character minimum was doing all the work on its own.
+//
+// Asserted rather than assumed, because the login rate limiter once shipped
+// broken precisely because nothing asserted a 429.
+func TestDeletionIsRateLimited(t *testing.T) {
+	a := newApp(t)
+	c := a.newClient(t)
+
+	// A wrong password spends a slot. That is the point — the budget has to
+	// bound attempts, not successes, or it bounds nothing an attacker does.
+	for i := range api.MaxAccountDeletesForTest {
+		if got := deleteAccount(t, c, "kata sandi yang salah"); got != http.StatusUnauthorized {
+			t.Fatalf("attempt %d = %d, want 401", i+1, got)
+		}
+	}
+
+	if got := deleteAccount(t, c, "kata sandi yang salah"); got != http.StatusTooManyRequests {
+		t.Errorf("attempt %d = %d, want 429", api.MaxAccountDeletesForTest+1, got)
+	}
+
+	// The limiter must refuse the *correct* password too once the budget is
+	// spent. A limiter that only counts failures is trivially reset by an
+	// attacker who happens to guess right, and it would also let the real
+	// account holder through on a route they have been locked out of, which is
+	// a difference the code should not be making.
+	if got := deleteAccount(t, c, testPassword); got != http.StatusTooManyRequests {
+		t.Errorf("correct password after the budget = %d, want 429", got)
+	}
+
+	// And nothing was deleted along the way.
+	if got := statusWithCookie(t, a, http.MethodGet, "/notes", c.cookie); got != http.StatusOK {
+		t.Errorf("GET /notes = %d after refused deletions, want 200", got)
 	}
 }
 

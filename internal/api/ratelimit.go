@@ -18,6 +18,9 @@ type rateLimiter struct {
 	hits    map[string]*window
 	limit   int
 	perWind time.Duration
+
+	// lastSweep is when expired windows were last evicted. See allow.
+	lastSweep time.Time
 }
 
 type window struct {
@@ -35,16 +38,30 @@ func newRateLimiter(limit int, per time.Duration) *rateLimiter {
 
 // allow reports whether key may proceed, and sweeps expired windows so the map
 // cannot grow without bound from spoofed source addresses.
+//
+// The sweep runs at most once per window rather than on every call. It used to
+// iterate every key on every request, while holding the mutex — O(n) under a
+// global lock on the hot path, so the cost scaled with exactly the flood the
+// limiter exists to absorb, and the busier the attack the more the defence cost.
+//
+// Once per window is still enough for what the sweep is for: a key's window
+// lasts perWind, so nothing survives more than two sweeps past its expiry, and
+// the map stays bounded by the number of distinct keys seen in that time. An
+// individual expired entry is not left to rot either — the per-key check below
+// resets a stale window whether or not the sweep has run.
 func (rl *rateLimiter) allow(key string) bool {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
 	now := time.Now()
 
-	for k, w := range rl.hits {
-		if now.After(w.reset) {
-			delete(rl.hits, k)
+	if now.Sub(rl.lastSweep) >= rl.perWind {
+		for k, w := range rl.hits {
+			if now.After(w.reset) {
+				delete(rl.hits, k)
+			}
 		}
+		rl.lastSweep = now
 	}
 
 	w, ok := rl.hits[key]

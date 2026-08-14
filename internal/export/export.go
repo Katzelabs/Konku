@@ -26,6 +26,7 @@ import (
 	"archive/zip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -68,12 +69,39 @@ type Archive struct {
 	ReviewRunCards      []gen.ExportReviewRunCardsRow
 }
 
+// ErrTooLarge is returned when an account's content exceeds maxContentBytes.
+//
+// A distinct error rather than a generic failure, because the handler answers
+// it differently: this is not something retrying fixes.
+var ErrTooLarge = errors.New("export: the archive would be too large to build in memory")
+
+// maxContentBytes bounds the note and card text one archive may hold.
+//
+// This is a backstop, not the bound that matters. The limiter in front of the
+// endpoint is what stops ten concurrent exports exhausting a pool of ten; this
+// stops a single account whose content is pathological from taking the process
+// down on its own, because Load holds everything in memory at once by design
+// (see Archive).
+//
+// Deliberately far above anything a real account reaches. The per-note cap is
+// 256 KiB and the quota is 5.000 notes, so a *worst-case* archive at the
+// configured limits is around 1.25 GiB — and a realistic one is three orders of
+// magnitude below this ceiling. An export that refused a genuine user would work
+// directly against the no-lock-in promise this feature exists to keep (D-066),
+// so the number is chosen to never be met rather than to be tight.
+const maxContentBytes = 512 << 20 // 512 MiB
+
 // Load reads everything the account owns.
 //
 // Inside one user-scoped transaction: the queries carry their own user_id
 // predicate (hard rule 4), and the transaction is what makes RLS apply and
 // what makes the archive a consistent snapshot rather than a set of reads
 // taken at different moments while the user is still typing.
+//
+// Returns ErrTooLarge if the account's content exceeds maxContentBytes. The
+// check runs after the reads it can measure rather than before them: there is
+// no cheap way to ask Postgres for the total without reading it, and refusing
+// on an estimate would refuse real exports.
 func Load(ctx context.Context, st *store.Store, userID uuid.UUID) (*Archive, error) {
 	a := &Archive{}
 
@@ -114,12 +142,35 @@ func Load(ctx context.Context, st *store.Store, userID uuid.UUID) (*Archive, err
 				return fmt.Errorf("export: %s: %w", step.name, err)
 			}
 		}
+
+		// Checked inside the transaction so the refusal happens before the
+		// caller starts writing bytes, which is the same reason everything is
+		// read before anything is written.
+		if n := a.contentBytes(); n > maxContentBytes {
+			return fmt.Errorf("%w: %d bytes of content", ErrTooLarge, n)
+		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 	return a, nil
+}
+
+// contentBytes is the size of the text the archive carries.
+//
+// Notes and cards only: the JSON tables are bounded by the same rows, and the
+// point is a ceiling on the order of magnitude rather than an exact byte count
+// of the finished zip.
+func (a *Archive) contentBytes() int {
+	var n int
+	for _, note := range a.Notes {
+		n += len(note.ContentMd) + len(note.Title)
+	}
+	for _, card := range a.Cards {
+		n += len(card.Front) + len(card.Back)
+	}
+	return n
 }
 
 // Filename is the name the archive is offered under. Dated, because someone

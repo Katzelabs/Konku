@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/Katzelabs/Konku/internal/api"
 )
 
 // Export (07 L6).
@@ -122,15 +124,15 @@ func TestExportContainsEveryRowTheAccountOwns(t *testing.T) {
 	// deliberately absent: a session id is a live credential and a token hash
 	// is the shadow of one, and neither is content the user wrote.
 	tables := map[string]string{
-		"domains":            "data/domains.json",
-		"categories":         "data/categories.json",
-		"notes":              "data/notes.json",
-		"note_categories":    "data/note-categories.json",
-		"cards":              "data/cards.json",
-		"card_categories":    "data/card-categories.json",
-		"card_schedules":     "data/schedules.json",
-		"review_logs":        "data/reviews.json",
-		"focus_sessions":     "data/focus-sessions.json",
+		"domains":               "data/domains.json",
+		"categories":            "data/categories.json",
+		"notes":                 "data/notes.json",
+		"note_categories":       "data/note-categories.json",
+		"cards":                 "data/cards.json",
+		"card_categories":       "data/card-categories.json",
+		"card_schedules":        "data/schedules.json",
+		"review_logs":           "data/reviews.json",
+		"focus_sessions":        "data/focus-sessions.json",
 		"review_sets":           "data/review-sets.json",
 		"review_set_domains":    "data/review-set-domains.json",
 		"review_set_categories": "data/review-set-categories.json",
@@ -247,5 +249,39 @@ func TestExportCarriesNoCredentials(t *testing.T) {
 				t.Errorf("%s contains a credential (%q)", name, banned)
 			}
 		}
+	}
+}
+
+// The export is a GET, so limitWrites waves it through, and nothing else
+// covered it at all.
+//
+// That matters more here than on a typical read: each call holds an open
+// transaction and the whole account in memory for its duration, so ten at once
+// exhaust a pool deliberately capped at 10 for every other project's sake
+// (D-028). The limiter is the bound; the archive size ceiling is a backstop
+// behind it.
+func TestExportIsRateLimited(t *testing.T) {
+	a := newApp(t)
+	c := a.newClient(t)
+
+	for i := range api.MaxExportsForTest {
+		res := c.do(http.MethodGet, "/export", nil)
+		io.Copy(io.Discard, res.Body)
+		res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("export %d = %d, want 200", i+1, res.StatusCode)
+		}
+	}
+
+	res := c.do(http.MethodGet, "/export", nil)
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("export %d = %d, want 429", api.MaxExportsForTest+1, res.StatusCode)
+	}
+
+	// The rest of the account still works. A limiter that took the whole
+	// session down with it would be a worse outage than the one it prevents.
+	if got := statusWithCookie(t, a, http.MethodGet, "/notes", c.cookie); got != http.StatusOK {
+		t.Errorf("GET /notes = %d after the export budget was spent, want 200", got)
 	}
 }

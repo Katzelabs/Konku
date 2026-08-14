@@ -1,8 +1,12 @@
 package api
 
 import (
+	"errors"
+	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/Katzelabs/Konku/internal/export"
 )
@@ -23,6 +27,16 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 
 	archive, err := export.Load(r.Context(), s.store, user.ID)
 	if err != nil {
+		if errors.Is(err, export.ErrTooLarge) {
+			// Not an internal error and not something retrying fixes, so it
+			// gets its own answer. The message says what to do rather than
+			// only that something is wrong — a dead end here is worse than
+			// elsewhere, because the person may be trying to leave.
+			writeError(w, http.StatusRequestEntityTooLarge, CodeBadRequest,
+				"Arsip kamu terlalu besar untuk dibuat sekaligus. "+
+					"Hubungi pengelola supaya ekspornya bisa dibagi.")
+			return
+		}
 		writeInternal(w, r, err)
 		return
 	}
@@ -38,9 +52,15 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 
 	if err := archive.Write(w); err != nil {
 		// The response is already committed, so there is no error shape left
-		// to send. Log it: a truncated download with a log line is
-		// recoverable, a truncated download with silence is not.
-		writeInternal(w, r, err)
+		// to send — and writeInternal would send one anyway, appending JSON to
+		// a truncated zip and logging a superfluous-WriteHeader warning on the
+		// way out. Report it instead: a truncated download with a log line and
+		// a Sentry event is recoverable, a truncated download with silence is
+		// not.
+		requestID := middleware.GetReqID(r.Context())
+		slog.Error("could not write the export archive",
+			"request_id", requestID, "user_id", user.ID.String(), "error", err)
+		reportError(r, err, requestID)
 		return
 	}
 }
