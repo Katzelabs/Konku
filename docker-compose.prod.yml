@@ -4,7 +4,25 @@
 #   docker network create shared    # once, when standing up the infra stack
 services:
   app:
-    image: konku:latest
+    # The image to run, and it must be a **digest** ref (D-061):
+    #
+    #   KONKU_IMAGE=ghcr.io/katzelabs/konku@sha256:<digest>
+    #
+    # This was `konku:latest` until 2026-08-14, which could not work on the
+    # box: CI publishes to ghcr.io, so a bare local tag names an image that was
+    # never pulled and cannot be. `docker compose pull` would have gone looking
+    # for it on Docker Hub.
+    #
+    # `:?` rather than a default, deliberately. A default here is the failure
+    # D-061 is about — deploying something other than the artifact that was
+    # verified — and it would be silent. Unset, this refuses to start and says
+    # what to set.
+    #
+    # A tag would also "work" and is the thing not to do: a tag can be moved
+    # after it was tested, and then what is running in production is a question
+    # nobody can answer. `make release-verify REF=...@sha256:...` verifies the
+    # exact digest before it reaches the box.
+    image: ${KONKU_IMAGE:?set KONKU_IMAGE to a ghcr.io digest ref, e.g. ghcr.io/katzelabs/konku@sha256:...}
     restart: unless-stopped
     environment:
       # Two principals, and the difference matters (D-059).

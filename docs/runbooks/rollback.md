@@ -16,8 +16,20 @@ docker inspect --format '{{.Image}}' konku   # on the box
 # 2. Verify the digest you intend to go back to, BEFORE deploying it.
 make release-verify REF=ghcr.io/katzelabs/konku@sha256:<previous>
 
-# 3. Deploy it by digest.        [04-ship.md S3]
+# 3. Deploy it by digest — the same two commands as a forward deploy, with an
+#    older digest. See deploy.md.
+sed -i 's#^KONKU_IMAGE=.*#KONKU_IMAGE=ghcr.io/katzelabs/konku@sha256:<previous>#' /opt/konku/.env
+docker compose -f docker-compose.prod.yml up -d
+
+# 4. Confirm you are on the digest you meant.
+docker inspect --format '{{.Image}}' konku-app-1
+curl -s https://<host>/readyz
 ```
+
+**A rollback is a deploy.** There is no separate path and there should not be:
+a rollback route that is exercised only in an emergency is a route nobody knows
+works. `KONKU_IMAGE` is the whole mechanism — the compose file refuses to start
+without it, so there is no default to fall back to silently (D-061).
 
 **Always by digest, never by tag.** A tag can be moved after it was tested. A
 digest is the artifact.
