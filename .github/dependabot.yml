@@ -1,0 +1,83 @@
+# Dependency updates.
+#
+# CI is already a real merge gate — govulncheck, `npm audit --audit-level=high`,
+# vet, the purity rule, sqlc drift — but every one of those is *reactive*. They
+# tell you a vulnerability is already in the tree. Nothing told you a dependency
+# had moved, and the govulncheck pin (`@v1.6.0` in ci.yml) meant the scanner
+# itself aged silently: a tool that is a year behind reports a year-old view of
+# the world and looks exactly as green as a current one.
+#
+# The dependency budget (D-065) is not in tension with this. That rule governs
+# *adding* a dependency — each one names the production obligation it discharges
+# — and says nothing about keeping the ones already justified up to date. A
+# short dependency list is easier to keep current, not an excuse not to.
+version: 2
+
+updates:
+  # Grouped, and this is the setting that decides whether any of this is used.
+  #
+  # Four ecosystems ungrouped is up to nine PRs a week against a project with
+  # one maintainer, which is not review — it is a queue that gets closed in bulk
+  # or ignored, and either way the update does not happen. One PR per ecosystem
+  # per week is a thing a person actually reads.
+  #
+  # Majors stay separate on purpose: a major is a change with a migration note
+  # to read, and burying one in a batch of patch bumps is how a breaking change
+  # gets merged unread.
+
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    groups:
+      go-minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "deps(go)"
+
+  # web/, not the root — package.json lives there (D-032).
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    groups:
+      npm-minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "deps(web)"
+
+  # The Dockerfile's three base images: node, golang and alpine. The last is
+  # what actually ships, so its CVEs are the ones that reach production.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    groups:
+      docker-images:
+        patterns: ["*"]
+    commit-message:
+      prefix: "deps(docker)"
+
+  # The workflows themselves. This is also what keeps the govulncheck pin
+  # moving — the pin is deliberate, because a new govulncheck release should not
+  # fail an unrelated PR the day it lands, but a pin nobody advances is just a
+  # stale scanner with extra steps.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "deps(ci)"

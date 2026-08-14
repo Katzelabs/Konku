@@ -44,10 +44,20 @@ func login(t *testing.T, srv *httptest.Server, email, password string) *http.Res
 	return res
 }
 
+// sessionCookie returns the session cookie under either name.
+//
+// Both, because the name depends on cfg.Dev: __Host- requires Secure, which dev
+// turns off so http://localhost works. A helper that knew only one name would
+// make every non-dev test fail on the helper rather than on what it asserts.
+// Empty-valued cookies are skipped — logout expires both names at once, so a
+// response can carry two.
 func sessionCookie(t *testing.T, res *http.Response) *http.Cookie {
 	t.Helper()
 	for _, c := range res.Cookies() {
-		if c.Name == "konku_session" {
+		if c.Value == "" {
+			continue
+		}
+		if c.Name == "konku_session" || c.Name == "__Host-konku_session" {
 			return c
 		}
 	}

@@ -95,9 +95,14 @@ func (s *Service) Login(ctx context.Context, email, password string, client Clie
 	}
 	expires := time.Now().Add(s.ttl)
 
+	// Scoped: the password has just been verified, so the identity is known
+	// here even though the lookup above ran before there was one.
 	ua, ip := client.ptrs()
-	if _, err := s.store.Q().CreateSession(ctx, gen.CreateSessionParams{
-		ID: id, UserID: user.ID, ExpiresAt: expires, UserAgent: ua, Ip: ip,
+	if err := s.store.WithUserTx(ctx, user.ID, func(q *gen.Queries) error {
+		_, err := q.CreateSession(ctx, gen.CreateSessionParams{
+			ID: id, UserID: user.ID, ExpiresAt: expires, UserAgent: ua, Ip: ip,
+		})
+		return err
 	}); err != nil {
 		return zero, "", time.Time{}, fmt.Errorf("auth: creating session: %w", err)
 	}
@@ -132,9 +137,16 @@ func (s *Service) Resolve(ctx context.Context, sessionID string) (gen.User, erro
 	// A failure here is logged by the caller's error path, not returned: the
 	// request is authenticated either way, and refusing it because a
 	// bookkeeping write failed would turn a cosmetic problem into an outage.
+	//
+	// Scoped, and cheap to scope precisely because it is throttled: the extra
+	// round trip a transaction costs is paid once per session per interval, not
+	// once per request. The read above cannot be scoped — it is what produces
+	// the identity — but by this line there is one.
 	if cutoff := time.Now().Add(-lastSeenInterval); row.AuthSession.LastSeenAt.Before(cutoff) {
-		if err := s.store.Q().TouchSession(ctx, gen.TouchSessionParams{
-			ID: sessionID, LastSeenAt: cutoff,
+		if err := s.store.WithUserTx(ctx, row.User.ID, func(q *gen.Queries) error {
+			return q.TouchSession(ctx, gen.TouchSessionParams{
+				ID: sessionID, LastSeenAt: cutoff,
+			})
 		}); err != nil {
 			slog.Warn("could not update session last_seen_at",
 				"user_id", row.User.ID.String(), "error", err)
@@ -153,9 +165,12 @@ const lastSeenInterval = 5 * time.Minute
 // The raw session ids are deliberately not part of the result: each one is the
 // credential itself, so the query selects public_id instead (migration 00008)
 // and answers "is this the one asking" as a boolean computed in Postgres.
+// Scoped twice, not once. See the note on the auth_sessions policy below.
 func (s *Service) ListSessions(ctx context.Context, userID uuid.UUID, currentSessionID string) ([]gen.ListSessionsForUserRow, error) {
-	rows, err := s.store.Q().ListSessionsForUser(ctx, gen.ListSessionsForUserParams{
-		UserID: userID, CurrentSessionID: currentSessionID,
+	rows, err := store.UserQuery(ctx, s.store, userID, func(q *gen.Queries) ([]gen.ListSessionsForUserRow, error) {
+		return q.ListSessionsForUser(ctx, gen.ListSessionsForUserParams{
+			UserID: userID, CurrentSessionID: currentSessionID,
+		})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("auth: listing sessions: %w", err)
@@ -163,14 +178,46 @@ func (s *Service) ListSessions(ctx context.Context, userID uuid.UUID, currentSes
 	return rows, nil
 }
 
+// Why the three functions around here run inside WithUserTx.
+//
+// The auth_sessions policy (migration 00006) scopes when app.user_id is set
+// and *permits* when it is not. That branch exists for a real reason: resolving
+// a session is what produces the identity every other policy depends on, so it
+// cannot itself require one. Stated honestly in the migration as a hole, and
+// it is the auth path's hole.
+//
+// These three are not on that path. They run after requireUser has already
+// identified the caller, so the user id is right there and there is no reason
+// to spend the permissive branch on them — and spending it meant the WHERE
+// clause was the only thing scoping the sessions screen, where hard rule 9
+// asks for two mechanisms.
+//
+// What this buys is a smaller hole. Everything left on the bare pool is there
+// for a reason that can be stated, which is the property worth having — a list
+// this short can be checked, and "the auth package is careful" cannot:
+//
+//   - GetUserByEmail (login, reset, resend) — there is no identity yet; the
+//     address is the input, not a claim about who is asking
+//   - GetActiveSession — this is the query that produces the identity
+//   - DeleteSession (logout) — runs outside requireUser and is keyed by the
+//     credential alone, which is the whole point: signing out must work even
+//     when the session is already unresolvable
+//   - DeleteExpiredSessions, DeleteExpiredAuthTokens — deliberately cross-user
+//     sweeps, and scoping them to one account would break what they are for
+//
+// Nothing else. Any new query that runs after requireUser belongs in a
+// WithUserTx, and if it does not fit one, that is the signal to ask why.
+
 // RevokeSession deletes one of the account's sessions by its public handle.
 //
 // Reports whether anything was deleted, so the handler can answer 404 for a
 // handle that is not this user's. Scoping is in the WHERE clause: a wrong owner
 // gets not found, never forbidden (hard rule 4, D-039).
 func (s *Service) RevokeSession(ctx context.Context, userID, publicID uuid.UUID) (bool, error) {
-	n, err := s.store.Q().DeleteSessionForUser(ctx, gen.DeleteSessionForUserParams{
-		UserID: userID, PublicID: publicID,
+	n, err := store.UserQuery(ctx, s.store, userID, func(q *gen.Queries) (int64, error) {
+		return q.DeleteSessionForUser(ctx, gen.DeleteSessionForUserParams{
+			UserID: userID, PublicID: publicID,
+		})
 	})
 	if err != nil {
 		return false, fmt.Errorf("auth: revoking session: %w", err)
@@ -184,8 +231,10 @@ func (s *Service) RevokeSession(ctx context.Context, userID, publicID uuid.UUID)
 // would sign the user out of the screen they are using to do it, which reads
 // as a bug rather than as a feature working.
 func (s *Service) RevokeOtherSessions(ctx context.Context, userID uuid.UUID, currentSessionID string) error {
-	if err := s.store.Q().DeleteOtherSessionsForUser(ctx, gen.DeleteOtherSessionsForUserParams{
-		UserID: userID, ID: currentSessionID,
+	if err := s.store.WithUserTx(ctx, userID, func(q *gen.Queries) error {
+		return q.DeleteOtherSessionsForUser(ctx, gen.DeleteOtherSessionsForUserParams{
+			UserID: userID, ID: currentSessionID,
+		})
 	}); err != nil {
 		return fmt.Errorf("auth: revoking other sessions: %w", err)
 	}

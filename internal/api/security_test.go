@@ -2,9 +2,15 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/Katzelabs/Konku/internal/config"
 )
 
 // Browser hardening (D-060, P4).
@@ -25,6 +31,11 @@ func TestSecurityHeadersAreSet(t *testing.T) {
 		{"X-Content-Type-Options", "nosniff"},
 		{"Referrer-Policy", "strict-origin-when-cross-origin"},
 		{"X-Frame-Options", "DENY"},
+		// The two isolation headers CSP does not cover: frame-ancestors stops
+		// this document being framed, and these stop it reaching, and being
+		// reached by, another origin the other way round.
+		{"Cross-Origin-Opener-Policy", "same-origin"},
+		{"Cross-Origin-Resource-Policy", "same-origin"},
 	} {
 		if got := res.Header.Get(tc.header); got != tc.want {
 			t.Errorf("%s = %q, want %q", tc.header, got, tc.want)
@@ -253,5 +264,106 @@ func TestOversizedBodyIsRejected(t *testing.T) {
 	if out.StatusCode != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400 — an unbounded body is a "+
 			"memory-exhaustion primitive", out.StatusCode)
+	}
+}
+
+// The session cookie carries the __Host- prefix outside dev.
+//
+// The prefix is enforced by the browser, not the server: it refuses to store
+// the cookie unless it is Secure, Path=/ and carries no Domain. What that buys
+// is a sibling host being unable to overwrite this session, which matters
+// because katzeapps.com is shared across projects (D-068).
+//
+// Asserted against a non-dev server specifically, because dev is the one
+// configuration where the prefix cannot be used — Secure is off so
+// http://localhost works, and a __Host- cookie without Secure is one the
+// browser silently declines to store. A test that only ever ran in dev would
+// assert the fallback forever and never see the real thing.
+func TestSessionCookieUsesHostPrefixOutsideDev(t *testing.T) {
+	app := newAppWith(t, config.Config{SessionTTL: time.Hour, AllowSignup: true})
+
+	email := "api-" + uuid.NewString() + "@example.com"
+	user, err := app.auth.CreateUser(app.ctx, email, testPassword)
+	if err != nil {
+		t.Fatalf("creating user: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = app.store.Pool().Exec(context.Background(), "DELETE FROM users WHERE id = $1", user.ID)
+	})
+
+	res := login(t, app.srv, email, testPassword)
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("login status = %d, want 200", res.StatusCode)
+	}
+
+	var c *http.Cookie
+	for _, got := range res.Cookies() {
+		if got.Value != "" {
+			c = got
+		}
+	}
+	if c == nil {
+		t.Fatal("login set no session cookie")
+	}
+
+	if c.Name != "__Host-konku_session" {
+		t.Errorf("cookie name = %q, want __Host-konku_session", c.Name)
+	}
+	// Each of these is a condition the prefix requires. A cookie that fails any
+	// one of them is not stored at all, so getting the name right and an
+	// attribute wrong is worse than not renaming it: login simply stops.
+	if !c.Secure {
+		t.Error("cookie is not Secure — a __Host- cookie without Secure is rejected by the browser")
+	}
+	if c.Path != "/" {
+		t.Errorf("cookie Path = %q, want / — required by the prefix", c.Path)
+	}
+	if c.Domain != "" {
+		t.Errorf("cookie Domain = %q, want empty — a Domain attribute voids the prefix", c.Domain)
+	}
+}
+
+// The rename must not sign existing sessions out, and logout must still end
+// one that was issued under the old name.
+func TestBothCookieNamesAreAccepted(t *testing.T) {
+	app := newApp(t) // dev, so the server writes the unprefixed name
+	c := app.newClient(t)
+
+	// The same credential presented under the other name still resolves. The
+	// value is an opaque server-side id either way, so the name is addressing,
+	// not authority.
+	req, err := http.NewRequest(http.MethodGet, app.srv.URL+"/api/auth/me", nil)
+	if err != nil {
+		t.Fatalf("building request: %v", err)
+	}
+	req.AddCookie(&http.Cookie{Name: "__Host-konku_session", Value: c.cookie.Value})
+
+	res, err := app.srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("GET /auth/me: %v", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		t.Errorf("status = %d under the prefixed name, want 200 — the rename "+
+			"signed out every existing session", res.StatusCode)
+	}
+
+	// Logout expires both names, so a browser holding either is cleared.
+	out := c.do(http.MethodPost, "/auth/logout", nil)
+	defer out.Body.Close()
+
+	cleared := map[string]bool{}
+	for _, got := range out.Cookies() {
+		if got.MaxAge < 0 {
+			cleared[got.Name] = true
+		}
+	}
+	for _, name := range []string{"konku_session", "__Host-konku_session"} {
+		if !cleared[name] {
+			t.Errorf("logout did not expire %q; a browser holding it would keep "+
+				"presenting a credential after signing out", name)
+		}
 	}
 }

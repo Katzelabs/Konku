@@ -65,6 +65,16 @@ func securityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Frame-Options", "DENY")
 		// Nothing here uses a camera, a microphone or a location.
 		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+		// Severs the window.opener reference, so a page this one opens — or one
+		// that opened it — cannot reach into it. frame-ancestors already stops
+		// this document being framed; this is the same isolation for the other
+		// direction, which CSP does not cover.
+		h.Set("Cross-Origin-Opener-Policy", "same-origin")
+		// Refuses to be embedded as a subresource by another origin at all. The
+		// API answers JSON about one account, and there is no reason for any
+		// other site to be able to load a byte of it — including as an <img> or
+		// a <script> whose failure mode leaks length or timing.
+		h.Set("Cross-Origin-Resource-Policy", "same-origin")
 
 		next.ServeHTTP(w, r)
 	})

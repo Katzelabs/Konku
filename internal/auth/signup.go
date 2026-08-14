@@ -116,7 +116,11 @@ func (s *Service) VerifyEmail(ctx context.Context, rawToken string) error {
 	if err != nil {
 		return err
 	}
-	if err := s.store.Q().MarkEmailVerified(ctx, tok.UserID); err != nil {
+	// Scoped: claiming the token is what establishes whose account this is, and
+	// it has already happened by this line.
+	if err := s.store.WithUserTx(ctx, tok.UserID, func(q *gen.Queries) error {
+		return q.MarkEmailVerified(ctx, tok.UserID)
+	}); err != nil {
 		return fmt.Errorf("auth: marking verified: %w", err)
 	}
 	return nil

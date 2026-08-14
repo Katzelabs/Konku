@@ -13,7 +13,32 @@ import (
 	"github.com/Katzelabs/Konku/internal/store/gen"
 )
 
-const sessionCookie = "konku_session"
+// The session cookie's two names.
+//
+// __Host- is a prefix the *browser* enforces: it refuses to store the cookie
+// unless it is Secure, Path=/ and has no Domain attribute. What that buys here
+// is protection from a sibling host — katzeapps.com is shared across projects
+// (D-068), and without the prefix any subdomain able to set a cookie on the
+// parent domain can overwrite the session cookie of this one. The prefix makes
+// that overwrite impossible rather than merely unlikely.
+//
+// The dev name exists because the prefix's own requirement defeats it locally:
+// Secure is false in dev so http://localhost works (see setSessionCookie), and
+// a __Host- cookie without Secure is one the browser silently declines to
+// store — which does not look like a security feature, it looks like login is
+// broken. So the name follows the same flag the attribute does.
+const (
+	sessionCookie    = "__Host-konku_session"
+	devSessionCookie = "konku_session"
+)
+
+// sessionCookieName is the name this server writes.
+func (s *Server) sessionCookieName() string {
+	if s.cfg.Dev {
+		return devSessionCookie
+	}
+	return sessionCookie
+}
 
 type ctxKey int
 
@@ -28,9 +53,12 @@ func UserFrom(ctx context.Context) (gen.User, bool) {
 
 func (s *Server) setSessionCookie(w http.ResponseWriter, id string, expires time.Time) {
 	http.SetCookie(w, &http.Cookie{
-		Name:  sessionCookie,
+		Name:  s.sessionCookieName(),
 		Value: id,
-		Path:  "/",
+		// Required by the __Host- prefix, and correct regardless. No Domain
+		// attribute either, which is the other half of what the prefix demands
+		// — and is what stops the cookie being sent to a sibling host.
+		Path: "/",
 		// HttpOnly keeps the session unreadable from JavaScript, so an XSS
 		// cannot exfiltrate it — the reason this is a cookie and not a token
 		// in localStorage.
@@ -43,25 +71,44 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, id string, expires time
 	})
 }
 
+// clearSessionCookie expires both names.
+//
+// Both, because a cookie is cleared by name and this server has changed the
+// name it writes. Somebody signed in before the rename is holding the old one;
+// clearing only the new one would leave logout looking like it worked while the
+// browser still presented a credential on the next request. Two Set-Cookie
+// headers cost nothing and this stops being necessary only once no old cookie
+// can still exist, which is a thing nobody can actually know.
 func (s *Server) clearSessionCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookie,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   !s.cfg.Dev,
-		MaxAge:   -1,
-	})
+	for _, name := range []string{sessionCookie, devSessionCookie} {
+		http.SetCookie(w, &http.Cookie{
+			Name:     name,
+			Value:    "",
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Secure:   !s.cfg.Dev,
+			MaxAge:   -1,
+		})
+	}
 }
 
 // credential pulls the session ID from either the cookie or a Bearer token.
 //
 // Handlers never learn which was used. That is what makes the v0.3 MCP server
 // a new resolver rather than a new API surface (D-040).
+//
+// Both cookie names are accepted, prefixed first. That covers dev, which cannot
+// use the prefix, and it means the rename does not sign everybody out: a
+// browser holding the old cookie keeps working until the session expires on its
+// own. Reading a name this server would not write is safe — the value is still
+// an opaque server-side id that has to resolve to a live row, so accepting it
+// under either name grants exactly nothing extra.
 func credential(r *http.Request) string {
-	if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
-		return c.Value
+	for _, name := range []string{sessionCookie, devSessionCookie} {
+		if c, err := r.Cookie(name); err == nil && c.Value != "" {
+			return c.Value
+		}
 	}
 	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
 		return strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))

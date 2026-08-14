@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/Katzelabs/Konku/internal/store"
 	"github.com/Katzelabs/Konku/internal/store/gen"
 )
 
@@ -28,11 +29,25 @@ import (
 // read notes, not to destroy the account. This is the only place in the app
 // that re-authenticates, and it is the only place that needs to.
 func (s *Service) DeleteAccount(ctx context.Context, userID uuid.UUID, password string) error {
-	user, err := s.store.Q().GetUserByID(ctx, userID)
+	// Scoped, like the delete below. The users policy permits when app.user_id
+	// is unset — the auth path needs that branch to resolve a session at all —
+	// but this call is not on the auth path: the caller is already identified,
+	// so there is no reason to spend it here (hard rule 9).
+	user, err := store.UserQuery(ctx, s.store, userID, func(q *gen.Queries) (gen.User, error) {
+		return q.GetUserByID(ctx, userID)
+	})
 	if err != nil {
 		return fmt.Errorf("auth: looking up account: %w", err)
 	}
 
+	// Deliberately between the two transactions rather than inside either.
+	//
+	// Verify is ~100ms of argon2 and may additionally block on the hashing
+	// semaphore, and the pool holds ten connections for the sake of every other
+	// project on the box (D-028). Doing this inside the transaction above would
+	// pin a connection for the whole of it — turning the one endpoint designed
+	// to be slow into a way to exhaust the pool, which is the failure the rate
+	// limit on this route exists to prevent.
 	ok, err := Verify(user.PasswordHash, password)
 	if err != nil {
 		return fmt.Errorf("auth: verifying password: %w", err)
