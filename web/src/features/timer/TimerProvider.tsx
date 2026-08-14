@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react'
 import { today } from '../../lib/date'
+import { useSettings } from '../settings/useSettings'
 import { useLogSession } from './queries'
 import { useTimer } from './useTimer'
 
@@ -32,8 +33,33 @@ const TimerContext = createContext<TimerApi | null>(null)
 export function TimerProvider({ children }: { children: ReactNode }) {
   const timer = useTimer()
   const logSession = useLogSession()
+  const { data: settings } = useSettings()
 
-  const { status, logged, durationMinutes, domainId, markLogged } = timer
+  const { status, logged, durationMinutes, domainId, markLogged, setDuration } = timer
+
+  /*
+   * The account's default duration, applied to an idle timer.
+   *
+   * This is what makes `user_settings.default_duration_minutes` a setting
+   * rather than a stored number nobody reads. It is deliberately keyed on the
+   * *default changing*, not on every render: the timer persists whatever
+   * duration you last picked, and re-asserting the account default on every
+   * settings refetch would silently undo a one-off choice made thirty seconds
+   * ago.
+   *
+   * So it fires twice, both times correctly — when the settings first arrive
+   * on this device, and when the person changes the default on
+   * /settings/preferensi. `status === 'idle'` is what keeps it from moving a
+   * duration out from under a session that is already running or paused.
+   */
+  const appliedDefault = useRef<number | null>(null)
+  const accountDefault = settings?.defaultDurationMinutes
+  useEffect(() => {
+    if (accountDefault === undefined) return
+    if (appliedDefault.current === accountDefault) return
+    appliedDefault.current = accountDefault
+    if (status === 'idle') setDuration(accountDefault)
+  }, [accountDefault, status, setDuration])
 
   // A finished session is recorded exactly once.
   //

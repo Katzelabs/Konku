@@ -253,6 +253,11 @@ type Querier interface {
 	GetRunQuestion(ctx context.Context, arg GetRunQuestionParams) (GetRunQuestionRow, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	// One row per account, created with the account (07 L1). The caller still
+	// tolerates a missing row rather than requiring one: an account predating
+	// migration 00007's backfill has none, and defaults are a better answer to that
+	// than an error on a preferences screen.
+	GetUserSettings(ctx context.Context, userID uuid.UUID) (UserSetting, error)
 	// session_date is the client's LOCAL YYYY-MM-DD, passed in rather than derived
 	// from now(): a 23:00 session belongs to that day, and the server may be in a
 	// different timezone than the user.
@@ -474,6 +479,15 @@ type Querier interface {
 	UpdatePassword(ctx context.Context, arg UpdatePasswordParams) error
 	UpdateReviewSet(ctx context.Context, arg UpdateReviewSetParams) (ReviewSet, error)
 	UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) (CardSchedule, error)
+	// Upsert rather than UPDATE, for exactly that account. An UPDATE affecting no
+	// rows would leave the screen silently saving nothing, which is the failure
+	// this product exists to prevent — in miniature, but the same shape.
+	//
+	// The bounds are CHECK constraints in migration 00007 and are validated in the
+	// handler too. Two mechanisms: the handler's version produces an Indonesian
+	// message a person can act on, and the constraint is what makes the claim true
+	// regardless of which caller wrote the row (hard rule 9).
+	UpsertUserSettings(ctx context.Context, arg UpsertUserSettingsParams) (UserSetting, error)
 }
 
 var _ Querier = (*Queries)(nil)

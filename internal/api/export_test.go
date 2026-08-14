@@ -11,6 +11,7 @@ var ScrubEventForTest = scrubEvent
 // The per-route budgets from quota.go, so the 429 tests assert against the real
 // numbers rather than literals that drift the moment either is tuned.
 const (
-	MaxAccountDeletesForTest = maxAccountDeletes
-	MaxExportsForTest        = maxExports
+	MaxAccountDeletesForTest  = maxAccountDeletes
+	MaxExportsForTest         = maxExports
+	MaxPasswordChangesForTest = maxPasswordChanges
 )

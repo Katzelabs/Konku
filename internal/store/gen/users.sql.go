@@ -417,6 +417,28 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 	return i, err
 }
 
+const getUserSettings = `-- name: GetUserSettings :one
+SELECT user_id, default_duration_minutes, focus_step_n, rota_enabled, created_at, updated_at FROM user_settings WHERE user_id = $1
+`
+
+// One row per account, created with the account (07 L1). The caller still
+// tolerates a missing row rather than requiring one: an account predating
+// migration 00007's backfill has none, and defaults are a better answer to that
+// than an error on a preferences screen.
+func (q *Queries) GetUserSettings(ctx context.Context, userID uuid.UUID) (UserSetting, error) {
+	row := q.db.QueryRow(ctx, getUserSettings, userID)
+	var i UserSetting
+	err := row.Scan(
+		&i.UserID,
+		&i.DefaultDurationMinutes,
+		&i.FocusStepN,
+		&i.RotaEnabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listSessionsForUser = `-- name: ListSessionsForUser :many
 SELECT public_id,
        (id = $1) AS is_current,
@@ -524,4 +546,49 @@ type UpdatePasswordParams struct {
 func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) error {
 	_, err := q.db.Exec(ctx, updatePassword, arg.ID, arg.PasswordHash)
 	return err
+}
+
+const upsertUserSettings = `-- name: UpsertUserSettings :one
+INSERT INTO user_settings (user_id, default_duration_minutes, focus_step_n, rota_enabled)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (user_id) DO UPDATE
+SET default_duration_minutes = excluded.default_duration_minutes,
+    focus_step_n             = excluded.focus_step_n,
+    rota_enabled             = excluded.rota_enabled,
+    updated_at               = now()
+RETURNING user_id, default_duration_minutes, focus_step_n, rota_enabled, created_at, updated_at
+`
+
+type UpsertUserSettingsParams struct {
+	UserID                 uuid.UUID `json:"user_id"`
+	DefaultDurationMinutes int32     `json:"default_duration_minutes"`
+	FocusStepN             int32     `json:"focus_step_n"`
+	RotaEnabled            bool      `json:"rota_enabled"`
+}
+
+// Upsert rather than UPDATE, for exactly that account. An UPDATE affecting no
+// rows would leave the screen silently saving nothing, which is the failure
+// this product exists to prevent — in miniature, but the same shape.
+//
+// The bounds are CHECK constraints in migration 00007 and are validated in the
+// handler too. Two mechanisms: the handler's version produces an Indonesian
+// message a person can act on, and the constraint is what makes the claim true
+// regardless of which caller wrote the row (hard rule 9).
+func (q *Queries) UpsertUserSettings(ctx context.Context, arg UpsertUserSettingsParams) (UserSetting, error) {
+	row := q.db.QueryRow(ctx, upsertUserSettings,
+		arg.UserID,
+		arg.DefaultDurationMinutes,
+		arg.FocusStepN,
+		arg.RotaEnabled,
+	)
+	var i UserSetting
+	err := row.Scan(
+		&i.UserID,
+		&i.DefaultDurationMinutes,
+		&i.FocusStepN,
+		&i.RotaEnabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

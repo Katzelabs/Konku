@@ -44,8 +44,9 @@ type Server struct {
 	// Two routes writeLimit does not adequately cover, each with its own
 	// budget rather than a share of one. See limitPerUser in quota.go for why
 	// a 300/minute write rate is the wrong bound for either.
-	deleteAccountLimit *rateLimiter
-	exportLimit        *rateLimiter
+	deleteAccountLimit  *rateLimiter
+	exportLimit         *rateLimiter
+	passwordChangeLimit *rateLimiter
 }
 
 func NewServer(cfg config.Config, st *store.Store, au *auth.Service, mailer Mailer, dist fs.FS) *Server {
@@ -58,10 +59,11 @@ func NewServer(cfg config.Config, st *store.Store, au *auth.Service, mailer Mail
 		metrics: newMetrics(st),
 		// Three sends per address per hour. Generous for someone whose mail is
 		// slow to arrive, useless as a mailbomb.
-		signupAddrLimit:    newRateLimiter(3, time.Hour),
-		writeLimit:         newRateLimiter(writesPerMinute(cfg), writeLimitWindow),
-		deleteAccountLimit: newRateLimiter(maxAccountDeletes, accountDeleteWindow),
-		exportLimit:        newRateLimiter(maxExports, exportWindow),
+		signupAddrLimit:     newRateLimiter(3, time.Hour),
+		writeLimit:          newRateLimiter(writesPerMinute(cfg), writeLimitWindow),
+		deleteAccountLimit:  newRateLimiter(maxAccountDeletes, accountDeleteWindow),
+		exportLimit:         newRateLimiter(maxExports, exportWindow),
+		passwordChangeLimit: newRateLimiter(maxPasswordChanges, passwordChangeWindow),
 	}
 }
 
@@ -262,6 +264,13 @@ func (s *Server) Routes() http.Handler {
 				r.Get("/sessions", s.handleListSessions)
 				r.Post("/sessions", s.handleCreateSession)
 
+				// Per-account preferences (user_settings, migration 00007).
+				// Not the theme — that is per-device and stays in
+				// localStorage. Singular and unaddressed, because there is
+				// exactly one row per account and the caller is the key.
+				r.Get("/settings", s.handleGetSettings)
+				r.Patch("/settings", s.handleUpdateSettings)
+
 				// Everything the account owns, as one archive (07 L6). GET
 				// rather than POST: it creates nothing and a link the browser
 				// can follow is the whole interaction.
@@ -286,6 +295,16 @@ func (s *Server) Routes() http.Handler {
 				r.With(s.limitPerUser(s.deleteAccountLimit, quotaAccountDelete,
 					"Terlalu banyak percobaan penghapusan akun. Coba lagi satu jam lagi.",
 				)).Delete("/account", s.handleDeleteAccount)
+
+				// Changing the password from inside the app, rather than
+				// through the forgot-password mail — which was the only route
+				// to a new password and is impossible on an instance with no
+				// SMTP configured. Takes the current password, so it needs a
+				// tighter bound on guessing than the write rate, exactly like
+				// DELETE /account.
+				r.With(s.limitPerUser(s.passwordChangeLimit, quotaPasswordChange,
+					"Terlalu banyak percobaan ganti kata sandi. Coba lagi satu jam lagi.",
+				)).Post("/auth/password", s.handleChangePassword)
 
 				// Logins, not study time. Under /auth because /sessions has
 				// meant the focus timer's since 03, and "sessions" genuinely

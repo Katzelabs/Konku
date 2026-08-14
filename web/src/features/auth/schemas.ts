@@ -127,7 +127,40 @@ export const resetSchema = z
     path: ['confirmPassword'],
   })
 
+/*
+ * The one schema here that is not a signed-out form.
+ *
+ * It lives with the others anyway, because it is the same rule about the same
+ * field and splitting it out is how the password copy drifts into saying two
+ * things. `resetSchema` is its shape minus the current password: reset proves
+ * control of the mailbox, this proves control of the password.
+ */
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, 'Kata sandi saat ini wajib diisi.'),
+    password,
+    confirmPassword: z.string().min(1, 'Ulangi kata sandi kamu.'),
+  })
+  .refine((v) => v.password === v.confirmPassword, {
+    message: 'Kata sandinya belum sama.',
+    path: ['confirmPassword'],
+  })
+  /*
+   * Refused rather than accepted as a no-op, and reported on the new-password
+   * field because that is the one to change.
+   *
+   * Someone doing this believes they have changed something. The usual reason
+   * they are on this screen is that they think the old password is compromised,
+   * so silently succeeding would leave them safer in their own estimation and
+   * no safer in fact. The server refuses it too.
+   */
+  .refine((v) => v.password !== v.currentPassword, {
+    message: 'Kata sandi baru masih sama dengan yang lama.',
+    path: ['password'],
+  })
+
 export type LoginValues = z.infer<typeof loginSchema>
 export type SignupValues = z.infer<typeof signupSchema>
 export type ForgotValues = z.infer<typeof forgotSchema>
 export type ResetValues = z.infer<typeof resetSchema>
+export type ChangePasswordValues = z.infer<typeof changePasswordSchema>

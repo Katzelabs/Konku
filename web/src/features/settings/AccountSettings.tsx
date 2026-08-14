@@ -5,6 +5,7 @@ import { Card } from '../../components/ui/card'
 import { Separator } from '../../components/ui/separator'
 import { displayName, initialsFor } from '../auth/displayName'
 import { useLogout, useMe } from '../auth/useAuth'
+import { ChangePassword } from './ChangePassword'
 import { SettingsField, SettingsRow, SettingsSection } from './SettingsSection'
 
 /**
@@ -33,7 +34,7 @@ export default function AccountSettings() {
   return (
     <SettingsSection
       title="Profil"
-      description="Nama dan email akun ini. Belum bisa diubah dari sini."
+      description="Akun ini dan kata sandinya. Nama dan email belum bisa diubah dari sini."
     >
       <Card className="flex flex-col gap-5 p-5">
         {user && (
@@ -60,6 +61,14 @@ export default function AccountSettings() {
           {named && <SettingsField label="Email" value={user?.email ?? ''} empty="—" />}
         </dl>
       </Card>
+
+      {/*
+        The one thing on this screen that is editable, which is why it sits
+        directly under the read-only pair rather than with the session controls
+        on /settings/perangkat. It is a property of the account, not of a
+        device — the devices are what it signs out.
+      */}
+      <ChangePassword />
 
       <Card className="p-5">
         {/*

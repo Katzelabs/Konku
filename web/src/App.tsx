@@ -25,6 +25,7 @@ import RunPage from './features/review/RunPage'
 import AboutSettings from './features/settings/AboutSettings'
 import AccountSettings from './features/settings/AccountSettings'
 import AppearanceSettings from './features/settings/AppearanceSettings'
+import PreferencesSettings from './features/settings/PreferencesSettings'
 import DataSettings from './features/settings/DataSettings'
 import SessionsSettings from './features/settings/SessionsSettings'
 import SettingsLayout from './features/settings/SettingsLayout'
@@ -151,6 +152,7 @@ export default function App() {
             <Route element={<SettingsLayout />}>
               <Route path="/settings/akun" element={<AccountSettings />} />
               <Route path="/settings/perangkat" element={<SessionsSettings />} />
+              <Route path="/settings/preferensi" element={<PreferencesSettings />} />
               <Route path="/settings/tampilan" element={<AppearanceSettings />} />
               <Route path="/settings/data" element={<DataSettings />} />
               <Route path="/settings/tentang" element={<AboutSettings />} />

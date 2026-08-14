@@ -1398,6 +1398,81 @@ misconfigured.
 
 ---
 
+### D-082 — Argon2 runs at most four at a time, and acquisition does not take a context
+
+The parameters were right per hash and said nothing about how many hashes there
+are. Every limiter in front of a hashing route is per-IP or per-address, so 100
+source addresses bought 100 concurrent 64 MiB verifications — and `/auth/signup`,
+`/auth/reset` and `DELETE /account` each carried their own budget, so the budgets
+added rather than sharing a ceiling. On a shared VPS that is an OOM for every
+co-tenant project, which is the same argument that caps the pgx pool at 10
+(D-028).
+
+**Four slots**, against the container's `mem_limit: 512m`, so the bound is
+stated twice and neither statement is the only one (hard rule 9).
+
+**Acquisition blocks and takes no `ctx`,** which is the part worth recording
+because it looks like an oversight. Requests queue behind the router's 30s
+timeout instead of the box swapping, and a queued goroutine costs ~8 KiB — the
+resource being protected is memory, not goroutines. Threading a context through
+`Hash` and `Verify` would change every call site to solve a problem this does
+not have. If hashing ever needs to be abandoned early rather than queued, that
+is a different decision and should be made deliberately.
+
+**Consequence for the endpoints that hash:** the verification must not happen
+inside a transaction. `DeleteAccount` and `ChangePassword` both read the user in
+one user-scoped transaction, verify outside it, and write in another — holding
+one of ten pool connections across ~100ms of argon2, possibly plus queue time,
+would turn the endpoints designed to be slow into a way to exhaust the pool.
+
+**Rejected:** deriving the slot count from `NumCPU`, which ties a memory bound
+to a CPU count and gets it wrong on exactly the small shared box this protects;
+and making it configurable, which invites an operator to tune it past the
+container's memory limit and silently undo the pairing above.
+
+---
+
+### D-083 — `user_settings` is wired, not dropped, and two of its columns stay unread
+
+Migration 00007 created the table, signup writes a row, the exporter serialises
+it, and until now nothing read it. Schema carrying no behaviour is what later
+gets a half-finished endpoint bolted onto it, so the choice was to wire it or
+drop it. Dropping it would mean another migration to bring it back and the
+rediscovery of decisions already made — D-037's N, the timer default, the rota
+being opt-out — so it is wired.
+
+`GET`/`PATCH /api/settings`. Singular and unaddressed: there is exactly one row
+per account and the caller is the key, so there is no id in the URL and the
+tenancy failure this guards against is not a wrong uuid but a query that forgot
+whose row it was reading.
+
+**`default_duration_minutes` gets a real consumer** and the other two do not.
+`focusStepN` and `rotaEnabled` round-trip correctly and have no control on
+`/settings/preferensi`, because the features they belong to are not built.
+Shipping a switch that changes nothing would be worse than the unread column it
+was meant to fix — it would look like a feature.
+
+**The account default is applied to an idle timer when the default changes, not
+on every render.** The timer persists whatever duration you last picked, so
+re-asserting the account default on each settings refetch would silently undo a
+one-off choice made seconds ago. It fires twice and both are right: when the
+settings first arrive on a device, and when the person changes the default.
+`status === 'idle'` keeps it from moving a duration out from under a running
+session.
+
+**The theme stays in `localStorage` and is not moved here.** It is a property of
+a screen on a device, not of an account: the same person on a phone at night and
+a laptop at noon wants different answers, and syncing it would make one of those
+wrong. `/settings/preferensi` and `/settings/tampilan` are separate screens that
+each say which of the two they are.
+
+**Rejected:** a partial `PATCH`, which would need a pointer on every field to
+tell "absent" from `false` — and `rotaEnabled: false` is a value somebody means.
+The client holds the whole object because it just rendered it, so it sends the
+whole object.
+
+---
+
 ## Open questions
 
 None blocking. Deferred details, intentionally left until the feature is being built:

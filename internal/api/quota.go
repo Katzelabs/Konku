@@ -109,6 +109,9 @@ const (
 	// takes a password. See limitPerUser.
 	quotaExport        quotaKind = "export"
 	quotaAccountDelete quotaKind = "account_delete"
+	// Also takes a password, so it needs a bound on guessing it for the same
+	// reason account deletion does.
+	quotaPasswordChange quotaKind = "password_change"
 )
 
 // rejectQuota answers 429 and counts the rejection.
@@ -249,6 +252,13 @@ const (
 
 	maxExports   = 5
 	exportWindow = time.Hour
+
+	// Looser than the other two, because this is the one a real person might
+	// genuinely repeat: mistyping the current password, or changing it and then
+	// thinking better of the new one. Still far tighter than the write rate,
+	// which is the bound it replaces.
+	maxPasswordChanges   = 10
+	passwordChangeWindow = time.Hour
 )
 
 // thousands formats a number the Indonesian way — 5.000, not 5,000 — because

@@ -26,6 +26,31 @@ INSERT INTO user_settings (user_id)
 VALUES ($1)
 RETURNING *;
 
+-- name: GetUserSettings :one
+-- One row per account, created with the account (07 L1). The caller still
+-- tolerates a missing row rather than requiring one: an account predating
+-- migration 00007's backfill has none, and defaults are a better answer to that
+-- than an error on a preferences screen.
+SELECT * FROM user_settings WHERE user_id = $1;
+
+-- name: UpsertUserSettings :one
+-- Upsert rather than UPDATE, for exactly that account. An UPDATE affecting no
+-- rows would leave the screen silently saving nothing, which is the failure
+-- this product exists to prevent — in miniature, but the same shape.
+--
+-- The bounds are CHECK constraints in migration 00007 and are validated in the
+-- handler too. Two mechanisms: the handler's version produces an Indonesian
+-- message a person can act on, and the constraint is what makes the claim true
+-- regardless of which caller wrote the row (hard rule 9).
+INSERT INTO user_settings (user_id, default_duration_minutes, focus_step_n, rota_enabled)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (user_id) DO UPDATE
+SET default_duration_minutes = excluded.default_duration_minutes,
+    focus_step_n             = excluded.focus_step_n,
+    rota_enabled             = excluded.rota_enabled,
+    updated_at               = now()
+RETURNING *;
+
 -- name: MarkEmailVerified :exec
 -- Idempotent on purpose: a second click on the same link is a no-op rather
 -- than a moved timestamp. The token is already spent by then anyway.

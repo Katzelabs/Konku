@@ -215,6 +215,31 @@ export function useResetPassword() {
   })
 }
 
+/**
+ * Change the password from inside the app.
+ *
+ * Deliberately does **not** report the user signed out, which is the one way it
+ * differs from `useResetPassword` on the client. The server revokes every
+ * *other* session and keeps this one, so the cache is still valid and clearing
+ * it would drop the person to the login screen after an action that succeeded —
+ * which reads as being punished for tightening their own security.
+ *
+ * The sessions list is invalidated instead, because the other devices this
+ * account was signed in on have just disappeared from it. Braces, not a
+ * returned promise: returning the invalidate would make the `mutate` callbacks
+ * wait on the refetch (see CLAUDE.md).
+ */
+export function useChangePassword() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { currentPassword: string; newPassword: string }) =>
+      api.post<void>('/auth/password', vars),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: authSessionsQueryKey })
+    },
+  })
+}
+
 /** Send a fresh verification link. Always succeeds, even for an address that has none. */
 export function useResendVerification() {
   return useMutation({

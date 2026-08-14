@@ -4,6 +4,7 @@ import {
   MonitorSmartphone,
   Palette,
   Shapes,
+  SlidersHorizontal,
   Tags,
   UserRound,
 } from 'lucide-react'
@@ -55,6 +56,11 @@ export const SETTINGS_NAV: SettingsNavGroup[] = [
   {
     label: 'Aplikasi',
     items: [
+      // Preferensi before Tampilan: one is stored on the account and travels,
+      // the other is stored on this device and does not. The screens say so,
+      // and the order puts the account-level one first for the same reason the
+      // Akun group is at the top.
+      { to: '/settings/preferensi', label: 'Preferensi', icon: SlidersHorizontal },
       { to: '/settings/tampilan', label: 'Tampilan', icon: Palette },
       { to: '/settings/data', label: 'Data & privasi', icon: Database },
       { to: '/settings/tentang', label: 'Tentang', icon: Info },
