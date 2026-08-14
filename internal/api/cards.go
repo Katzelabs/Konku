@@ -22,13 +22,10 @@ import (
 // These are tool-shaped for the same reason the note endpoints are: in v0.3
 // add_card becomes an MCP tool over exactly this (D-017).
 
-const (
-	// Both sides are markdown now and may span lines, so the old one-line
-	// limit is meaningless. Generous, but bounded — a card is a prompt, and
-	// anything approaching this is a note wearing the wrong shape.
-	maxCardSideLen = 16 << 10
-	cardListLimit  = 500
-)
+// Both sides are markdown now and may span lines, so the old one-line limit is
+// meaningless. Generous, but bounded — a card is a prompt, and anything
+// approaching this is a note wearing the wrong shape.
+const maxCardSideLen = 16 << 10
 
 type cardRequest struct {
 	// Pointers so PATCH can tell "not sent" from "sent empty".
@@ -79,10 +76,12 @@ type cardSummary struct {
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
-// handleListCards is the Cards page, and also the picker when pinning a fixed
-// exam's questions — one list with filters serves both.
+// handleListCards is the Cards page. A review set draws its questions from a
+// filter rather than a pinned list (D-077), so this has one caller now.
 func (s *Server) handleListCards(w http.ResponseWriter, r *http.Request) {
 	user, _ := UserFrom(r.Context())
+
+	paging := listParamsFrom(r)
 
 	domainIDs, ok := uuidListQuery(w, r, "domainId")
 	if !ok {
@@ -93,23 +92,36 @@ func (s *Server) handleListCards(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var query *string
-	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
-		query = &q
+	params := gen.ListCardsParams{
+		UserID: user.ID,
+		// The Terhapus view, off unless asked for.
+		Deleted:     boolQuery(r, "deleted"),
+		DomainIds:   domainIDs,
+		CategoryIds: categoryIDs,
+		Query:       textQuery(r, "q"),
+		Limit:       int32(paging.Limit),
+		Offset:      int32(paging.Offset),
 	}
 
-	rows, err := scoped(s, r, func(q *gen.Queries) ([]gen.ListCardsRow, error) {
-		return q.ListCards(r.Context(), gen.ListCardsParams{
-			UserID: user.ID,
-			// The Terhapus view, off unless asked for. The exam picker never asks
-			// for it: a deleted card must not be pinnable as a question.
-			Deleted:     boolQuery(r, "deleted"),
-			DomainIds:   domainIDs,
-			CategoryIds: categoryIDs,
-			Query:       query,
-			Limit:       int32(intParam(r, "limit", cardListLimit, 1, cardListLimit)),
+	list := func(p gen.ListCardsParams) ([]gen.ListCardsRow, error) {
+		return scoped(s, r, func(q *gen.Queries) ([]gen.ListCardsRow, error) {
+			return q.ListCards(r.Context(), p)
 		})
-	})
+	}
+
+	rows, err := list(params)
+	if err != nil {
+		writeInternal(w, r, err)
+		return
+	}
+
+	total, err := pageTotal(rows, paging.Offset,
+		func(c gen.ListCardsRow) int64 { return c.Total },
+		func() ([]gen.ListCardsRow, error) {
+			top := params
+			top.Limit, top.Offset = 1, 0
+			return list(top)
+		})
 	if err != nil {
 		writeInternal(w, r, err)
 		return
@@ -128,7 +140,7 @@ func (s *Server) handleListCards(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, newPage(out, total, paging))
 }
 
 func (s *Server) handleCreateCard(w http.ResponseWriter, r *http.Request) {

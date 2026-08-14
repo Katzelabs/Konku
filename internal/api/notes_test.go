@@ -136,8 +136,7 @@ func TestNotesFilterByCategory(t *testing.T) {
 	tagged := c.createNote(map[string]any{"title": "ditandai", "categoryIds": []string{math.ID}})
 	c.createNote(map[string]any{"title": "tidak ditandai"})
 
-	var list []noteBody
-	c.expect(c.do(http.MethodGet, "/notes?categoryId="+math.ID, nil), http.StatusOK, &list)
+	list := c.listNotes("/notes?categoryId=" + math.ID)
 
 	if len(list) != 1 || list[0].ID != tagged.ID {
 		t.Fatalf("got %d notes, want only the tagged one", len(list))
@@ -155,8 +154,7 @@ func TestNotesFilterByCategory(t *testing.T) {
 	t.Run("an empty filter value is no filter, not a broken one", func(t *testing.T) {
 		// An unset multi-select serialises as `?categoryId=`, and answering 400
 		// to "I have chosen nothing" would break the default state of the screen.
-		var all []noteBody
-		c.expect(c.do(http.MethodGet, "/notes?categoryId=", nil), http.StatusOK, &all)
+		all := c.listNotes("/notes?categoryId=")
 		if len(all) != 2 {
 			t.Fatalf("got %d notes, want both", len(all))
 		}
@@ -177,9 +175,7 @@ func TestNotesFilterByManyCategories(t *testing.T) {
 	inPhysics := c.createNote(map[string]any{"title": "optik", "categoryIds": []string{physics.ID}})
 	c.createNote(map[string]any{"title": "tanpa label"})
 
-	var list []noteBody
-	c.expect(c.do(http.MethodGet,
-		"/notes?categoryId="+math.ID+"&categoryId="+physics.ID, nil), http.StatusOK, &list)
+	list := c.listNotes("/notes?categoryId=" + math.ID + "&categoryId=" + physics.ID)
 
 	got := map[string]bool{}
 	for _, n := range list {
@@ -211,9 +207,7 @@ func TestNotesFilterCombinesDomainAndCategory(t *testing.T) {
 		"title": "rumus psikologi", "domainId": psych, "categoryIds": []string{tag.ID},
 	})
 
-	var list []noteBody
-	c.expect(c.do(http.MethodGet,
-		"/notes?domainId="+math+"&categoryId="+tag.ID, nil), http.StatusOK, &list)
+	list := c.listNotes("/notes?domainId=" + math + "&categoryId=" + tag.ID)
 
 	if len(list) != 1 || list[0].ID != both.ID {
 		t.Fatalf("got %d notes, want only the one matching both", len(list))
@@ -235,8 +229,7 @@ func TestNoteDeleteAndRestore(t *testing.T) {
 	c.expect(c.do(http.MethodDelete, "/notes/"+note.ID, nil), http.StatusNoContent, nil)
 
 	t.Run("a deleted note is gone from the list and the editor", func(t *testing.T) {
-		var list []noteBody
-		c.expect(c.do(http.MethodGet, "/notes", nil), http.StatusOK, &list)
+		list := c.listNotes("/notes")
 		for _, got := range list {
 			if got.ID == note.ID {
 				t.Fatal("a deleted note is still listed")
@@ -254,8 +247,7 @@ func TestNoteDeleteAndRestore(t *testing.T) {
 	})
 
 	t.Run("the Terhapus view lists it", func(t *testing.T) {
-		var deleted []noteBody
-		c.expect(c.do(http.MethodGet, "/notes?deleted=true", nil), http.StatusOK, &deleted)
+		deleted := c.listNotes("/notes?deleted=true")
 		if len(deleted) != 1 || deleted[0].ID != note.ID {
 			t.Fatalf("deleted list = %v, want the one deleted note", deleted)
 		}
@@ -315,8 +307,7 @@ func TestBulkDeleteNotes(t *testing.T) {
 		t.Fatalf("count = %d, want 2", out.Count)
 	}
 
-	var list []noteBody
-	c.expect(c.do(http.MethodGet, "/notes", nil), http.StatusOK, &list)
+	list := c.listNotes("/notes")
 	if len(list) != 1 || list[0].ID != kept.ID {
 		t.Fatalf("list = %v, want only the note that was not selected", list)
 	}
@@ -409,8 +400,9 @@ func TestNoteListIsNewestFirst(t *testing.T) {
 	first := c.createNote(map[string]any{"title": "pertama", "contentMd": "isi panjang"})
 	second := c.createNote(map[string]any{"title": "kedua", "contentMd": "isi lain"})
 
-	var list []noteBody
-	raw := c.expect(c.do(http.MethodGet, "/notes", nil), http.StatusOK, &list)
+	var body pageBody[noteBody]
+	raw := c.expect(c.do(http.MethodGet, "/notes", nil), http.StatusOK, &body)
+	list := body.Items
 
 	if len(list) != 2 {
 		t.Fatalf("got %d notes, want 2", len(list))

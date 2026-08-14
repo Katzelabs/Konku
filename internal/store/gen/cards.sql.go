@@ -282,10 +282,14 @@ SELECT c.id, c.user_id, c.domain_id, c.type, c.front, c.back, c.deleted_at, c.cr
               FROM card_categories cc
              WHERE cc.card_id = c.id),
            '{}'
-       )::uuid[] AS category_ids
+       )::uuid[] AS category_ids,
+       -- How many match before LIMIT, carried on every row (D-084). Same
+       -- reasoning as ListNotes: one round trip, counted after the filters and
+       -- after the ` + "`" + `deleted` + "`" + ` switch.
+       count(*) OVER () AS total
 FROM cards c
 WHERE c.user_id = $1
-  AND CASE WHEN $3::bool
+  AND CASE WHEN $4::bool
            THEN c.deleted_at IS NOT NULL
            ELSE c.deleted_at IS NULL
       END
@@ -295,24 +299,25 @@ WHERE c.user_id = $1
   -- coalesce, not a bare cardinality(): pgx encodes a nil Go slice as SQL NULL
   -- rather than '{}', and cardinality(NULL) is NULL, which makes the whole OR
   -- null and drops every row.
-  AND (coalesce(cardinality($4::uuid[]), 0) = 0
-       OR c.domain_id = ANY($4::uuid[]))
   AND (coalesce(cardinality($5::uuid[]), 0) = 0
+       OR c.domain_id = ANY($5::uuid[]))
+  AND (coalesce(cardinality($6::uuid[]), 0) = 0
        OR EXISTS (SELECT 1 FROM card_categories cc
                    WHERE cc.card_id = c.id
-                     AND cc.category_id = ANY($5::uuid[])))
+                     AND cc.category_id = ANY($6::uuid[])))
   -- ILIKE, not full-text: D-031 defers ranked search to v0.2. cards_front_trgm_idx
   -- is what keeps this from being a sequential scan.
-  AND ($6::text IS NULL
-       OR c.front ILIKE '%' || $6 || '%'
-       OR c.back  ILIKE '%' || $6 || '%')
-ORDER BY c.created_at DESC
-LIMIT $2
+  AND ($7::text IS NULL
+       OR c.front ILIKE '%' || $7 || '%'
+       OR c.back  ILIKE '%' || $7 || '%')
+ORDER BY c.created_at DESC, c.id DESC
+LIMIT $2 OFFSET $3
 `
 
 type ListCardsParams struct {
 	UserID      uuid.UUID   `json:"user_id"`
 	Limit       int32       `json:"limit"`
+	Offset      int32       `json:"offset"`
 	Deleted     bool        `json:"deleted"`
 	DomainIds   []uuid.UUID `json:"domain_ids"`
 	CategoryIds []uuid.UUID `json:"category_ids"`
@@ -330,6 +335,7 @@ type ListCardsRow struct {
 	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
 	CategoryIds []uuid.UUID `json:"category_ids"`
+	Total       int64       `json:"total"`
 }
 
 // The Cards page. Every filter is optional and independent; passing none lists
@@ -338,10 +344,13 @@ type ListCardsRow struct {
 // `deleted` switches the whole list to the Terhapus view. One query rather
 // than two so the filters and the category aggregation cannot drift apart
 // between them.
+// id breaks the tie, and OFFSET is new: this query ended at LIMIT, so card 501
+// was unreachable by any request the API could express (D-084).
 func (q *Queries) ListCards(ctx context.Context, arg ListCardsParams) ([]ListCardsRow, error) {
 	rows, err := q.db.Query(ctx, listCards,
 		arg.UserID,
 		arg.Limit,
+		arg.Offset,
 		arg.Deleted,
 		arg.DomainIds,
 		arg.CategoryIds,
@@ -365,6 +374,7 @@ func (q *Queries) ListCards(ctx context.Context, arg ListCardsParams) ([]ListCar
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.CategoryIds,
+			&i.Total,
 		); err != nil {
 			return nil, err
 		}

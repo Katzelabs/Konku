@@ -165,7 +165,16 @@ SELECT n.id, n.user_id, n.title, n.content_md, n.created_at, n.updated_at, n.tsv
               FROM note_categories nc
              WHERE nc.note_id = n.id),
            '{}'
-       )::uuid[] AS category_ids
+       )::uuid[] AS category_ids,
+       -- How many match before LIMIT, carried on every row (D-084).
+       --
+       -- A window function rather than a second CountNotes query: the header
+       -- states this number beside a page drawn from the same predicate, and
+       -- two round trips can disagree about it. It is counted after every
+       -- filter and after the ` + "`" + `deleted` + "`" + ` switch, so Terhapus reports its own
+       -- total and a filtered list reports the filtered one. An empty result
+       -- returns no rows at all, and the caller reads that as 0 — correct.
+       count(*) OVER () AS total
 FROM notes n
 WHERE n.user_id = $1
   AND CASE WHEN $4::bool
@@ -187,7 +196,16 @@ WHERE n.user_id = $1
        OR EXISTS (SELECT 1 FROM note_categories nc
                    WHERE nc.note_id = n.id
                      AND nc.category_id = ANY($6::uuid[])))
-ORDER BY n.updated_at DESC
+  -- Title only, and ILIKE rather than full-text: D-031 defers ranked search to
+  -- v0.2 and the placeholder says "judul". This used to be a client-side
+  -- filter over whatever the first page happened to contain, which searched
+  -- 50 notes and looked like it had searched all of them (D-084).
+  --
+  -- notes_title_trgm_idx has existed since 00001 and is what keeps this off a
+  -- sequential scan — the same index cards_front_trgm_idx is for ListCards.
+  AND ($7::text IS NULL
+       OR n.title ILIKE '%' || $7 || '%')
+ORDER BY n.updated_at DESC, n.id DESC
 LIMIT $2 OFFSET $3
 `
 
@@ -198,6 +216,7 @@ type ListNotesParams struct {
 	Deleted     bool        `json:"deleted"`
 	DomainIds   []uuid.UUID `json:"domain_ids"`
 	CategoryIds []uuid.UUID `json:"category_ids"`
+	Query       *string     `json:"query"`
 }
 
 type ListNotesRow struct {
@@ -211,6 +230,7 @@ type ListNotesRow struct {
 	DomainID    *uuid.UUID  `json:"domain_id"`
 	DeletedAt   *time.Time  `json:"deleted_at"`
 	CategoryIds []uuid.UUID `json:"category_ids"`
+	Total       int64       `json:"total"`
 }
 
 // The card count is gone with D-055: a note no longer contains cards, so
@@ -219,6 +239,10 @@ type ListNotesRow struct {
 // `deleted` switches the whole list between live notes and the Terhapus view.
 // One query rather than two so the filters, the ordering and the category
 // aggregation cannot drift apart between them.
+// id breaks the tie. Two notes saved in the same transaction share an
+// updated_at, and an unordered tie can seat a row differently between two
+// pages of the same list — once as the last row of one page and never again,
+// or twice. Paging by offset needs a total order to slice.
 func (q *Queries) ListNotes(ctx context.Context, arg ListNotesParams) ([]ListNotesRow, error) {
 	rows, err := q.db.Query(ctx, listNotes,
 		arg.UserID,
@@ -227,6 +251,7 @@ func (q *Queries) ListNotes(ctx context.Context, arg ListNotesParams) ([]ListNot
 		arg.Deleted,
 		arg.DomainIds,
 		arg.CategoryIds,
+		arg.Query,
 	)
 	if err != nil {
 		return nil, err
@@ -246,6 +271,7 @@ func (q *Queries) ListNotes(ctx context.Context, arg ListNotesParams) ([]ListNot
 			&i.DomainID,
 			&i.DeletedAt,
 			&i.CategoryIds,
+			&i.Total,
 		); err != nil {
 			return nil, err
 		}

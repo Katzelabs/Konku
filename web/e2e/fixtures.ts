@@ -88,6 +88,28 @@ export function removeAccount(email: string) {
 }
 
 /**
+ * Fills an account past one page of notes (D-084).
+ *
+ * Written straight to the database rather than through the editor: this is
+ * setup for a test about *reading* a long list, and 60 round trips through the
+ * real editor would add a minute to the suite to arrive at the same state.
+ * The titles are numbered from the newest backwards, so `catatan 00` is the
+ * top row and the highest number is the one that only the last page holds.
+ */
+export function seedNotes(email: string, n: number) {
+  psql(
+    `INSERT INTO notes (user_id, title, content_md, created_at, updated_at)
+     SELECT u.id,
+            'catatan ' || to_char(i, 'FM00'),
+            'isi',
+            now() - make_interval(secs => i),
+            now() - make_interval(secs => i)
+       FROM users u, generate_series(0, ${n - 1}) AS i
+      WHERE u.email = '${email}'`,
+  )
+}
+
+/**
  * Brings this account's cards forward so they are due now.
  *
  * A card written today is scheduled for *tomorrow* — srs.Intervals[0] is 1,

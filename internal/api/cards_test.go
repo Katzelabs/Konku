@@ -66,8 +66,7 @@ func TestCardCRUD(t *testing.T) {
 	t.Run("delete then restore", func(t *testing.T) {
 		c.expect(c.do(http.MethodDelete, "/cards/"+card.ID, nil), http.StatusNoContent, nil)
 
-		var list []cardBody
-		c.expect(c.do(http.MethodGet, "/cards", nil), http.StatusOK, &list)
+		list := c.listCards("/cards")
 		for _, got := range list {
 			if got.ID == card.ID {
 				t.Fatal("a deleted card is still listed")
@@ -79,8 +78,7 @@ func TestCardCRUD(t *testing.T) {
 
 		// The Terhapus view is the same list asked the other way, and it is
 		// what makes restoring reachable after the user has navigated away.
-		var deleted []cardBody
-		c.expect(c.do(http.MethodGet, "/cards?deleted=true", nil), http.StatusOK, &deleted)
+		deleted := c.listCards("/cards?deleted=true")
 		if len(deleted) != 1 || deleted[0].ID != card.ID {
 			t.Fatalf("deleted list = %v, want the one deleted card", deleted)
 		}
@@ -110,8 +108,7 @@ func TestBulkDeleteCards(t *testing.T) {
 		t.Fatalf("count = %d, want 2", out.Count)
 	}
 
-	var list []cardBody
-	c.expect(c.do(http.MethodGet, "/cards", nil), http.StatusOK, &list)
+	list := c.listCards("/cards")
 	if len(list) != 1 || list[0].ID != kept.ID {
 		t.Fatalf("list = %v, want only the card that was not selected", list)
 	}
@@ -179,8 +176,9 @@ func TestCardListWithholdsTheAnswer(t *testing.T) {
 	const answer = "Keyakinan awal sebelum melihat data"
 	c.createCard(map[string]any{"front": "Apa itu prior?", "back": answer})
 
-	var list []cardBody
-	raw := c.expect(c.do(http.MethodGet, "/cards", nil), http.StatusOK, &list)
+	var body pageBody[cardBody]
+	raw := c.expect(c.do(http.MethodGet, "/cards", nil), http.StatusOK, &body)
+	list := body.Items
 
 	if len(list) != 1 || list[0].Front != "Apa itu prior?" {
 		t.Fatalf("got %d cards, want the one with its prompt", len(list))
@@ -218,8 +216,7 @@ func TestCardFilters(t *testing.T) {
 		{"by domain and category", "?domainId=" + math + "&categoryId=" + tag.ID},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var list []cardBody
-			c.expect(c.do(http.MethodGet, "/cards"+tc.query, nil), http.StatusOK, &list)
+			list := c.listCards("/cards" + tc.query)
 			if len(list) != 1 || list[0].ID != tagged.ID {
 				t.Fatalf("got %d cards, want only the matching one", len(list))
 			}
@@ -231,8 +228,7 @@ func TestCardFilters(t *testing.T) {
 		// is a cardinality test, and pgx encodes a nil slice as SQL NULL, so a
 		// handler that passed nil instead of an empty slice would answer this
 		// with zero cards and look like an empty account.
-		var list []cardBody
-		c.expect(c.do(http.MethodGet, "/cards", nil), http.StatusOK, &list)
+		list := c.listCards("/cards")
 		if len(list) != 2 {
 			t.Fatalf("got %d cards, want both", len(list))
 		}
@@ -251,9 +247,7 @@ func TestCardsFilterByManyDomains(t *testing.T) {
 	inMusic := c.createCard(map[string]any{"front": "sonata", "back": "b", "domainId": music})
 	c.createCard(map[string]any{"front": "tanpa domain", "back": "c"})
 
-	var list []cardBody
-	c.expect(c.do(http.MethodGet,
-		"/cards?domainId="+math+"&domainId="+music, nil), http.StatusOK, &list)
+	list := c.listCards("/cards?domainId=" + math + "&domainId=" + music)
 
 	got := map[string]bool{}
 	for _, card := range list {

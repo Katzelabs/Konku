@@ -764,11 +764,12 @@ func TestFixedSetAsksThePinnedCards(t *testing.T) {
 	c.seedCards(5, nil)
 
 	// The picker's candidate list carries prompts, never answers.
-	var pickable []struct {
+	var candidates pageBody[struct {
 		CardID string `json:"id"`
 		Front  string `json:"front"`
-	}
-	raw := c.expect(c.do(http.MethodGet, "/cards", nil), http.StatusOK, &pickable)
+	}]
+	raw := c.expect(c.do(http.MethodGet, "/cards", nil), http.StatusOK, &candidates)
+	pickable := candidates.Items
 	if len(pickable) != 5 {
 		t.Fatalf("got %d pickable cards, want 5", len(pickable))
 	}
@@ -825,10 +826,11 @@ func TestSettingReviewSetCardsReplaces(t *testing.T) {
 	c := app.newClient(t)
 
 	c.seedCards(4, nil)
-	var pickable []struct {
+	var candidates pageBody[struct {
 		CardID string `json:"id"`
-	}
-	c.expect(c.do(http.MethodGet, "/cards", nil), http.StatusOK, &pickable)
+	}]
+	c.expect(c.do(http.MethodGet, "/cards", nil), http.StatusOK, &candidates)
+	pickable := candidates.Items
 
 	set := c.createSet(map[string]any{"title": "Tetap", "selection": "fixed"})
 	pin := func(n int) {
@@ -855,10 +857,11 @@ func TestSettingReviewSetCardsReplaces(t *testing.T) {
 	// (D-047), and the handler turns that into a 400 rather than a 500.
 	other := app.newClient(t)
 	other.seedCards(1, nil)
-	var theirs []struct {
+	var theirPage pageBody[struct {
 		CardID string `json:"id"`
-	}
-	other.expect(other.do(http.MethodGet, "/cards", nil), http.StatusOK, &theirs)
+	}]
+	other.expect(other.do(http.MethodGet, "/cards", nil), http.StatusOK, &theirPage)
+	theirs := theirPage.Items
 
 	res := c.do(http.MethodPut, "/review/sets/"+set.ID+"/cards", map[string]any{
 		"cards": []map[string]any{{"cardId": theirs[0].CardID}},

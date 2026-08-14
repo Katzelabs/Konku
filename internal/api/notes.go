@@ -23,8 +23,6 @@ import (
 const (
 	maxTitleLen   = 200
 	maxContentLen = 256 << 10 // a quarter-megabyte of markdown per note
-	defaultLimit  = 50
-	maxLimit      = 200
 )
 
 type noteRequest struct {
@@ -365,8 +363,7 @@ func (s *Server) handleRestoreNotes(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListNotes(w http.ResponseWriter, r *http.Request) {
 	user, _ := UserFrom(r.Context())
 
-	limit := intParam(r, "limit", defaultLimit, 1, maxLimit)
-	offset := intParam(r, "offset", 0, 0, 1<<30)
+	paging := listParamsFrom(r)
 
 	domainIDs, ok := uuidListQuery(w, r, "domainId")
 	if !ok {
@@ -377,19 +374,41 @@ func (s *Server) handleListNotes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := scoped(s, r, func(q *gen.Queries) ([]gen.ListNotesRow, error) {
-		return q.ListNotes(r.Context(), gen.ListNotesParams{
-			UserID: user.ID,
-			Limit:  int32(limit),
-			Offset: int32(offset),
-			// The Terhapus view, off unless asked for: the same list, filtered to
-			// what has been deleted, so restoring is a normal screen rather than a
-			// toast the user has to catch.
-			Deleted:     boolQuery(r, "deleted"),
-			DomainIds:   domainIDs,
-			CategoryIds: categoryIDs,
+	params := gen.ListNotesParams{
+		UserID: user.ID,
+		Limit:  int32(paging.Limit),
+		Offset: int32(paging.Offset),
+		// Title search, server-side since D-084. It was a client-side
+		// filter over the loaded page, which searched the first 50 notes
+		// and presented the result as if it had searched all of them.
+		Query: textQuery(r, "q"),
+		// The Terhapus view, off unless asked for: the same list, filtered to
+		// what has been deleted, so restoring is a normal screen rather than a
+		// toast the user has to catch.
+		Deleted:     boolQuery(r, "deleted"),
+		DomainIds:   domainIDs,
+		CategoryIds: categoryIDs,
+	}
+
+	list := func(p gen.ListNotesParams) ([]gen.ListNotesRow, error) {
+		return scoped(s, r, func(q *gen.Queries) ([]gen.ListNotesRow, error) {
+			return q.ListNotes(r.Context(), p)
 		})
-	})
+	}
+
+	rows, err := list(params)
+	if err != nil {
+		writeInternal(w, r, err)
+		return
+	}
+
+	total, err := pageTotal(rows, paging.Offset,
+		func(n gen.ListNotesRow) int64 { return n.Total },
+		func() ([]gen.ListNotesRow, error) {
+			top := params
+			top.Limit, top.Offset = 1, 0
+			return list(top)
+		})
 	if err != nil {
 		writeInternal(w, r, err)
 		return
@@ -406,7 +425,7 @@ func (s *Server) handleListNotes(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, newPage(out, total, paging))
 }
 
 // uuidListQuery reads a repeatable filter from the query string:

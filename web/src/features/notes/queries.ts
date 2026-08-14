@@ -1,6 +1,13 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import { api } from '../../api/client'
-import type { BulkResult, DomainId, Note, NoteSummary } from '../../api/types'
+import { PAGE_SIZE, nextOffset, pageItems, pageTotal } from '../../api/paging'
+import type { BulkResult, DomainId, Note, NoteSummary, Page } from '../../api/types'
 
 export const noteKeys = {
   all: ['notes'] as const,
@@ -12,8 +19,10 @@ export const noteKeys = {
       // entry rather than a second fetch of the same list.
       [...(f.domainIds ?? [])].sort().join(','),
       [...(f.categoryIds ?? [])].sort().join(','),
+      f.q ?? '',
       f.deleted ?? false,
     ] as const,
+  recent: (limit: number) => [...noteKeys.all, 'recent', limit] as const,
   detail: (id: string) => [...noteKeys.all, 'detail', id] as const,
 }
 
@@ -33,24 +42,71 @@ export interface NoteInput {
 export interface NoteFilters {
   domainIds?: string[]
   categoryIds?: string[]
+  /**
+   * Title search, run in SQL since D-084. It used to be a filter over the
+   * loaded page, which searched the first 50 notes and looked like it had
+   * searched every one.
+   */
+  q?: string
   /** The Terhapus view: the same list, filtered to what has been deleted. */
   deleted?: boolean
 }
 
+function notesPath(filters: NoteFilters, offset: number) {
+  const params = new URLSearchParams({
+    limit: String(PAGE_SIZE),
+    offset: String(offset),
+  })
+  // `append`, not `set`: the filter repeats the parameter rather than
+  // packing a comma-separated list into one value, which is what the Go
+  // handler reads with r.URL.Query()[name].
+  for (const id of filters.domainIds ?? []) params.append('domainId', id)
+  for (const id of filters.categoryIds ?? []) params.append('categoryId', id)
+  if (filters.q?.trim()) params.set('q', filters.q.trim())
+  if (filters.deleted) params.set('deleted', 'true')
+  return `/notes?${params}`
+}
+
+/**
+ * The notes list, one page at a time.
+ *
+ * `total` is how many match the filters, not how many are loaded: the header
+ * states it, and stating the loaded count there is the half of D-084's bug
+ * that misinformed rather than hid.
+ */
 export function useNotes(filters: NoteFilters = {}) {
-  return useQuery({
+  const query = useInfiniteQuery({
     queryKey: noteKeys.list(filters),
-    queryFn: () => {
-      const params = new URLSearchParams()
-      // `append`, not `set`: the filter repeats the parameter rather than
-      // packing a comma-separated list into one value, which is what the Go
-      // handler reads with r.URL.Query()[name].
-      for (const id of filters.domainIds ?? []) params.append('domainId', id)
-      for (const id of filters.categoryIds ?? []) params.append('categoryId', id)
-      if (filters.deleted) params.set('deleted', 'true')
-      const query = params.toString()
-      return api.get<NoteSummary[]>(query ? `/notes?${query}` : '/notes')
-    },
+    queryFn: ({ pageParam }) =>
+      api.get<Page<NoteSummary>>(notesPath(filters, pageParam)),
+    initialPageParam: 0,
+    getNextPageParam: nextOffset,
+    // Typing in the search box changes the key, and without this the list
+    // empties to a spinner between keystrokes — which also drops the row the
+    // side preview is showing, since auto-select re-picks a top row that is
+    // not there yet (D-078). Holding the previous page keeps the screen still.
+    placeholderData: keepPreviousData,
+  })
+
+  return {
+    ...query,
+    notes: pageItems(query.data?.pages),
+    total: pageTotal(query.data?.pages),
+  }
+}
+
+/**
+ * The handful of notes the home screen shows.
+ *
+ * A plain query asking for exactly what it renders, rather than an infinite
+ * list sliced down to six. Keyed under noteKeys.all so every existing mutation
+ * invalidation still reaches it.
+ */
+export function useRecentNotes(limit: number) {
+  return useQuery({
+    queryKey: noteKeys.recent(limit),
+    queryFn: () => api.get<Page<NoteSummary>>(`/notes?limit=${limit}`),
+    select: (page) => page.items,
   })
 }
 

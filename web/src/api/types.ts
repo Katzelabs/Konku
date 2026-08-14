@@ -137,6 +137,23 @@ export interface DueList {
   total: number
 }
 
+/**
+ * One page of an index list (D-084).
+ *
+ * `total` is how many rows match the filters in all, not how many are in
+ * `items` — the screens render it as the count, and rendering `items.length`
+ * there is what told an account with 300 notes that it had 50. Both `/notes`
+ * and `/cards` answer with this; the settings lists still answer with a bare
+ * array, because a person's domains and categories are bounded by what they
+ * will sit down and create.
+ */
+export interface Page<T> {
+  items: T[]
+  total: number
+  limit: number
+  offset: number
+}
+
 /** Returned only after the user has chosen to reveal. */
 export interface CardAnswer {
   back: string

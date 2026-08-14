@@ -288,6 +288,8 @@ type Querier interface {
 	// `deleted` switches the whole list to the Terhapus view. One query rather
 	// than two so the filters and the category aggregation cannot drift apart
 	// between them.
+	// id breaks the tie, and OFFSET is new: this query ended at LIMIT, so card 501
+	// was unreachable by any request the API could express (D-084).
 	ListCards(ctx context.Context, arg ListCardsParams) ([]ListCardsRow, error)
 	// Categories are one shared vocabulary across notes and cards (D-055).
 	//
@@ -340,6 +342,10 @@ type Querier interface {
 	// `deleted` switches the whole list between live notes and the Terhapus view.
 	// One query rather than two so the filters, the ordering and the category
 	// aggregation cannot drift apart between them.
+	// id breaks the tie. Two notes saved in the same transaction share an
+	// updated_at, and an unordered tie can seat a row differently between two
+	// pages of the same list — once as the last row of one page and never again,
+	// or twice. Paging by offset needs a total order to slice.
 	ListNotes(ctx context.Context, arg ListNotesParams) ([]ListNotesRow, error)
 	ListRecentFocusSessions(ctx context.Context, arg ListRecentFocusSessionsParams) ([]FocusSession, error)
 	// Review sets: a saved, repeatable configuration for a review over the cards

@@ -1473,6 +1473,79 @@ whole object.
 
 ---
 
+### D-084 — The index lists page, and the header counts the collection
+
+Both index screens truncated silently and then stated the truncation as the
+total. `/notes` applied its default limit of 50 while the client sent no
+`limit` and no `offset` and had no control that could; `/cards` asked for 500
+against a query whose SQL ended at `LIMIT` with **no `OFFSET` at all**, so card
+501 was unreachable by any request the API was able to express. Both headers
+rendered the length of the returned array — "50 catatan" to an account holding
+300 — and the notes search box filtered that same array in the browser, so
+looking for something written last month returned nothing and looked like an
+answer.
+
+Those notes and cards existed. They counted against the `07` L8 quotas of 5.000
+and 20.000, they came back in `/api/export`, and they could not be opened. That
+is the disappearance this product exists to prevent, reached by a different
+door, and the quota ceilings are what make it a matter of time rather than a
+hypothetical.
+
+**One shape for both lists:** `{items, total, limit, offset}`. A breaking change
+to two endpoints with no external consumers, so it is a rename rather than a
+migration. The settings lists — domains, categories — still answer with a bare
+array, because they are bounded by what a person will sit down and create.
+
+**`total` is a window function on the list query**, not a second count. The
+header states it beside a page drawn from the same predicate, and two queries
+with two copies of the same `WHERE` clause can drift until the number and the
+list are describing different things. The one hole in that is an empty page:
+the total rides on the rows, so an offset past the end has nothing to carry it.
+`pageTotal` re-asks *the same query* for one row from the top rather than
+introducing a second predicate — one extra round trip on a page nobody
+normally lands on.
+
+**Offset, not keyset.** Notes sort by `updated_at DESC`, which mutates, so
+offset paging can in principle shift a row across a page boundary. Every note
+and card mutation invalidates the whole list key and TanStack refetches every
+loaded page, so a local edit recomputes the loaded pages consistently from
+offset 0; the remaining window is an edit from a second device between two page
+fetches. Keyset would close it and costs a cursor, a compound comparison, and
+the total. At a 5.000-row ceiling that is not the trade. Both queries did get
+`id` as a tiebreaker — without a total order, a page boundary landing inside a
+tie serves one row twice and skips another, which is the same disappearance in
+miniature.
+
+**A button, never a scroll sentinel.** In list view the left column is a scroll
+container beside a live preview whose top row opens itself on arrival (D-078);
+loading on scroll would move the ground under both, and a reader scrolling to
+the bottom to see how far the list goes would find it never ends. The button
+says how many are left, because the point of the change is that the screen
+stops implying the collection ends where the page does.
+
+**Search moved to SQL** — `ILIKE` on `title`, the same shape `ListCards` has
+had, against `notes_title_trgm_idx`, which has existed since `00001`. Not a
+migration and not full-text: ranked search is still deferred (D-031) and the
+placeholder still says "judul". Paging is what forced it: over a page, "no
+match" and "not on this page" are the same empty screen.
+
+**Two lists nobody counted got fixed on the way past.** The fixed-set card
+picker built its own request, dropped the domain filter entirely when a set
+named more than one — offering every card in the account — and read the first
+500 as all of them; it is the shared `useCards` now. And the select-all
+checkbox reaches the loaded rows, so it is named `Pilih semua yang tampil`
+whenever another page exists: "semua" beside a header reading 300 would promise
+300 and act on 50.
+
+**Rejected:** numbered pages, which imply a stable index into a list ordered by
+a mutating timestamp; an `X-Total-Count` header, which puts the number outside
+the cached response body that the screen renders it from; and leaving the card
+list's honest "Menampilkan 500 kartu pertama" notice in place, which named the
+truncation without offering any way past it — its own comment said paging was
+the fix.
+
+---
+
 ## Open questions
 
 None blocking. Deferred details, intentionally left until the feature is being built:

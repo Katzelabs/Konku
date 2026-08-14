@@ -251,6 +251,14 @@ GET    /api/stats/retention           headline metric
 
 **A card is addressed by its own uuid.** It used to take a note *and* an ID together, because card IDs were unique only within the note they were parsed out of — the primary key was `(note_id, id)`. D-055 made cards their own resource with a uuid primary key, and the note segment went with it.
 
+**The two index lists are paginated** (D-084). `GET /api/notes` and `GET /api/cards` take `?limit=` (default 50, capped at 200) and `?offset=`, and answer with an envelope rather than a bare array:
+
+```json
+{ "items": [ … ], "total": 312, "limit": 50, "offset": 0 }
+```
+
+`total` is how many rows match the filters before `LIMIT`, computed by a `count(*) OVER ()` on the list query itself — one round trip, and one copy of the `WHERE` clause, so the number and the rows cannot describe different sets. An offset past the end is an empty page with the real total, not a 400. Both lists order with `id` as a tiebreaker so a page boundary cannot land inside a tie. `?q=` searches titles on notes and both sides on cards, `ILIKE` against the trigram indexes; ranked full-text stays deferred (D-031). The settings lists — domains, categories — still answer with a bare array.
+
 Public and account endpoints added by D-058:
 
 ```

@@ -20,6 +20,7 @@ export function SelectionBar({
   allSelected,
   onToggleAll,
   onClear,
+  partial = false,
   children,
   className,
 }: {
@@ -27,10 +28,20 @@ export function SelectionBar({
   allSelected: boolean
   onToggleAll: () => void
   onClear: () => void
+  /**
+   * The list has pages the reader has not loaded, so the tick-everything box
+   * reaches the rows on screen and no further (D-084).
+   *
+   * It is named for what it does rather than quietly meaning less than it
+   * says: "semua" beside a header reading "300 catatan" would promise 300 and
+   * act on 50, and the count in this bar would then be the only clue.
+   */
+  partial?: boolean
   /** The actions — Hapus, Kembalikan. Rendered at the end of the bar. */
   children: ReactNode
   className?: string
 }) {
+  const selectAllLabel = partial ? 'Pilih semua yang tampil' : 'Pilih semua'
   return (
     <div
       className={cn(
@@ -45,7 +56,7 @@ export function SelectionBar({
           // be either state.
           indeterminate={count > 0 && !allSelected}
           onChange={onToggleAll}
-          aria-label={allSelected ? 'Batalkan pilih semua' : 'Pilih semua'}
+          aria-label={allSelected ? 'Batalkan pilih semua' : selectAllLabel}
         />
         <span className="text-sm text-card-fg">{count} dipilih</span>
       </label>

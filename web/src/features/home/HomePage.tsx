@@ -15,7 +15,7 @@ import { PageHeader } from '../../components/ui/page-header'
 import { Loading } from '../../components/ui/spinner'
 import { humanDay } from '../../lib/date'
 import { useDomains } from '../domains/queries'
-import { useCreateNote, useNotes } from '../notes/queries'
+import { useCreateNote, useRecentNotes } from '../notes/queries'
 import { useDueCards } from '../review/queries'
 
 /**
@@ -152,9 +152,10 @@ function QuickCapture() {
 }
 
 function RecentNotes() {
-  const { data: notes, isPending, error } = useNotes()
+  // Six, asked for as six. Slicing an infinite list down to six would page
+  // the whole collection into memory to render a corner of the home screen.
+  const { data: recent = [], isPending, error } = useRecentNotes(6)
   const { data: domains } = useDomains()
-  const recent = (notes ?? []).slice(0, 6)
 
   return (
     <Card>
@@ -175,7 +176,7 @@ function RecentNotes() {
             <Notice>{error.message}</Notice>
           </div>
         )}
-        {notes && recent.length === 0 && (
+        {!isPending && !error && recent.length === 0 && (
           <div className="px-5 pb-5">
             <EmptyState
               title="Belum ada catatan."

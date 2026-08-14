@@ -1,6 +1,13 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import { api } from '../../api/client'
-import type { BulkResult, Card, CardSummary } from '../../api/types'
+import { PAGE_SIZE, nextOffset, pageItems, pageTotal } from '../../api/paging'
+import type { BulkResult, Card, CardSummary, Page } from '../../api/types'
 
 /**
  * Many domains and many categories (D-078).
@@ -32,31 +39,48 @@ export const cardKeys = {
   detail: (id: string) => [...cardKeys.all, 'detail', id] as const,
 }
 
-/** The server caps this at 500 and uses it as the default too. */
-export const CARD_LIMIT = 500
+function cardsPath(filters: CardFilters, offset: number) {
+  const params = new URLSearchParams({
+    limit: String(PAGE_SIZE),
+    offset: String(offset),
+  })
+  // `append`, not `set`: the filter repeats the parameter rather than
+  // packing a comma-separated list into one value, which is what the Go
+  // handler reads with r.URL.Query()[name].
+  for (const id of filters.domainIds ?? []) params.append('domainId', id)
+  for (const id of filters.categoryIds ?? []) params.append('categoryId', id)
+  if (filters.q?.trim()) params.set('q', filters.q.trim())
+  if (filters.deleted) params.set('deleted', 'true')
+  return `/cards?${params}`
+}
 
 /**
- * The card list — prompts only.
+ * The card list — prompts only, one page at a time.
  *
  * `back` is not in this response by design (D-003); the editor fetches a
- * single card when it needs the answer. The same endpoint feeds the exam
+ * single card when it needs the answer. The same endpoint feeds the fixed-set
  * picker, which is why every filter is optional.
+ *
+ * It used to ask for 500 in one request against a query with no OFFSET, so
+ * card 501 was unreachable (D-084).
  */
 export function useCards(filters: CardFilters = {}) {
-  return useQuery({
+  const query = useInfiniteQuery({
     queryKey: cardKeys.list(filters),
-    queryFn: () => {
-      const params = new URLSearchParams({ limit: String(CARD_LIMIT) })
-      // `append`, not `set`: the filter repeats the parameter rather than
-      // packing a comma-separated list into one value, which is what the Go
-      // handler reads with r.URL.Query()[name].
-      for (const id of filters.domainIds ?? []) params.append('domainId', id)
-      for (const id of filters.categoryIds ?? []) params.append('categoryId', id)
-      if (filters.q?.trim()) params.set('q', filters.q.trim())
-      if (filters.deleted) params.set('deleted', 'true')
-      return api.get<CardSummary[]>(`/cards?${params}`)
-    },
+    queryFn: ({ pageParam }) =>
+      api.get<Page<CardSummary>>(cardsPath(filters, pageParam)),
+    initialPageParam: 0,
+    getNextPageParam: nextOffset,
+    // Holds the current page while a changed filter loads, rather than
+    // emptying the list between keystrokes. See the note in notes/queries.ts.
+    placeholderData: keepPreviousData,
   })
+
+  return {
+    ...query,
+    cards: pageItems(query.data?.pages),
+    total: pageTotal(query.data?.pages),
+  }
 }
 
 /** One card, with its answer. The only place `back` arrives outside review. */

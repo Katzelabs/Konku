@@ -7,6 +7,7 @@ import { Button } from '../../components/ui/button'
 import { CategoryChips } from '../../components/ui/category'
 import { ConfirmDialog } from '../../components/ui/confirm-dialog'
 import { EmptyState } from '../../components/ui/empty-state'
+import { LoadMore } from '../../components/ui/load-more'
 import { FilterBar } from '../../components/ui/filter-bar'
 import { Input } from '../../components/ui/input'
 import { DetailPlaceholder, ListDetail } from '../../components/ui/list-detail'
@@ -23,7 +24,7 @@ import { cn } from '../../lib/utils'
 import { useAllCategories } from '../categories/queries'
 import { useDomains } from '../domains/queries'
 import { CardPeek } from './CardPeek'
-import { CARD_LIMIT, useCards, useDeleteCards, useRestoreCards } from './queries'
+import { useCards, useDeleteCards, useRestoreCards } from './queries'
 
 /**
  * The card index.
@@ -111,15 +112,23 @@ export default function CardsPage() {
     setUndo(null)
   }
 
-  // Filtering is the server's job here, unlike notes: the list is capped at
-  // 500 and a client-side filter would silently search only the first page.
-  const { data, isPending, error } = useCards({ domainIds, categoryIds, q: query, deleted })
+  // Filtering is the server's job on both index screens now: a client-side
+  // filter over a page searches what happened to be loaded and presents the
+  // result as though it had searched everything (D-084).
+  const {
+    cards,
+    total,
+    isPending,
+    error,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useCards({ domainIds, categoryIds, q: query, deleted })
   const { data: domains } = useDomains()
   const { data: categories } = useAllCategories()
   const removeMany = useDeleteCards()
   const restoreMany = useRestoreCards()
 
-  const cards = useMemo(() => data ?? [], [data])
   const filtering = Boolean(query.trim() || domainIds.length || categoryIds.length)
 
   const selection = useSelection(useMemo(() => cards.map((c) => c.id), [cards]))
@@ -189,7 +198,13 @@ export default function CardsPage() {
             ? 'Kartu yang kamu hapus. Dikembalikan lengkap dengan riwayat ulangannya. Kartu yang belum pernah diulang hilang permanen setelah 30 hari.'
             : 'Satu pertanyaan, satu jawaban. Ditulis di sini, diulang di layar ulangan.'
         }
-        meta={!isPending && <span>{cards.length} kartu</span>}
+        meta={
+          /*
+            The collection, not the page — the header used to state the length
+            of a list that stopped at 500 (D-084).
+          */
+          !isPending && <span>{total} kartu</span>
+        }
         actions={
           deleted ? (
             <Button variant="secondary" onClick={() => setParam('deleted', null)}>
@@ -240,6 +255,7 @@ export default function CardsPage() {
           count={selection.count}
           allSelected={selection.allSelected}
           onToggleAll={selection.toggleAll}
+          partial={Boolean(hasNextPage)}
           onClear={selection.clear}
         >
           {deleted ? (
@@ -306,7 +322,7 @@ export default function CardsPage() {
 
           <Separator />
 
-          {data && cards.length === 0 && !filtering && (
+          {!isPending && cards.length === 0 && !filtering && (
             <EmptyState
               title={deleted ? 'Tidak ada kartu terhapus.' : 'Belum ada kartu.'}
               description={
@@ -324,7 +340,7 @@ export default function CardsPage() {
             />
           )}
 
-          {data && cards.length === 0 && filtering && (
+          {!isPending && cards.length === 0 && filtering && (
             <p className="py-4 text-sm text-muted-fg">Tidak ada kartu yang cocok.</p>
           )}
 
@@ -364,15 +380,15 @@ export default function CardsPage() {
             </ul>
           )}
 
-          {/*
-            Said plainly rather than paginated. If this ever trips, paging is
-            the fix, not a silent truncation.
-          */}
-          {cards.length >= CARD_LIMIT && (
-            <p className="px-1 text-xs text-subtle-fg">
-              Menampilkan {CARD_LIMIT} kartu pertama.
-            </p>
-          )}
+          <LoadMore
+            loaded={cards.length}
+            total={total}
+            hasMore={Boolean(hasNextPage)}
+            loading={isFetchingNextPage}
+            error={error}
+            onLoadMore={() => fetchNextPage()}
+            noun="kartu"
+          />
         </div>
       </ListDetail>
 

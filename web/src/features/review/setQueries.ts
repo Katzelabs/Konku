@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
+import { useCards } from '../cards/queries'
 import type {
   AnswerResult,
   CardAnswer,
-  CardSummary,
   Rating,
   Run,
   RunDetail,
@@ -176,17 +176,16 @@ export function useFinishRun() {
   })
 }
 
-/** Candidate cards for pinning a fixed set's questions. */
+/**
+ * Candidate cards for pinning a fixed set's questions.
+ *
+ * The shared card list, filters and paging and all. It used to build its own
+ * request for a single domain and drop the filter entirely when a set named
+ * several — so a two-domain set was offered every card in the account — and it
+ * read the first 500 as if they were all of them (D-084).
+ */
 export function usePickableCards(domainIds: string[]) {
-  // The endpoint takes one domain; a set can name several. Filtering client
-  // side for the multi-domain case keeps one endpoint serving both, and the
-  // picker is bounded by the card list anyway.
-  const single = domainIds.length === 1 ? domainIds[0] : null
-  return useQuery({
-    queryKey: ['cards', 'pickable', single] as const,
-    queryFn: () =>
-      api.get<CardSummary[]>(`/cards${single ? `?domainId=${single}` : ''}`),
-  })
+  return useCards({ domainIds })
 }
 
 export function useSetReviewSetCards() {

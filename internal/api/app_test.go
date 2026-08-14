@@ -283,6 +283,36 @@ type domainBody struct {
 	Label string `json:"label"`
 }
 
+// pageBody is what the two index lists answer with since D-084: a page of
+// items plus the total that matched before LIMIT. Only /notes and /cards page;
+// the settings lists (domains, categories) are bounded by what a person will
+// realistically create and still answer with a bare array.
+type pageBody[T any] struct {
+	Items  []T   `json:"items"`
+	Total  int64 `json:"total"`
+	Limit  int   `json:"limit"`
+	Offset int   `json:"offset"`
+}
+
+// listNotes and listCards decode a page and hand back its rows, so a test that
+// only cares about which notes came back does not have to reach through the
+// envelope. Tests that assert on the total read the page itself.
+func (c *testClient) listNotes(path string) []noteBody {
+	c.t.Helper()
+
+	var body pageBody[noteBody]
+	c.expect(c.do(http.MethodGet, path, nil), http.StatusOK, &body)
+	return body.Items
+}
+
+func (c *testClient) listCards(path string) []cardBody {
+	c.t.Helper()
+
+	var body pageBody[cardBody]
+	c.expect(c.do(http.MethodGet, path, nil), http.StatusOK, &body)
+	return body.Items
+}
+
 // domainID resolves one of this user's starter domains by slug.
 //
 // Domains stopped being global text ids like "math" when they became per-user

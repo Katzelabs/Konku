@@ -62,7 +62,11 @@ SELECT c.*,
               FROM card_categories cc
              WHERE cc.card_id = c.id),
            '{}'
-       )::uuid[] AS category_ids
+       )::uuid[] AS category_ids,
+       -- How many match before LIMIT, carried on every row (D-084). Same
+       -- reasoning as ListNotes: one round trip, counted after the filters and
+       -- after the `deleted` switch.
+       count(*) OVER () AS total
 FROM cards c
 WHERE c.user_id = $1
   AND CASE WHEN sqlc.arg(deleted)::bool
@@ -86,8 +90,10 @@ WHERE c.user_id = $1
   AND (sqlc.narg(query)::text IS NULL
        OR c.front ILIKE '%' || sqlc.narg(query) || '%'
        OR c.back  ILIKE '%' || sqlc.narg(query) || '%')
-ORDER BY c.created_at DESC
-LIMIT $2;
+-- id breaks the tie, and OFFSET is new: this query ended at LIMIT, so card 501
+-- was unreachable by any request the API could express (D-084).
+ORDER BY c.created_at DESC, c.id DESC
+LIMIT $2 OFFSET $3;
 
 -- name: CountCards :one
 SELECT count(*) FROM cards

@@ -7,6 +7,7 @@ import { Button } from '../../components/ui/button'
 import { Card } from '../../components/ui/card'
 import { Notice } from '../../components/ui/notice'
 import { Separator } from '../../components/ui/separator'
+import { LoadMore } from '../../components/ui/load-more'
 import { Loading } from '../../components/ui/spinner'
 import { humanDay, today } from '../../lib/date'
 import { useCategories } from '../categories/queries'
@@ -180,7 +181,15 @@ function CardPicker({
   domainIds: string[]
   pinned: CardRef[]
 }) {
-  const { data: candidates, isPending } = usePickableCards(domainIds)
+  const {
+    cards,
+    total,
+    isPending,
+    error,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = usePickableCards(domainIds)
   const save = useSetReviewSetCards()
 
   const [chosen, setChosen] = useState<string[]>(() => pinned.map((c) => c.cardId))
@@ -201,14 +210,16 @@ function CardPicker({
 
   if (isPending) return <Loading label="Memuat kartu…" />
 
-  const cards = candidates ?? []
-
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between">
         <h2 className="text-sm font-medium text-muted-fg">Soal</h2>
+        {/*
+          What is chosen, out of what exists — not out of what is loaded. The
+          picker read the first 500 cards as if they were all of them (D-084).
+        */}
         <span className="text-xs text-subtle-fg tabular-nums">
-          {chosen.length} dipilih
+          {chosen.length} dipilih dari {total}
         </span>
       </div>
 
@@ -234,6 +245,17 @@ function CardPicker({
                 </li>
               ))}
             </ul>
+
+            <LoadMore
+              loaded={cards.length}
+              total={total}
+              hasMore={Boolean(hasNextPage)}
+              loading={isFetchingNextPage}
+              error={error}
+              onLoadMore={() => fetchNextPage()}
+              noun="kartu"
+              className="px-0 pb-1"
+            />
           </Card>
 
           <Button

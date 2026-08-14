@@ -7,6 +7,7 @@ import { Button } from '../../components/ui/button'
 import { CategoryChips } from '../../components/ui/category'
 import { ConfirmDialog } from '../../components/ui/confirm-dialog'
 import { EmptyState } from '../../components/ui/empty-state'
+import { LoadMore } from '../../components/ui/load-more'
 import { FilterBar } from '../../components/ui/filter-bar'
 import { Input } from '../../components/ui/input'
 import { DetailPlaceholder, ListDetail } from '../../components/ui/list-detail'
@@ -123,7 +124,15 @@ export default function NotesPage() {
     setUndo(null)
   }
 
-  const { data: notes, isPending, error } = useNotes({ domainIds, categoryIds, deleted })
+  const {
+    notes,
+    total,
+    isPending,
+    error,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useNotes({ domainIds, categoryIds, q: query, deleted })
   const { data: domains } = useDomains()
   const { data: categories } = useAllCategories()
   const create = useCreateNote()
@@ -134,16 +143,15 @@ export default function NotesPage() {
     create.mutate({ contentMd: '' }, { onSuccess: (n) => navigate(`/notes/${n.id}`) })
   }
 
-  // A client-side filter over the list already in memory, not search. Ranked
+  // The search runs in SQL now (D-084). It used to filter the loaded list,
+  // which searched the first 50 notes and looked like it had searched all of
+  // them — and paging would have made that worse, since "no match" and "not on
+  // this page" are indistinguishable to the person reading it. Ranked
   // full-text search stays deferred to v0.2 (D-031), so the placeholder says
   // "judul" and does not promise more than it does.
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return notes ?? []
-    return (notes ?? []).filter((n) => n.title.toLowerCase().includes(q))
-  }, [notes, query])
+  const filtering = Boolean(query.trim() || domainIds.length || categoryIds.length)
 
-  const selection = useSelection(useMemo(() => filtered.map((n) => n.id), [filtered]))
+  const selection = useSelection(useMemo(() => notes.map((n) => n.id), [notes]))
 
   // A deleted note answers 404 everywhere else, so there is nothing to peek
   // at. In the Terhapus view a row is a thing you tick, not a thing you open.
@@ -201,7 +209,7 @@ export default function NotesPage() {
   // never a placeholder asking for a click it could have made itself.
   useAutoSelect({
     enabled: split,
-    ids: useMemo(() => filtered.map((n) => n.id), [filtered]),
+    ids: useMemo(() => notes.map((n) => n.id), [notes]),
     peekedId: peekId,
     toPath: (id) => `/notes/${id}`,
   })
@@ -216,11 +224,11 @@ export default function NotesPage() {
             : 'Tulis dulu, rapikan nanti.'
         }
         meta={
-          !isPending && (
-            <span>
-              {notes?.length ?? 0} catatan
-            </span>
-          )
+          /*
+            The collection, not the page. Rendering the loaded count here is
+            what told an account holding 300 notes that it had 50 (D-084).
+          */
+          !isPending && <span>{total} catatan</span>
         }
         actions={
           deleted ? (
@@ -275,6 +283,7 @@ export default function NotesPage() {
           count={selection.count}
           allSelected={selection.allSelected}
           onToggleAll={selection.toggleAll}
+          partial={Boolean(hasNextPage)}
           onClear={selection.clear}
         >
           {deleted ? (
@@ -346,7 +355,7 @@ export default function NotesPage() {
 
           <Separator />
 
-          {notes && notes.length === 0 && (
+          {!isPending && notes.length === 0 && !filtering && (
             /*
              * An empty library is a starting point, not a failure. No sad-box
              * illustration and no "you haven't written anything yet" — the copy
@@ -362,7 +371,7 @@ export default function NotesPage() {
             />
           )}
 
-          {notes && notes.length > 0 && filtered.length === 0 && (
+          {!isPending && notes.length === 0 && filtering && (
             <p className="px-1 py-4 text-sm text-muted-fg">
               Tidak ada judul yang cocok.
             </p>
@@ -374,7 +383,7 @@ export default function NotesPage() {
             `lg:grid-cols-3` would ask the screen how wide it is and get an
             answer about the wrong box either way.
           */}
-          {filtered.length > 0 && (
+          {notes.length > 0 && (
             <ul
               className={cn(
                 'grid',
@@ -386,7 +395,7 @@ export default function NotesPage() {
                   : 'gap-1.5',
               )}
             >
-              {filtered.map((note) => (
+              {notes.map((note) => (
                 <li key={note.id}>
                   <NoteItem
                     note={note}
@@ -403,6 +412,16 @@ export default function NotesPage() {
               ))}
             </ul>
           )}
+
+          <LoadMore
+            loaded={notes.length}
+            total={total}
+            hasMore={Boolean(hasNextPage)}
+            loading={isFetchingNextPage}
+            error={error}
+            onLoadMore={() => fetchNextPage()}
+            noun="catatan"
+          />
         </div>
       </ListDetail>
 
