@@ -1,6 +1,28 @@
 # Reference config for the shared infra stack. Caddy terminates TLS and routes
 # by hostname to each project's app container on the `shared` network.
+#
+# What actually runs on the VPS is the label set on docker-compose.prod.yml,
+# read by caddy-docker-proxy. This file is the readable copy of the same
+# intent, and the two have to be changed together — a header added here and not
+# there ships nowhere at all.
 {$KONKU_HOST} {
 	encode zstd gzip
+
+	# HSTS lives here and nowhere else.
+	#
+	# internal/api/security.go deliberately omits it: only the component that
+	# terminates TLS knows whether the connection was really secure, and the app
+	# would have to guess from a forwarded header. That reasoning is right, and
+	# it is also why this was missed — Caddy does not emit the header on its
+	# own, so between the two components it was set by neither.
+	#
+	# max-age starts short on purpose. HSTS cannot be withdrawn inside its own
+	# window: if certificate renewal turns out to be broken, a year-long policy
+	# makes the site unreachable for a year, in every browser that saw it once.
+	# Raise this to 31536000 once renewal has been observed to work on the box
+	# (04-ship S1), and add includeSubDomains only if every host under
+	# katzeapps.com can serve TLS — the apex is shared across projects (D-068).
+	header Strict-Transport-Security "max-age=300"
+
 	reverse_proxy app:8080
 }

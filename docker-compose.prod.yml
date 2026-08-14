@@ -31,11 +31,24 @@ services:
       SENTRY_DSN: ${SENTRY_DSN}
       SENTRY_ENVIRONMENT: production
 
-      # /metrics on its own listener (D-062). Bound inside the container and
-      # never published in `ports`, so it is reachable from the box and not
-      # from the internet — a separate socket cannot be exposed by a Caddy
-      # misconfiguration the way a route on the main mux can.
-      METRICS_ADDR: 127.0.0.1:9090
+      # /metrics on its own listener (D-062, amended by D-081).
+      #
+      # 0.0.0.0 here, and that is not the mistake it looks like. A container
+      # has its own network namespace, so 127.0.0.1 inside it is the
+      # *container's* loopback: nothing on the host and nothing on the `shared`
+      # network could reach it, and the metric this app is most likely to fall
+      # over on — pool saturation — was observable only through `docker exec`.
+      #
+      # The property the old value was reaching for is delivered by the absence
+      # of a `ports:` entry, not by the bind address. Unpublished means
+      # unroutable from the internet no matter what it binds, while a sibling
+      # Prometheus on `shared` can still scrape it. A separate socket still
+      # cannot be exposed by a Caddy misconfiguration the way a route on the
+      # main mux can, which was always the real argument.
+      #
+      # Do NOT add 9090 to `ports:`. That is the line that would make this
+      # public, and it is the only one.
+      METRICS_ADDR: 0.0.0.0:9090
 
       # Mail (07 L2, D-068). Resend over SMTP on 465 — smtps, not smtp:
       # net/smtp refuses to send the API key over an unencrypted connection.
@@ -49,11 +62,73 @@ services:
       # against it, and a wrong value is only discovered after the mail has
       # already been delivered.
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}  # https://konkuapp.katzeapps.com
+    # A wedged process counts as up forever under `restart: unless-stopped`,
+    # and /healthz exists precisely so it does not have to.
+    #
+    # /healthz and NOT /readyz. They are split because the correct response to
+    # each is the opposite of the other (D-062): readiness goes red on a
+    # database blip, and restarting the container is exactly the wrong answer
+    # to that — it throws away the warm pool and every in-flight request to fix
+    # something that was never the container's fault. Liveness is the one that
+    # means "restart me".
+    #
+    # busybox wget, because the image is alpine and has it. No curl, and no
+    # need for one.
+    #
+    # `-q -T 3 --spider` and not `--quiet --tries=1`: busybox tolerates the GNU
+    # long forms today but documents neither, and the failure mode of a flag
+    # that stops being tolerated is a healthcheck that fails forever — which
+    # under a restart policy is an outage caused entirely by its own monitoring.
+    # -T bounds the read at 3s, inside Docker's own 5s timeout.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "3", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      # Generous, because migrations run at startup and a cold start on a new
+      # migration is legitimately slow. A start_period that is too short turns
+      # a normal deploy into a restart loop.
+      start_period: 30s
+      retries: 3
+
+    # The pgx pool is capped at 10 connections so one project cannot exhaust
+    # every slot on a shared Postgres (D-028). This is the same argument for
+    # the same box's memory: an OOM here is an OOM for every co-tenant project,
+    # and unbounded is not a bound.
+    #
+    # 512m against a hashing ceiling of 4 x 64 MiB (internal/auth/password.go),
+    # so the argon2 bound is stated twice and neither statement is the only one
+    # (hard rule 9).
+    mem_limit: 512m
+
+    # The binary is CGO_ENABLED=0 static, runs as uid 10001, and writes nothing
+    # to disk — the export is built in memory and streamed to the response, and
+    # slog goes to stdout. So none of this costs anything, which is the reason
+    # to do it rather than to argue about it.
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Insurance for anything in the standard library that reaches for a temp
+    # file. Small, and in memory, so read_only stays true where it matters.
+    tmpfs:
+      - /tmp:size=64m
+
     networks:
       - shared
     labels:
       caddy: ${KONKU_HOST}
       caddy.reverse_proxy: "{{upstreams 8080}}"
+      # HSTS. Set here because this label set is what caddy-docker-proxy
+      # actually reads; the Caddyfile carries the same directive and the
+      # reasoning, and the two must be changed together.
+      #
+      # Short max-age deliberately — HSTS cannot be withdrawn inside its own
+      # window, so a year-long policy over broken renewal makes the site
+      # unreachable for a year. Raise to 31536000 once renewal is observed
+      # working on the box (04-ship S1). Note that a longer value with
+      # `includeSubDomains` contains a space and will need inner quoting here.
+      caddy.header.Strict-Transport-Security: "max-age=300"
 
 networks:
   shared:

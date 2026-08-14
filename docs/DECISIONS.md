@@ -1355,6 +1355,49 @@ means "selected" and, on an answer, comes uncomfortably close to a verdict.
 
 ---
 
+### D-081 — `/metrics` binds `0.0.0.0` in the container and publishes no port *(amends D-062)*
+
+D-062 put `/metrics` on its own listener bound to loopback, on the reasoning
+that a separate socket cannot be exposed by a Caddy misconfiguration the way a
+route on the main mux can. That reasoning is still right and the listener stays
+separate. The **bind address** was wrong, and wrong in the way that is hardest
+to notice: it looked like the careful choice.
+
+A container has its own network namespace. `127.0.0.1:9090` inside it is the
+*container's* loopback — not the host's, and not the `shared` network's. So
+nothing could scrape it: not a host agent, not a sibling Prometheus, not
+`curl` over SSH. The comment in `docker-compose.prod.yml` claimed the metrics
+were "reachable from the box and not from the internet", and neither half was
+true. **Pool saturation is named in D-062 as the metric most worth watching,
+and it was observable only through `docker exec`.**
+
+**Production binds `0.0.0.0:9090` and lists no `ports:` entry.** The privacy
+comes from not publishing, which it always did — an unpublished port is
+unroutable from the internet whatever it binds, while a container on `shared`
+can still reach it. The bind address was never what was protecting anything.
+
+**The default in `internal/config/config.go` stays `127.0.0.1:9090`,** because
+the default is for a process running on a host, where loopback means what it
+looks like it means. The container is the exception and says so explicitly.
+
+Three comments — `config.go`, `.env`, `.env.example` — read "never bind this to
+0.0.0.0 (D-062)". All three were changed with this decision. A rule stated in
+three places and contradicted in a fourth is how a fix gets reverted six months
+later by someone who read the rule and not the exception.
+
+**The one line that would make this public is `9090` in `ports:`.** It is not
+there, and the compose file now says so where somebody would add it.
+
+**Rejected:** publishing to the host's loopback (`127.0.0.1:9090:9090`), which
+works and is what a host-level agent would want, but adds a published port to
+buy something the `shared` network already provides — and D-062's instinct to
+keep the surface minimal is worth honouring where it costs nothing. Also
+rejected: putting `/metrics` back on the main mux behind an auth check, which
+trades a socket boundary for a code path, and code paths are the thing that get
+misconfigured.
+
+---
+
 ## Open questions
 
 None blocking. Deferred details, intentionally left until the feature is being built:

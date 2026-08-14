@@ -88,10 +88,16 @@ type Config struct {
 	MaxWritesPerMinute int
 	// MetricsAddr is where /metrics is served, on its own listener.
 	//
-	// Bound to loopback by default and never to 0.0.0.0: pool saturation and
-	// request latency are operational data, and a separate socket cannot be
-	// exposed by a reverse-proxy misconfiguration the way a route on the main
-	// mux can (D-062). Empty disables it.
+	// A separate socket cannot be exposed by a reverse-proxy misconfiguration
+	// the way a route on the main mux can (D-062). Empty disables it.
+	//
+	// The default is loopback because the default is for a process running on
+	// a host, where loopback means what it looks like it means. **In a
+	// container it does not**: the namespace gives the container its own
+	// loopback, so 127.0.0.1 there is reachable only from inside that
+	// container and the listener may as well not exist. Production therefore
+	// sets 0.0.0.0 and publishes no port, which is what actually keeps it off
+	// the internet (D-081, amending D-062).
 	MetricsAddr string
 }
 
