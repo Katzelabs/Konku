@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { shortHash } from '../../lib/storage'
 
 /** How long to wait between verification mails. */
 export const RESEND_COOLDOWN_SECONDS = 60
@@ -23,13 +24,18 @@ const STORAGE_PREFIX = 'konku:resend-until:'
  * cooldown is the same sixty seconds whether the tab stayed open or not.
  *
  * Keyed by address so signing out and signing in as someone else does not
- * inherit the previous account's wait.
+ * inherit the previous account's wait — but by a *hash* of it, never the
+ * address itself. The key used to be `konku:resend-until:you@example.com`,
+ * which wrote an email address into persistent storage on a possibly shared
+ * device, where it outlived the session and even account deletion (F-10).
+ * Hard rule 10 keeps addresses out of logs; this is the same class of thing.
+ * The hash only has to be stable and unreadable at a glance — see shortHash.
  */
 export function useResendCooldown(
   key: string,
   seconds: number = RESEND_COOLDOWN_SECONDS,
 ) {
-  const storageKey = STORAGE_PREFIX + key
+  const storageKey = STORAGE_PREFIX + shortHash(key)
 
   const [until, setUntil] = useState<number>(() => readDeadline(storageKey, seconds))
   const [now, setNow] = useState(() => Date.now())

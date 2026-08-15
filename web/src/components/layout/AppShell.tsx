@@ -33,6 +33,21 @@ export function AppShell({
 
   return (
     <div className="flex min-h-dvh flex-col md:h-dvh md:flex-row md:overflow-hidden">
+      {/*
+        First in the DOM, invisible until it is focused (F-12).
+
+        Without it, reaching the page with a keyboard means tabbing the whole
+        sidebar and the top bar again after every navigation — the nav is the
+        same nav each time, and it sits before the only thing that changed.
+        The ring comes from the global :focus-visible rule in theme.css.
+      */}
+      <a
+        href="#konten"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-50 focus:rounded-md focus:border focus:border-border focus:bg-card focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-card-fg"
+      >
+        Lewati ke konten
+      </a>
+
       <Sidebar due={dueCount} collapsed={sidebar.collapsed} />
 
       <div className="flex min-w-0 flex-1 flex-col md:overflow-hidden">
@@ -43,7 +58,10 @@ export function AppShell({
           onToggleSidebar={sidebar.toggle}
         />
 
-        <main className="flex-1 md:overflow-y-auto">
+        {/* tabIndex -1 so the skip link actually moves focus here and not
+            just the scroll position — a jump that leaves focus in the nav
+            puts the next Tab back at the top of the sidebar. */}
+        <main id="konten" tabIndex={-1} className="flex-1 md:overflow-y-auto">
           <div className="px-4 py-6 md:px-gutter md:py-8">{children}</div>
         </main>
       </div>

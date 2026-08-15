@@ -4,6 +4,31 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Konku</title>
+    <meta
+      name="description"
+      content="Catatan, kartu, dan ulangan terjadwal — supaya tidak ada yang kamu pelajari hilang diam-diam."
+    />
+
+    <!-- Icons. The SVG is the mark itself; the PNGs are rasterised from it by
+         scripts/icons.mjs, because iOS ignores SVG for a home-screen icon. -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="/icon-180.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <!-- Added to the home screen, this opens without browser chrome. The title
+         is what sits under the icon there; without it iOS uses <title>, which
+         is the same word today and would not stay that way. -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Konku" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+
+    <!-- Must come before theme.js, which rewrites it to match the resolved
+         theme. A `media` pair instead would follow the OS and ignore an
+         explicit choice, which is the one case this app actually offers. -->
+    <meta name="theme-color" content="#f9fafb" />
+    <script src="/theme.js"></script>
   </head>
   <body>
     <div id="root"></div>

@@ -190,6 +190,12 @@ jobs:
       - name: build
         run: npm run build
 
+      # The login screen is the one page a signed-out visitor waits for, and
+      # it used to carry the whole application (F-09). The split lives in
+      # App.tsx; this is what notices when it stops.
+      - name: entry bundle budget
+        run: npm run check:bundle
+
   e2e:
     name: End-to-end
     runs-on: ubuntu-latest

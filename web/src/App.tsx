@@ -1,38 +1,85 @@
+import { lazy, Suspense, type ReactNode } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
-import { AppShell } from './components/layout/AppShell'
 import { RouteErrorBoundary } from './components/error-boundary'
 import { Loading } from './components/ui/spinner'
 import { Notice } from './components/ui/notice'
 import LoginPage from './features/auth/LoginPage'
-import ForgotPasswordPage from './features/auth/ForgotPasswordPage'
-import PrivacyPage from './features/legal/PrivacyPage'
-import TermsPage from './features/legal/TermsPage'
-import ResetPasswordPage from './features/auth/ResetPasswordPage'
-import SignupPage from './features/auth/SignupPage'
-import VerifyPage from './features/auth/VerifyPage'
-import VerifyPendingPage from './features/auth/VerifyPendingPage'
 import { useMe } from './features/auth/useAuth'
-import CardsPage from './features/cards/CardsPage'
-import CardEditorPage from './features/cards/CardEditorPage'
-import CategoriesPage from './features/categories/CategoriesPage'
-import DomainsPage from './features/domains/DomainsPage'
-import HomePage from './features/home/HomePage'
-import NoteEditorPage from './features/notes/NoteEditorPage'
-import NotesPage from './features/notes/NotesPage'
-import ReviewHomePage from './features/review/ReviewHomePage'
-import ReviewPage from './features/review/ReviewPage'
-import ReviewSetPage from './features/review/ReviewSetPage'
-import RunPage from './features/review/RunPage'
-import AboutSettings from './features/settings/AboutSettings'
-import AccountSettings from './features/settings/AccountSettings'
-import AppearanceSettings from './features/settings/AppearanceSettings'
-import PreferencesSettings from './features/settings/PreferencesSettings'
-import DataSettings from './features/settings/DataSettings'
-import SessionsSettings from './features/settings/SessionsSettings'
-import SettingsLayout from './features/settings/SettingsLayout'
 import { PeekProvider, usePeekBackground } from './lib/peek-route'
-import { TimerProvider } from './features/timer/TimerProvider'
-import TimerPage from './features/timer/TimerPage'
+
+/*
+ * Every screen except the login form is its own chunk (F-09).
+ *
+ * The build was one 805 kB file: every route, the markdown renderer, all five
+ * Radix packages, zod and the whole lucide import graph were in the first byte
+ * the *login screen* needed, so a signed-out visitor downloaded the entire
+ * application to look at an email field. Over Indonesian mobile data that is
+ * the difference between a working deploy and a considered one.
+ *
+ * LoginPage stays eager on purpose: it is what a signed-out visitor is here
+ * for, and making it lazy would trade a smaller entry for a second round trip
+ * before anything renders. Everything else is behind a click or a session.
+ *
+ * Rollup handles the rest on its own — a module two lazy routes share becomes
+ * a chunk they both fetch, so the markdown renderer lands beside the note and
+ * card screens rather than in the entry. `manualChunks` in vite.config.ts only
+ * pins the framework, which is stable across deploys and always needed.
+ */
+/*
+ * The shell and the timer are lazy for the same reason the screens are: the
+ * sidebar, the bottom nav, the account menu and the capture gate are the
+ * signed-in application, and a signed-out visitor was downloading all of it —
+ * along with the Radix menu and every icon they use — to see a login form.
+ * Named exports, hence the `.then`.
+ */
+const AppShell = lazy(() =>
+  import('./components/layout/AppShell').then((m) => ({ default: m.AppShell })),
+)
+const TimerProvider = lazy(() =>
+  import('./features/timer/TimerProvider').then((m) => ({ default: m.TimerProvider })),
+)
+
+const ForgotPasswordPage = lazy(() => import('./features/auth/ForgotPasswordPage'))
+const PrivacyPage = lazy(() => import('./features/legal/PrivacyPage'))
+const TermsPage = lazy(() => import('./features/legal/TermsPage'))
+const ResetPasswordPage = lazy(() => import('./features/auth/ResetPasswordPage'))
+const SignupPage = lazy(() => import('./features/auth/SignupPage'))
+const VerifyPage = lazy(() => import('./features/auth/VerifyPage'))
+const VerifyPendingPage = lazy(() => import('./features/auth/VerifyPendingPage'))
+const CardsPage = lazy(() => import('./features/cards/CardsPage'))
+const CardEditorPage = lazy(() => import('./features/cards/CardEditorPage'))
+const CategoriesPage = lazy(() => import('./features/categories/CategoriesPage'))
+const DomainsPage = lazy(() => import('./features/domains/DomainsPage'))
+const HomePage = lazy(() => import('./features/home/HomePage'))
+const NoteEditorPage = lazy(() => import('./features/notes/NoteEditorPage'))
+const NotesPage = lazy(() => import('./features/notes/NotesPage'))
+const ReviewHomePage = lazy(() => import('./features/review/ReviewHomePage'))
+const ReviewPage = lazy(() => import('./features/review/ReviewPage'))
+const ReviewSetPage = lazy(() => import('./features/review/ReviewSetPage'))
+const RunPage = lazy(() => import('./features/review/RunPage'))
+const AboutSettings = lazy(() => import('./features/settings/AboutSettings'))
+const AccountSettings = lazy(() => import('./features/settings/AccountSettings'))
+const AppearanceSettings = lazy(() => import('./features/settings/AppearanceSettings'))
+const PreferencesSettings = lazy(() => import('./features/settings/PreferencesSettings'))
+const DataSettings = lazy(() => import('./features/settings/DataSettings'))
+const SessionsSettings = lazy(() => import('./features/settings/SessionsSettings'))
+const SettingsLayout = lazy(() => import('./features/settings/SettingsLayout'))
+const TimerPage = lazy(() => import('./features/timer/TimerPage'))
+
+/** A chunk that is still arriving, where a whole page will be. */
+function PageChunk({ children }: { children: ReactNode }) {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-dvh items-center justify-center">
+          <Loading />
+        </main>
+      }
+    >
+      {children}
+    </Suspense>
+  )
+}
 
 export default function App() {
   const { data: user, isPending, error } = useMe()
@@ -68,29 +115,51 @@ export default function App() {
    * behind the login screen would mean the most common case — clicking the
    * link on a device that never signed in — lands on a form instead.
    */
-  if (location.pathname === '/verify') return <VerifyPage />
-  if (location.pathname === '/reset-password') return <ResetPasswordPage />
+  if (location.pathname === '/verify')
+    return (
+      <PageChunk>
+        <VerifyPage />
+      </PageChunk>
+    )
+  if (location.pathname === '/reset-password')
+    return (
+      <PageChunk>
+        <ResetPasswordPage />
+      </PageChunk>
+    )
 
   /*
    * The two documents, reachable in every authentication state and outside the
    * app shell. The moments someone wants them are before signing up and after
    * deciding to leave, and neither is a moment they are inside the app.
    */
-  if (location.pathname === '/privacy') return <PrivacyPage />
-  if (location.pathname === '/terms') return <TermsPage />
+  if (location.pathname === '/privacy')
+    return (
+      <PageChunk>
+        <PrivacyPage />
+      </PageChunk>
+    )
+  if (location.pathname === '/terms')
+    return (
+      <PageChunk>
+        <TermsPage />
+      </PageChunk>
+    )
 
   if (!user) {
     return (
-      <Routes>
-        <Route path="/signup" element={<SignupPage />} />
-        {/* Recovery is not a registration feature, so it is here whether or
-            not ALLOW_SIGNUP is on: a closed instance still has accounts, and
-            they still have people who forget passwords. */}
-        <Route path="/forgot" element={<ForgotPasswordPage />} />
-        {/* Any other path while signed out is the login screen, not a 404:
-            a deep link is where to return to after signing in. */}
-        <Route path="*" element={<LoginPage />} />
-      </Routes>
+      <PageChunk>
+        <Routes>
+          <Route path="/signup" element={<SignupPage />} />
+          {/* Recovery is not a registration feature, so it is here whether or
+              not ALLOW_SIGNUP is on: a closed instance still has accounts, and
+              they still have people who forget passwords. */}
+          <Route path="/forgot" element={<ForgotPasswordPage />} />
+          {/* Any other path while signed out is the login screen, not a 404:
+              a deep link is where to return to after signing in. */}
+          <Route path="*" element={<LoginPage />} />
+        </Routes>
+      </PageChunk>
     )
   }
 
@@ -101,9 +170,18 @@ export default function App() {
    * shell would produce a screen of failed panels that reads as a bug. This is
    * the one state where the whole app is replaced by an explanation.
    */
-  if (!user.emailVerified) return <VerifyPendingPage email={user.email} />
+  if (!user.emailVerified)
+    return (
+      <PageChunk>
+        <VerifyPendingPage email={user.email} />
+      </PageChunk>
+    )
 
   return (
+    // The shell and the timer are chunks too, so the whole signed-in tree
+    // needs a boundary above it. Left unindented, like the two wrappers
+    // inside it, so this file's route table stays diffable.
+    <PageChunk>
     <TimerProvider>
       <PeekProvider
         peekedPath={background ? location.pathname : null}
@@ -117,6 +195,20 @@ export default function App() {
             (F-03, components/error-boundary.tsx).
           */}
           <RouteErrorBoundary>
+          {/*
+            The screen's chunk, arriving. Inside the boundary and inside the
+            shell, so a slow network shows a spinner where the page goes and
+            leaves the nav to do what it always does — and outside `<Routes>`,
+            so opening a peek over a list does not remount the route it is
+            peeking from.
+          */}
+          <Suspense
+            fallback={
+              <div className="flex justify-center py-16">
+                <Loading />
+              </div>
+            }
+          >
           {/*
             One `<Routes>`, matched against the list's location while a peek is
             open. The preview is no longer a second `<Routes>` rendered beside
@@ -177,9 +269,11 @@ export default function App() {
 
             <Route path="*" element={<Navigate to="/home" replace />} />
           </Routes>
+          </Suspense>
           </RouteErrorBoundary>
         </AppShell>
       </PeekProvider>
     </TimerProvider>
+    </PageChunk>
   )
 }

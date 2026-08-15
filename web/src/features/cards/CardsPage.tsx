@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Plus, Search, Trash2, Undo2 } from 'lucide-react'
+import { Plus, Trash2, Undo2 } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import type { Category, CardSummary, Domain } from '../../api/types'
 import { DomainDot } from '../../components/ui/badge'
@@ -9,7 +9,7 @@ import { ConfirmDialog } from '../../components/ui/confirm-dialog'
 import { EmptyState } from '../../components/ui/empty-state'
 import { LoadMore } from '../../components/ui/load-more'
 import { FilterBar } from '../../components/ui/filter-bar'
-import { Input } from '../../components/ui/input'
+import { SearchInput } from '../../components/ui/search-input'
 import { DetailPlaceholder, ListDetail } from '../../components/ui/list-detail'
 import { MarkdownInline } from '../../components/ui/markdown'
 import { Notice } from '../../components/ui/notice'
@@ -292,15 +292,13 @@ export default function CardsPage() {
           */}
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
-              <div className="relative flex-1 @2xl:max-w-sm">
-                <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle-fg" />
-                <Input
-                  value={query}
-                  onChange={(e) => setParam('q', e.target.value)}
-                  placeholder="Cari isi kartu…"
-                  className="pl-9"
-                />
-              </div>
+              <SearchInput
+                className="flex-1 @2xl:max-w-sm"
+                value={query}
+                onChange={(next) => setParam('q', next)}
+                placeholder="Cari isi kartu…"
+                label="Cari kartu"
+              />
               <ViewToggle mode={view} onChange={setView} />
             </div>
 

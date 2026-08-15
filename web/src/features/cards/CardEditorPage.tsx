@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { ArrowLeft, Folder, Tag, Trash2 } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Button } from '../../components/ui/button'
@@ -339,10 +339,19 @@ function Side({
   onChange: (v: string) => void
   placeholder: string
 }) {
+  // The caption above the field was a <span>, which reads as a label and is
+  // not one: nothing associated it with the textarea, so both sides of a card
+  // were unlabelled to a screen reader (F-12). A <label htmlFor> is the same
+  // pixels and also makes the caption click into the field.
+  const id = useId()
+
   return (
     <div className="flex flex-col gap-2">
-      <span className="text-xs font-medium text-subtle-fg">{label}</span>
+      <label htmlFor={id} className="text-xs font-medium text-subtle-fg">
+        {label}
+      </label>
       <Textarea
+        id={id}
         variant="plain"
         value={value}
         onChange={(e) => onChange(e.target.value)}

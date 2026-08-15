@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { api, ApiError } from '../../api/client'
+import { clearAccountStorage } from '../../lib/storage'
 
 export interface User {
   id: string
@@ -57,6 +58,10 @@ export const authConfigQueryKey = ['auth', 'config'] as const
  */
 function reportSignedOut(qc: QueryClient) {
   qc.setQueryData(meQueryKey, null)
+  // The other half of the same idea, and it was missing: the query cache is
+  // not the only place the last account left something behind (F-10, see
+  // lib/storage.ts).
+  clearAccountStorage()
   qc.removeQueries({
     // Everything except who is signed in and what this instance allows.
     // Cached notes and due cards belong to the account that just left and

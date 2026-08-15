@@ -258,7 +258,10 @@ export default function NoteEditorPage() {
             </PropertyRow>
           </PropertyBar>
 
+          {/* A placeholder is not a label: it is gone the moment there is a
+              title, which is most of the time this field is read (F-12). */}
           <input
+            aria-label="Judul catatan"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Judul"
@@ -298,6 +301,7 @@ export default function NoteEditorPage() {
           {showWrite && (
             <Textarea
               variant="plain"
+              aria-label="Isi catatan"
               value={content}
               onChange={(e) => setContent(e.target.value)}
               spellCheck={false}

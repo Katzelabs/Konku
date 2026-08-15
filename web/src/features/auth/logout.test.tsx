@@ -81,19 +81,41 @@ function renderApp() {
   )
 }
 
+async function signOut(person: ReturnType<typeof userEvent.setup>) {
+  // Signed in: the account menu is there to open.
+  const account = await screen.findByRole('button', { name: 'Akun' })
+  await person.click(account)
+  await person.click(await screen.findByRole('menuitem', { name: /keluar/i }))
+}
+
 it('lands on the login screen after signing out, with no reload', async () => {
   const person = userEvent.setup()
   renderApp()
 
-  // Signed in: the account menu is there to open.
-  const account = await screen.findByRole('button', { name: 'Akun' })
-
-  await person.click(account)
-  await person.click(await screen.findByRole('menuitem', { name: /keluar/i }))
+  await signOut(person)
 
   // The login form, reached by the app re-rendering itself. A reload is not
   // available to the user as a fix — they have to know to press it.
   await waitFor(() =>
     expect(screen.getByRole('button', { name: 'Masuk' })).toBeInTheDocument(),
   )
+})
+
+it('takes the account out of localStorage on the way, and leaves the theme', async () => {
+  // The query cache was the only thing signing out emptied, so a shared
+  // browser carried the previous account's timer and preferences into the
+  // next one (F-10). Asserted through the real path rather than against
+  // clearAccountStorage, because what broke before was the wiring.
+  localStorage.setItem('konku.timer', '{"running":true}')
+  localStorage.setItem('konku:notes-view', 'grid')
+  localStorage.setItem('konku.theme', 'dark')
+
+  const person = userEvent.setup()
+  renderApp()
+
+  await signOut(person)
+
+  await waitFor(() => expect(localStorage.getItem('konku.timer')).toBeNull())
+  expect(localStorage.getItem('konku:notes-view')).toBeNull()
+  expect(localStorage.getItem('konku.theme')).toBe('dark')
 })

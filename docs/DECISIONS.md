@@ -1628,6 +1628,114 @@ and would mint a time series per value somebody chose to send.
 
 ---
 
+### D-086 — The launch polish: a theme before the paint, a debounced URL, and an entry the login screen can afford
+
+The last tier of the frontend audit (F-07 – F-12). Nothing here was broken;
+each one is the difference between a working deploy and one that survives being
+opened on a phone, which is what `04-ship.md` S6 is for.
+
+**The theme applies from a blocking script in `<head>`, not from an effect.**
+`ThemeProvider` toggled `.dark` inside `useEffect`, and an effect runs after
+the first paint by definition — so every reload for a dark-theme user painted
+the light palette and flipped it a frame later. The header comment claimed the
+choice "applies before the first paint"; localStorage makes that *possible* and
+the effect is what actually scheduled it. The usual fix is an inline script,
+which the CSP has no `'unsafe-inline'` for and is not getting one for a theme.
+`web/public/theme.js` is a same-origin file, which satisfies `script-src 'self'`
+with no policy change at all. It cannot be `type="module"` — a module script is
+deferred by definition, which would put it back after the paint it exists to
+precede — so it cannot import, and it restates the storage key and the two
+chrome colours that `useTheme.tsx` also holds. `useTheme.test.ts` reads the file
+and fails when the two drift, which is the second mechanism (hard rule 9).
+
+**`theme-color` is rewritten rather than declared twice.** A `media` pair in the
+markup follows the OS, which is wrong for the one case this app actually offers:
+an explicit dark choice on a light system. One meta tag, set from the resolved
+theme by the same two places that set the class.
+
+**The search box holds its own text; the URL gets it 250 ms later.** Both index
+screens wrote `?q=` from `onChange`, so every keystroke was a `replaceState` —
+and each one changed the filtered id list, which re-fired `useAutoSelect` into a
+second `navigate(…, {replace: true})`. Two history writes per character, against
+a Safari limit of roughly a hundred in thirty seconds. Since D-084 the query is
+also part of the React Query key, so it was one request per character as well.
+The URL stays the source of truth for the *filter* — that is what makes a search
+a link — and stops being the source of truth for each letter. `SearchInput`
+tracks the last value it agreed with its parent on, so it can tell its own echo
+coming back through the router from a real outside change like Back or a cleared
+filter; without that distinction the sync overwrites whatever was typed during
+the round trip. Enter commits immediately, because waiting out a debounce after
+someone says they are done reads as a dropped keystroke.
+
+**Every screen is its own chunk, and the login form is not.** The build was one
+805 kB file: every route, the markdown renderer, all five Radix packages, zod
+and the lucide graph were in the first byte the *login screen* needed. `lazy()`
+on the route elements — plus `AppShell` and `TimerProvider`, which are the
+signed-in application and were being downloaded to render an email field — takes
+the signed-out entry from 241 kB gzipped to 121 kB. `LoginPage` stays eager: it
+is what a signed-out visitor is here for, and making it lazy trades a smaller
+entry for a round trip before anything renders. `manualChunks` pins only the
+framework, by package name and never by a path match — a function testing
+`id.includes('react')` also catches react-markdown, and the failure is silent.
+The rest of the split is Rollup's own, which is why the markdown renderer lands
+beside the note and card screens rather than in the entry. `npm run check:bundle`
+in CI is the second mechanism: turning one `lazy()` back into a static import is
+a one-line change nothing else would notice, and its whole cost is paid by
+whoever opens the login screen on mobile data.
+
+**Signing out clears the app's localStorage, on an allowlist.** It cleared the
+query cache and nothing else, so the theme, the sidebar, both view modes, the
+resend cooldown and the running timer's state carried into the next account on a
+shared browser. `clearAccountStorage` sweeps the `konku.` and `konku:` prefixes
+and keeps exactly one key — the theme, which is a property of the screen and not
+of the account. An allowlist rather than a list of things to remove, so a key
+added next year is swept by default instead of leaking by default.
+
+**The resend cooldown keys on a hash of the address, not the address.**
+`konku:resend-until:you@example.com` wrote an email address into persistent
+storage on a possibly shared device, where it outlived the session and even
+account deletion. Rule 10 keeps addresses out of logs for the same reason.
+FNV-1a and not a digest, stated plainly in the comment: this is not protecting a
+secret from someone holding the device, it stops an address being *displayed* —
+and SubtleCrypto is async, so it could not produce the key the first synchronous
+read needs.
+
+**`index.html` grew a head, and the mark is generated from one description.**
+Favicon, description, `theme-color`, apple-touch-icon, a manifest, and the
+`mobile-web-app-capable` pair, because the phone pass in S6 is going to be
+looking at a home-screen shortcut. `scripts/icons.mjs` emits the SVG and every
+PNG from the same geometry, in Node stdlib — iOS ignores SVG for a home-screen
+icon, so a raster is unavoidable, and a raster nobody can regenerate is a binary
+that quietly becomes wrong the day the accent changes. The maskable variant is
+full-bleed on purpose: the launcher does the cropping, and rounding the corners
+ourselves would put a transparent notch inside its crop.
+
+**Unhashed files at the dist root answer `no-cache`.** Everything under
+`/assets` is content-hashed and immutable for a year; `theme.js`, the icons and
+the manifest keep the names they were written with, and `theme.js` in particular
+restates a storage key that lives in the app. A stale copy is a theme that stops
+applying before the first paint — revalidation is one 304 on a file the browser
+already has.
+
+**A skip link, and two labels that were placeholders.** The shell renders the
+same sidebar, top bar and bottom nav before the only part of the page that
+changed, so arriving anywhere by keyboard meant tabbing all of it again. `<main>`
+takes `tabIndex={-1}` as well, or the fragment moves the scroll and leaves focus
+in the sidebar. The note title, the note body and both sides of a card were
+labelled only by placeholders — text that is gone exactly when the field has
+content, which is most of the time it is read. The card editor's caption was a
+`<span>` that looked like a label and was associated with nothing; `<label
+htmlFor>` is the same pixels and also clicks into the field.
+
+**Rejected:** weakening the CSP with `'unsafe-inline'` for the theme script;
+`purpose: maskable` on the rounded icon, which would be cropped into a notch;
+virtualising the long lists, which F-12 raised and D-084 changed the shape of —
+fifty rows a page is not where that cost lives; and clearing the theme on sign
+out, which would repaint the login screen white on a device somebody
+deliberately set to dark, in the name of a privacy it does not provide.
+
+---
+
 ## Open questions
 
 None blocking. Deferred details, intentionally left until the feature is being built:

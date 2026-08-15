@@ -14,6 +14,30 @@ export default defineConfig({
     // no copy step and no stale-dist bugs (D-032).
     outDir: '../internal/web/dist',
     emptyOutDir: true,
+
+    rollupOptions: {
+      output: {
+        /*
+         * The framework, pinned to its own chunk (F-09).
+         *
+         * The real split is route-level and lives in App.tsx: every screen is
+         * a `lazy()` import, so Rollup already keeps them — and anything only
+         * they use, the markdown renderer above all — out of the entry. This
+         * adds the one thing that split cannot express: react, the DOM
+         * renderer and the router change on an upgrade and never on a deploy,
+         * so giving them a stable chunk means a release invalidates the app's
+         * hash and not 180 kB of vendor code the browser already has.
+         *
+         * Named packages rather than a path-matching function on purpose. A
+         * function that tests `id.includes('react')` also catches
+         * react-markdown, and the failure is silent: a bigger chunk, still
+         * correct, discovered months later.
+         */
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-dom/client', 'react-router-dom'],
+        },
+      },
+    },
   },
 
   server: {
