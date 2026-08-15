@@ -15,8 +15,10 @@ import {
 import { Loading } from '../../components/ui/spinner'
 import { Textarea } from '../../components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '../../components/ui/toggle-group'
+import { useFlushOnHide } from '../../lib/useFlushOnHide'
 import { useCategories, useCreateCategory } from '../categories/queries'
 import { useDomains } from '../domains/queries'
+import type { NoteInput } from './queries'
 import { useDeleteNote, useNote, useSaveNote } from './queries'
 
 /**
@@ -25,6 +27,13 @@ import { useDeleteNote, useNote, useSaveNote } from './queries'
  * there so that forgetting to press it costs nothing, not to replace it.
  */
 const AUTOSAVE_MS = 1500
+
+/**
+ * Backoff between attempts after a save fails. The last delay repeats, and
+ * there is no attempt limit: until a save lands, the only copy of the text is
+ * in this tab, so "give up retrying" and "lose the note" are the same thing.
+ */
+const RETRY_MS = [2_000, 5_000, 15_000, 30_000, 60_000]
 
 export default function NoteEditorPage() {
   const { id = '' } = useParams()
@@ -47,6 +56,9 @@ export default function NoteEditorPage() {
   const [domainId, setDomainId] = useState<string | null>(null)
   const [categoryIds, setCategoryIds] = useState<string[]>([])
   const [loaded, setLoaded] = useState(false)
+  // How many times the current failure has been retried, which is also the
+  // index into RETRY_MS. Reset by a save that succeeds.
+  const [attempt, setAttempt] = useState(0)
 
   // The editor is full width now, so write and preview fit side by side. It
   // was a mode only because the note list occupied half the screen.
@@ -86,32 +98,36 @@ export default function NoteEditorPage() {
       domainId !== saved.current.domainId ||
       !sameIds(categoryIds, saved.current.categoryIds))
 
+  // What a save would send right now. Held in one place so the retry, the
+  // unmount save and the keepalive flush cannot drift apart from each other.
+  const input: NoteInput = { title, contentMd: content, domainId, categoryIds }
+
   const doSave = useCallback(() => {
-    save.mutate(
-      { title, contentMd: content, domainId, categoryIds },
-      {
-        onSuccess: (fresh) => {
-          // Straight adoption. This used to reconcile the response against
-          // live keystrokes and remap the caret, because the parser rewrote
-          // the markdown to insert card IDs. Nothing rewrites a note now
-          // (D-055), so the response is what was sent.
-          saved.current = {
-            title: fresh.title,
-            content: fresh.contentMd,
-            domainId: fresh.domainId,
-            categoryIds: fresh.categoryIds,
-          }
-        },
+    save.mutate(input, {
+      onSuccess: (fresh) => {
+        // Straight adoption. This used to reconcile the response against
+        // live keystrokes and remap the caret, because the parser rewrote
+        // the markdown to insert card IDs. Nothing rewrites a note now
+        // (D-055), so the response is what was sent.
+        saved.current = {
+          title: fresh.title,
+          content: fresh.contentMd,
+          domainId: fresh.domainId,
+          categoryIds: fresh.categoryIds,
+        }
+        setAttempt(0)
       },
-    )
+    })
+    // The four fields rather than `input`, which is a fresh object on every
+    // render: these are what it is built from, so the list is exact.
   }, [title, content, domainId, categoryIds, save])
 
   // doSave is rebuilt on every render, so the debounce reads it through a ref
   // rather than depending on it. Depending on it directly would restart the
   // countdown on *any* re-render, and a note edited while something else keeps
   // re-rendering would never autosave at all.
-  const latest = useRef({ dirty, doSave })
-  latest.current = { dirty, doSave }
+  const latest = useRef({ dirty, doSave, input })
+  latest.current = { dirty, doSave, input }
 
   // The debounce: every change restarts the clock, nothing else does.
   useEffect(() => {
@@ -120,8 +136,52 @@ export default function NoteEditorPage() {
     return () => clearTimeout(timer)
   }, [dirty, title, content, domainId, categoryIds])
 
+  /*
+   * The retry the status line has always claimed to be making.
+   *
+   * The debounce above cannot do it. A failed save leaves `saved.current`
+   * untouched, so `dirty` is still true and title, content, domainId and
+   * categoryIds are all the same values they were — every dependency is
+   * unchanged, and the effect does not re-run. TanStack does not cover it
+   * either: mutations default to zero retries. So the only thing that ever
+   * tried again was the next keystroke, which is precisely what stops when
+   * someone finishes writing and shuts the laptop.
+   *
+   * Retrying through doSave rather than through TanStack's `retry` option is
+   * deliberate. `retry` re-sends the payload captured when mutate was called,
+   * so an attempt that lands after further typing would overwrite the newer
+   * text with the older text — a data-loss bug inside the fix for a data-loss
+   * bug. doSave always sends what is on screen now.
+   */
+  useEffect(() => {
+    if (!save.isError || !dirty) return
+    const delay = RETRY_MS[Math.min(attempt, RETRY_MS.length - 1)]
+    const timer = setTimeout(() => {
+      // Re-checked rather than trusted: the online listener below may have
+      // got there first while this timer was pending.
+      if (!latest.current.dirty) return
+      setAttempt((n) => n + 1)
+      latest.current.doSave()
+    }, delay)
+    return () => clearTimeout(timer)
+  }, [save.isError, dirty, attempt])
+
+  // Coming back online is better evidence than any timer, so it jumps the
+  // backoff instead of waiting it out.
+  useEffect(() => {
+    const retryNow = () => {
+      if (latest.current.dirty) latest.current.doSave()
+    }
+    window.addEventListener('online', retryNow)
+    return () => window.removeEventListener('online', retryNow)
+  }, [])
+
   // Leaving mid-edit saves rather than warning. "Are you sure you want to
   // discard?" is a guilt prompt for something the app can simply handle.
+  //
+  // This is a React cleanup, so it covers SPA navigation and nothing else: not
+  // a tab close, not a reload, not a link off the origin. useFlushOnHide below
+  // is the second mechanism that covers those (hard rule 9).
   useEffect(
     () => () => {
       if (removed.current) return
@@ -129,6 +189,19 @@ export default function NoteEditorPage() {
     },
     [],
   )
+
+  useFlushOnHide({
+    onHidden: () => {
+      if (removed.current || !latest.current.dirty) return
+      latest.current.doSave()
+    },
+    // Idempotent, as that path requires: a PATCH at a note that already exists
+    // writes the same row whether it arrives once or twice.
+    pending: () =>
+      removed.current || !latest.current.dirty
+        ? null
+        : { path: `/notes/${id}`, method: 'PATCH', body: latest.current.input },
+  })
 
   if (isPending) return <Loading />
   if (error) return <Notice>{error.message}</Notice>
@@ -304,8 +377,10 @@ function SaveStatus({
   failed: boolean
 }) {
   if (failed) {
-    // Not alarming, and not a dead end: the text is still in the box and the
-    // next keystroke schedules another attempt.
+    // Not alarming, and not a dead end: the text is still in the box and
+    // another attempt is already scheduled. This line used to be a promise the
+    // code did not keep — the retry effect above is what makes it true, and it
+    // is why the wording did not need softening.
     return <span className="text-sm text-muted-fg">Belum tersimpan, mencoba lagi…</span>
   }
   if (pending) return <span className="text-sm text-subtle-fg">Menyimpan…</span>

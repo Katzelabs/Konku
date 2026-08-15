@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Folder, Tag, Trash2 } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Button } from '../../components/ui/button'
@@ -15,8 +15,11 @@ import {
 import { Separator } from '../../components/ui/separator'
 import { Loading } from '../../components/ui/spinner'
 import { Textarea } from '../../components/ui/textarea'
+import { useFlushOnHide } from '../../lib/useFlushOnHide'
+import type { Card as CardRow } from '../../api/types'
 import { useCategories, useCreateCategory } from '../categories/queries'
 import { useDomains } from '../domains/queries'
+import type { CardInput } from './queries'
 import { useCard, useCreateCard, useDeleteCard, useUpdateCard } from './queries'
 
 /**
@@ -26,6 +29,16 @@ import { useCard, useCreateCard, useDeleteCard, useUpdateCard } from './queries'
  * a keystroke there matters more than a stray write; a card is a small, final
  * pair of fields that feeds the review queue, and half-typed questions
  * shouldn't start showing up in tomorrow's due list.
+ *
+ * That reasoning survives, but it used to be the whole of the design, and the
+ * screen therefore threw away everything typed into it the moment you clicked
+ * the back link — silently, which is the one failure this product exists to
+ * prevent. It now keeps what you wrote when the screen leaves, when the tab is
+ * backgrounded, and when the tab closes, on one condition: **both sides are
+ * filled in**. That is what keeps the original argument intact. A card with a
+ * question and an answer is a card, and saving it puts nothing in the due list
+ * that the person did not write; a card with one side empty is still being
+ * composed, cannot be saved by the server anyway, and is left alone.
  */
 export default function CardEditorPage() {
   const { id } = useParams()
@@ -45,9 +58,32 @@ export default function CardEditorPage() {
   const [loaded, setLoaded] = useState(creating)
   const [confirming, setConfirming] = useState(false)
 
+  // Set the moment a delete succeeds, so the save-on-unmount below does not
+  // fire a write at a card that has just gone. Same guard, and same reason, as
+  // the note editor's.
+  const removed = useRef(false)
+
   const { data: domains } = useDomains()
   const { data: categories } = useCategories()
   const createCategory = useCreateCategory()
+
+  // What the server currently holds, so "dirty" is a fact rather than a guess.
+  // A new card starts from empty, which makes the first character typed dirty.
+  const saved = useRef({
+    front: '',
+    back: '',
+    domainId: null as string | null,
+    categoryIds: [] as string[],
+  })
+
+  const adopt = (c: CardRow) => {
+    saved.current = {
+      front: c.front,
+      back: c.back,
+      domainId: c.domainId,
+      categoryIds: c.categoryIds,
+    }
+  }
 
   useEffect(() => {
     if (!card || loaded) return
@@ -55,6 +91,7 @@ export default function CardEditorPage() {
     setBack(card.back)
     setDomainId(card.domainId)
     setCategoryIds(card.categoryIds)
+    adopt(card)
     setLoaded(true)
   }, [card, loaded])
 
@@ -62,16 +99,86 @@ export default function CardEditorPage() {
   const saveError = create.error ?? update.error
   const valid = front.trim() !== '' && back.trim() !== ''
 
-  function submit() {
-    const input = { front: front.trim(), back: back.trim(), domainId, categoryIds }
-    if (creating) {
-      create.mutate(input, {
-        onSuccess: (c) => navigate(`/cards/${c.id}`, { replace: true }),
-      })
-    } else {
-      update.mutate(input)
-    }
+  // What a save would send. Trimmed, because that is what goes to the server —
+  // comparing untrimmed state against a trimmed response would leave a card
+  // permanently dirty over a space at the end of a line.
+  const input: CardInput = {
+    front: front.trim(),
+    back: back.trim(),
+    domainId,
+    categoryIds,
   }
+
+  const dirty =
+    loaded &&
+    (input.front !== saved.current.front ||
+      input.back !== saved.current.back ||
+      input.domainId !== saved.current.domainId ||
+      !sameIds(categoryIds, saved.current.categoryIds))
+
+  /**
+   * Writes the card.
+   *
+   * `andGo` is only false on unmount, where navigating a route that is already
+   * being torn down does nothing. Everywhere else it must be true, and for a
+   * new card that is load-bearing rather than cosmetic: the navigation is what
+   * moves the screen off `/cards/new`, and until it happens `creating` is still
+   * true and the next save would POST a *second* card instead of patching the
+   * first.
+   */
+  const persist = useCallback(
+    (andGo: boolean) => {
+      if (creating) {
+        create.mutate(input, {
+          onSuccess: (c) => {
+            adopt(c)
+            // `replace`, so the browser back button still goes to /cards
+            // rather than to the empty new-card form.
+            if (andGo) navigate(`/cards/${c.id}`, { replace: true })
+          },
+        })
+      } else {
+        update.mutate(input, { onSuccess: adopt })
+      }
+      // The four fields rather than `input`, which is a fresh object on every
+      // render: these are what it is built from, so the list is exact.
+    },
+    [front, back, domainId, categoryIds, creating, create, update, navigate],
+  )
+
+  const submit = () => persist(true)
+
+  const latest = useRef({ dirty, valid, persist, input })
+  latest.current = { dirty, valid, persist, input }
+
+  // Leaving mid-edit saves rather than warning, the same call the note editor
+  // makes. A React cleanup covers SPA navigation only, which is the back link
+  // and the sidebar; useFlushOnHide below covers the tab.
+  useEffect(
+    () => () => {
+      if (removed.current) return
+      if (latest.current.dirty && latest.current.valid) latest.current.persist(false)
+    },
+    [],
+  )
+
+  useFlushOnHide({
+    // The page is hidden, not gone: it will very likely be looked at again, so
+    // this takes the ordinary route including the navigation.
+    onHidden: () => {
+      if (removed.current || !latest.current.dirty || !latest.current.valid) return
+      latest.current.persist(true)
+    },
+    // Only an existing card, and deliberately so. The keepalive path cannot
+    // read a response, so it cannot tell whether the write landed — and a
+    // creation sent twice is two cards, where a PATCH sent twice is one row
+    // written twice. Creating a card while the tab is hidden is left to
+    // `onHidden` above, which goes through the mutation and therefore knows.
+    pending: () =>
+      creating || removed.current || !latest.current.dirty || !latest.current.valid
+        ? null
+        : { path: `/cards/${id}`, method: 'PATCH', body: latest.current.input },
+  })
 
   if (!creating && isPending) return <Loading />
   if (error) return <Notice>{error.message}</Notice>
@@ -87,7 +194,19 @@ export default function CardEditorPage() {
         </Button>
 
         <div className="ml-auto flex items-center gap-3">
-          <Button variant="primary" size="sm" onClick={submit} disabled={!valid || pending}>
+          {/*
+            Stated because leaving now saves: the screen should say which of
+            the two states it is in rather than let you find out afterwards.
+            It is a fact, not a nag — no colour, no icon, and it goes away on
+            its own (hard rule 6).
+          */}
+          <SaveStatus dirty={dirty} valid={valid} pending={pending} />
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={submit}
+            disabled={!valid || !dirty || pending}
+          >
             {pending ? 'Menyimpan…' : 'Simpan'}
           </Button>
         </div>
@@ -171,11 +290,41 @@ export default function CardEditorPage() {
         confirmLabel="Hapus"
         pending={remove.isPending}
         onConfirm={() =>
-          remove.mutate(id as string, { onSuccess: () => navigate('/cards') })
+          remove.mutate(id as string, {
+            onSuccess: () => {
+              removed.current = true
+              navigate('/cards')
+            },
+          })
         }
       />
     </div>
   )
+}
+
+function sameIds(a: string[], b: string[]) {
+  if (a.length !== b.length) return false
+  const set = new Set(b)
+  return a.every((id) => set.has(id))
+}
+
+/**
+ * Three states, none of them an alarm. "Belum tersimpan" is only shown once
+ * there is something savable — a card with one side still empty is being
+ * written, not failing.
+ */
+function SaveStatus({
+  dirty,
+  valid,
+  pending,
+}: {
+  dirty: boolean
+  valid: boolean
+  pending: boolean
+}) {
+  if (pending) return <span className="text-sm text-subtle-fg">Menyimpan…</span>
+  if (dirty && valid) return <span className="text-sm text-subtle-fg">Belum tersimpan</span>
+  return null
 }
 
 /** One side of the card: the markdown source, with its rendering under it. */

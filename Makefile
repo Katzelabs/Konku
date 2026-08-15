@@ -25,6 +25,21 @@ DEV ?= true
 MAILPIT_SMTP_URL ?= smtp://localhost:1025
 MAILPIT_API_URL ?= http://localhost:8025
 
+# ...but not into the environment, and this is the only pair that has to opt
+# out. `export` above passes every variable through to every recipe, which is
+# what a default is for everywhere else — and is exactly wrong here.
+# mailpit_test.go skips on an empty MAILPIT_API_URL, so exporting a default
+# meant the guard never fired: `make check` ran the catcher tests against a
+# catcher that was not running and failed on connection refused, on any machine
+# that had not started one. That is the merge gate, so it failed for everybody
+# except whoever happened to have Mailpit up.
+#
+# unexport rather than dropping the defaults: test-mail passes both on its own
+# command line below, so the value is still there for the target that wants it,
+# from .env or from the operator's shell just the same. What changes is that
+# nothing gets it by accident.
+unexport MAILPIT_SMTP_URL MAILPIT_API_URL
+
 # Where dumps land. Deliberately outside the repo AND outside the Docker
 # volume: a backup that lives in the thing it is backing up is not a backup,
 # and `docker compose down -v` is the exact accident this guards against.
@@ -252,7 +267,8 @@ test-integration: ## Run integration tests against the dev Postgres
 
 # Separate from test-integration because it needs a different service. The mail
 # tests skip without MAILPIT_API_URL rather than failing, so `make test` stays
-# green on a machine with no catcher running.
+# green on a machine with no catcher running — which is why both variables are
+# unexported above and set here, on the one command line that wants them.
 test-mail: mail-up ## Run the mail tests against the dev SMTP catcher
 	MAILPIT_API_URL="$(MAILPIT_API_URL)" \
 	MAILPIT_SMTP_URL="$(MAILPIT_SMTP_URL)" \
