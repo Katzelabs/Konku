@@ -145,6 +145,39 @@ func reportPanic(r *http.Request, recovered any, requestID string) {
 	})
 }
 
+// reportClientError sends a crash that happened in the browser (F-03).
+//
+// Every argument has already been bounded and sanitised by handleClientError —
+// this function trusts its caller and nothing else, exactly like the two above
+// trust that nobody hands them an *http.Request to attach.
+//
+// `source` is the tag that matters. Without it a render throw in the SPA and a
+// panic in a handler are two events that look alike in the same project, and
+// the first question about any alert — is this us or is this the browser — would
+// need reading the stack to answer.
+//
+// The stack rides in a context rather than as an exception: sentry-go builds
+// stack traces from Go frames, and handing it a JavaScript one would produce a
+// mangled trace instead of a readable string. scrubEvent drops the "request"
+// context and leaves the rest, which is what keeps this one readable — and why
+// the caller, not this function, is responsible for there being nothing in it
+// that rule 10 forbids.
+func reportClientError(message, stack, route, kind, requestID string) {
+	hub := sentry.CurrentHub().Clone()
+	hub.WithScope(func(scope *sentry.Scope) {
+		scope.SetLevel(sentry.LevelError)
+		scope.SetTag("source", "client")
+		scope.SetTag("kind", kind)
+		scope.SetTag("route", route)
+		scope.SetTag("request_id", requestID)
+		if stack != "" {
+			scope.SetContext("client", sentry.Context{"stack": stack})
+		}
+
+		hub.CaptureMessage(message)
+	})
+}
+
 // recoverer replaces chi's Recoverer so a panic becomes an alert rather than a
 // line on a box nobody reads.
 //

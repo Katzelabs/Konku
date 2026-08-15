@@ -230,7 +230,6 @@ export default function CardsPage() {
         }
       />
 
-      {isPending && <Loading />}
       {error && <Notice>{error.message}</Notice>}
       {removeMany.isError && <Notice>{removeMany.error.message}</Notice>}
       {restoreMany.isError && <Notice>{restoreMany.error.message}</Notice>}
@@ -321,6 +320,9 @@ export default function CardsPage() {
           </div>
 
           <Separator />
+
+          {/* Under the rule, where the rows are about to be. See NotesPage. */}
+          {isPending && <Loading className="py-4" />}
 
           {!isPending && cards.length === 0 && !filtering && (
             <EmptyState

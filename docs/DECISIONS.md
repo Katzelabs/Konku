@@ -1546,6 +1546,88 @@ the fix.
 
 ---
 
+### D-085 — A crash in the browser reports to our own origin
+
+A throw during render unmounted the entire tree. What the person got was a
+white page with no reload affordance and no explanation; what we got was
+nothing at all, because Sentry runs in the Go process and `connect-src 'self'`
+has no exception for an ingest host. So the one part of this application that
+executes on somebody else's machine was also the one part that could fail
+silently — the gap between "hardened" and "operable".
+
+**Two boundaries, not twenty-five.** One around everything, outside the router,
+which catches a throw in a provider or on the signed-out screens. One inside
+`AppShell` around the `<Routes>`, which is what makes a broken screen a broken
+*screen*: the sidebar, the nav and the timer stay alive, so the way out is a
+click rather than a reload. Wrapping each of the twenty-five route elements
+individually would produce the same containment and twenty-five places to
+forget.
+
+**The route boundary clears itself on a path change, through a prop and not a
+`key`.** A changing `key` unmounts and remounts the subtree every time it
+changes, and the obvious key here is the pathname — which changes every time a
+peek opens over a list (D-084). That would throw the list away underneath its
+own preview on every click. `componentDidUpdate` comparing `resetKey` resets
+only a boundary that has actually failed and touches nothing otherwise.
+
+**Reporting goes to our own origin, and the server forwards it.** The
+alternative was adding the Sentry ingest host to `connect-src` and running the
+browser SDK. That costs a CSP exception on the policy that is the second
+mechanism behind D-018, a runtime dependency against a budget that requires a
+named production obligation (D-065), and a third party receiving events from
+the page directly. `POST /api/client-error` costs one handler. The CSP is
+unchanged, `package.json` is unchanged, and this process stays the only thing
+that talks to Sentry.
+
+**The endpoint is unauthenticated on purpose.** The crash worth catching most
+is the one on the login screen — the screen a broken account cannot get past —
+and a reporter that only works once you are signed in would be silent for
+exactly that case. What makes it safe to leave open is that it is an allowlist
+of four fields rather than a passthrough, bounded at 16 KiB and again per field
+after decoding, and limited to thirty an hour per address like every other
+unauthenticated write path.
+
+**No user id on the event**, which is a departure from `reportError` and
+deliberate. Attaching one means resolving a session, and `auth.Resolve` writes
+— it throttles a `last_seen_at` update behind the read — so labelling a crash
+would make the crash path depend on a database write and move a "last used"
+timestamp on the sessions screen. "One account or all of them" is answerable
+from the volume and the route.
+
+**The report is not logged, only counted and forwarded.** A crash report *is* a
+request body, and rule 10 says a body never reaches the logs. The message and
+the stack go to Sentry, which is the sink built for them; the log line carries
+the request id, the kind and the sanitised route, so "the frontend is crashing"
+is visible on a box with no DSN at all — which is also what
+`konku_client_errors_total` is for.
+
+**The route is sanitised twice.** The browser sends `location.pathname`, never
+`href`, because on the index screens the query string is the search box's
+contents. The server takes it apart again — drops anything past `?` or `#`,
+replaces every uuid with `{id}`, caps the length, and answers `unknown` for
+anything that is not a path. The client half of a guarantee is one bug away
+from not running (hard rule 9), and this value ends up in a log line and an
+event tag, which is exactly where `routePattern` already refuses to put a raw
+path.
+
+**Bounded on both sides.** Five reports per page load and one per distinct
+error in the browser — a component that throws, is caught, and throws again on
+the next render is the case that would otherwise flood — and the per-address
+limit on the server for a client that ignores its own cap. Deduplication keys
+on the error and not on the kind, because React re-throws an error a boundary
+already handled so `window.onerror` still sees it, and one bug arriving as two
+events makes "how many things are broken" unanswerable.
+
+**Rejected:** the Sentry browser SDK (CSP exception, dependency, and a third
+party the page talks to directly); `navigator.sendBeacon`, which cannot set
+`Content-Type: application/json` and would be refused by `enforceOrigin`
+(D-060); reporting through `api/client.ts`, whose `ApiError` on a 429 would
+surface as an unhandled rejection, which is one of the two things this module
+listens for; and a `route` label on the metric, which arrives in a request body
+and would mint a time series per value somebody chose to send.
+
+---
+
 ## Open questions
 
 None blocking. Deferred details, intentionally left until the feature is being built:

@@ -250,7 +250,6 @@ export default function NotesPage() {
         }
       />
 
-      {isPending && <Loading />}
       {error && <Notice>{error.message}</Notice>}
       {create.isError && <Notice>{create.error.message}</Notice>}
       {removeMany.isError && <Notice>{removeMany.error.message}</Notice>}
@@ -354,6 +353,17 @@ export default function NotesPage() {
           </div>
 
           <Separator />
+
+          {/*
+            In the list column, under the rule, where the rows are about to be.
+
+            It used to sit above the two-column grid, which put "memuat" in one
+            place and the thing being loaded in another — and the frame is
+            already on screen by then, because ListDetail renders whether or not
+            the page has arrived. Only the rows are missing, so this is the only
+            spot where a loading state is describing what is actually pending.
+          */}
+          {isPending && <Loading className="px-1 py-4" />}
 
           {!isPending && notes.length === 0 && !filtering && (
             /*

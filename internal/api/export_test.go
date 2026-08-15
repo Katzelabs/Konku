@@ -14,4 +14,15 @@ const (
 	MaxAccountDeletesForTest  = maxAccountDeletes
 	MaxExportsForTest         = maxExports
 	MaxPasswordChangesForTest = maxPasswordChanges
+
+	// The client-error budget (F-03), for the same reason.
+	MaxClientErrorsForTest = maxClientErrorsPerHour
+)
+
+// The two sanitisers on the client-error path. Both are the second half of a
+// guarantee the browser also makes (hard rule 9), so both are worth a direct
+// table test rather than only the one case a live request happens to send.
+var (
+	SanitizeClientRouteForTest = sanitizeClientRoute
+	TruncateRunesForTest       = truncateRunes
 )

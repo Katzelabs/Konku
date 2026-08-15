@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AppShell } from './components/layout/AppShell'
+import { RouteErrorBoundary } from './components/error-boundary'
 import { Loading } from './components/ui/spinner'
 import { Notice } from './components/ui/notice'
 import LoginPage from './features/auth/LoginPage'
@@ -110,6 +111,13 @@ export default function App() {
       >
         <AppShell user={user}>
           {/*
+            Inside the shell, so a screen that throws leaves the sidebar, the
+            nav and the timer standing and the way out is a click. It clears
+            itself when the path changes, which is what makes that click work
+            (F-03, components/error-boundary.tsx).
+          */}
+          <RouteErrorBoundary>
+          {/*
             One `<Routes>`, matched against the list's location while a peek is
             open. The preview is no longer a second `<Routes>` rendered beside
             this one: it is a column of the index page, which is what lets the
@@ -169,6 +177,7 @@ export default function App() {
 
             <Route path="*" element={<Navigate to="/home" replace />} />
           </Routes>
+          </RouteErrorBoundary>
         </AppShell>
       </PeekProvider>
     </TimerProvider>

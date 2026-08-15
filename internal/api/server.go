@@ -106,6 +106,9 @@ func (s *Server) Routes() http.Handler {
 	// this limiter is hygiene, and a tight one would punish a shared IP where
 	// several people verify from the same office or household.
 	verifyLimit := newRateLimiter(30, time.Hour)
+	// Crash reports (F-03). The budget and the reasoning are in clienterror.go,
+	// beside the caps that bound the same endpoint's body.
+	clientErrorLimit := newRateLimiter(maxClientErrorsPerHour, clientErrorWindow)
 
 	// Operational endpoints, deliberately outside /api: they are not part of
 	// the product's API surface and nothing in the SPA calls them. Splitting
@@ -124,6 +127,20 @@ func (s *Server) Routes() http.Handler {
 
 		// What the login screen needs before anyone has signed in.
 		r.Get("/auth/config", s.handleAuthConfig)
+
+		// A crash in the browser, reported to the origin that served it (F-03).
+		//
+		// Unauthenticated with the rest of this group, because the screen a
+		// crash strands somebody on most expensively is the login screen, and a
+		// reporter that only works once you are signed in would be silent for
+		// exactly that case. See clienterror.go for what keeps an open endpoint
+		// safe to leave here.
+		//
+		// Limited per IP like every other unauthenticated write path, and
+		// loosely: the browser already caps itself per page load, so this is the
+		// bound on a client that ignores its own cap rather than on a person
+		// whose session went wrong twice.
+		r.With(clientErrorLimit.middleware).Post("/client-error", s.handleClientError)
 
 		// Signup is behind the flag; verify and resend are not.
 		//

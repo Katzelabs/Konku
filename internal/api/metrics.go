@@ -23,6 +23,7 @@ type metrics struct {
 	requests  *prometheus.CounterVec
 	durations *prometheus.HistogramVec
 	quotas    *prometheus.CounterVec
+	clientErr *prometheus.CounterVec
 }
 
 func newMetrics(st *store.Store) *metrics {
@@ -55,9 +56,22 @@ func newMetrics(st *store.Store) *metrics {
 			Name: "konku_quota_rejections_total",
 			Help: "Requests refused for exceeding a per-account limit, by quota.",
 		}, []string{"quota"}),
+		// Crashes reported by the browser (F-03). Sentry holds the detail; this
+		// answers "did the frontend start falling over after that deploy" from
+		// the same scrape as everything else, and it keeps answering it on a box
+		// with no SENTRY_DSN configured at all.
+		//
+		// Labelled by kind and by nothing else. Route would be the obvious
+		// second label and is exactly the trap the middleware below avoids: it
+		// arrives in a request body, so it would mint a time series per distinct
+		// value somebody chose to send.
+		clientErr: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "konku_client_errors_total",
+			Help: "Errors reported by the browser, by kind.",
+		}, []string{"kind"}),
 	}
 
-	reg.MustRegister(m.requests, m.durations, m.quotas)
+	reg.MustRegister(m.requests, m.durations, m.quotas, m.clientErr)
 	reg.MustRegister(collectors.NewGoCollector())
 	reg.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	reg.MustRegister(newPoolCollector(st))
@@ -96,6 +110,13 @@ func (m *metrics) middleware(next http.Handler) http.Handler {
 // product worse (hard rule 7).
 func (m *metrics) quotaRejected(quota string) {
 	m.quotas.WithLabelValues(quota).Inc()
+}
+
+// clientErrorReported counts one crash the browser told us about (F-03). kind
+// is one of the four constants in clienterror.go and never the raw string the
+// request carried.
+func (m *metrics) clientErrorReported(kind string) {
+	m.clientErr.WithLabelValues(kind).Inc()
 }
 
 func (m *metrics) handler() http.Handler {

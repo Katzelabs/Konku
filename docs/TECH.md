@@ -18,7 +18,7 @@
 | Migrations | **goose** | embedded in the binary, runs at startup |
 | Logging | stdlib **`log/slog`** | JSON to stdout; no zap, no logrus |
 | Metrics | **`prometheus/client_golang`** | `/metrics`, not public (D-062) |
-| Error tracking | **Sentry** | panics and 5xx (D-062) |
+| Error tracking | **Sentry** | panics, 5xx, and browser crashes forwarded by the server (D-062, D-085) |
 | Email | stdlib **`net/smtp`** | verification and reset only; no SDK (D-065) |
 | Config | **`os.Getenv`** | no Viper |
 | Frontend | **React + TypeScript + Vite** | embedded in the Go binary via `go:embed` |
@@ -384,6 +384,8 @@ Two endpoints, not one — the current `/api/health` conflates them, which makes
 ### Errors and alerts
 
 Sentry on panics and 5xx. A `Recoverer` writing to stdout on a box nobody reads is not an alert.
+
+**Browser crashes reach the same project, through us.** A render throw is caught by an error boundary, posted to `POST /api/client-error`, and forwarded by the Go process — the SDK never runs in the browser, so `connect-src 'self'` keeps its meaning and the dependency list keeps its length. Events carry `source: client`, the kind, and a route with its uuids replaced; `konku_client_errors_total` counts the same thing on a box with no DSN configured (D-085).
 
 Three alerts, chosen because each has an action attached:
 

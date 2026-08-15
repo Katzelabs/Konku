@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import App from './App'
+import { AppErrorBoundary } from './components/error-boundary'
+import { installGlobalErrorReporting } from './lib/report-error'
 import { ThemeProvider } from './features/settings/useTheme'
 import './index.css'
 
@@ -25,8 +27,18 @@ const queryClient = new QueryClient({
   },
 })
 
+// Before the first render, so an error thrown while the tree is still mounting
+// has somewhere to go. The two listeners cover what an error boundary cannot
+// see: event handlers, timers, and rejected promises (F-03).
+installGlobalErrorReporting()
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
+    {/* Outermost, so a throw in a provider or on a signed-out screen is a page
+        that explains itself rather than a blank one. The router has its own
+        boundary inside the shell (App.tsx), which is the one that keeps the
+        nav alive when a single screen breaks. */}
+    <AppErrorBoundary>
     <QueryClientProvider client={queryClient}>
       {/* Outside the router so the theme applies to the login screen too. */}
       <ThemeProvider>
@@ -50,5 +62,6 @@ createRoot(document.getElementById('root')!).render(
       </BrowserRouter>
       </ThemeProvider>
     </QueryClientProvider>
+    </AppErrorBoundary>
   </StrictMode>,
 )
