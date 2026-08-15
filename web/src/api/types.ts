@@ -230,7 +230,16 @@ export interface CardRef {
 }
 
 export interface ReviewSetDetail extends ReviewSet {
-  runs: Run[]
+  /**
+   * The sitting in progress, or null.
+   *
+   * The finished ones are a paged list of their own at
+   * `/review/sets/{id}/runs` — they used to be embedded here, twenty at a time,
+   * with no way to ask for the twenty-first. The open run stays on the detail
+   * because "is there one to resume" must not depend on which page of history
+   * happens to be loaded.
+   */
+  openRun: Run | null
   /** The pinned set. Empty for a 'random' set, which draws per run. */
   cards: CardRef[]
 }

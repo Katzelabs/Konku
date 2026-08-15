@@ -677,19 +677,27 @@ SELECT s.id, s.user_id, s.title, s.description, s.selection, s.question_count, s
                 '{}')::uuid[] AS domain_ids,
        COALESCE((SELECT array_agg(sc.category_id ORDER BY sc.category_id)
                    FROM review_set_categories sc WHERE sc.set_id = s.id),
-                '{}')::uuid[] AS category_ids
+                '{}')::uuid[] AS category_ids,
+       -- How many match before LIMIT, carried on every row — the same shape
+       -- ListNotes and ListCards use (D-084). This list had no LIMIT at all
+       -- before, so every subquery above ran once per set the account had ever
+       -- made, on every load of the Ulangan screen.
+       count(*) OVER () AS total
 FROM review_sets s
 WHERE s.user_id = $1
   AND CASE WHEN $2::bool
            THEN s.archived_at IS NOT NULL
            ELSE s.archived_at IS NULL
       END
-ORDER BY s.created_at DESC
+ORDER BY s.created_at DESC, s.id DESC
+LIMIT $4 OFFSET $3
 `
 
 type ListReviewSetsParams struct {
-	UserID   uuid.UUID `json:"user_id"`
-	Archived bool      `json:"archived"`
+	UserID    uuid.UUID `json:"user_id"`
+	Archived  bool      `json:"archived"`
+	RowOffset int32     `json:"row_offset"`
+	RowLimit  int32     `json:"row_limit"`
 }
 
 type ListReviewSetsRow struct {
@@ -707,6 +715,7 @@ type ListReviewSetsRow struct {
 	RunCount         int64       `json:"run_count"`
 	DomainIds        []uuid.UUID `json:"domain_ids"`
 	CategoryIds      []uuid.UUID `json:"category_ids"`
+	Total            int64       `json:"total"`
 }
 
 // Review sets: a saved, repeatable configuration for a review over the cards
@@ -727,8 +736,15 @@ type ListReviewSetsRow struct {
 // `archived` switches the whole list to the archive, one query rather than two
 // so the aggregation cannot drift between them — same reason ListCards folds
 // the Terhapus view in rather than forking.
+// id breaks the tie. created_at is not unique, and a page boundary landing
+// inside a tie serves one row twice and skips another.
 func (q *Queries) ListReviewSets(ctx context.Context, arg ListReviewSetsParams) ([]ListReviewSetsRow, error) {
-	rows, err := q.db.Query(ctx, listReviewSets, arg.UserID, arg.Archived)
+	rows, err := q.db.Query(ctx, listReviewSets,
+		arg.UserID,
+		arg.Archived,
+		arg.RowOffset,
+		arg.RowLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -751,6 +767,7 @@ func (q *Queries) ListReviewSets(ctx context.Context, arg ListReviewSetsParams) 
 			&i.RunCount,
 			&i.DomainIds,
 			&i.CategoryIds,
+			&i.Total,
 		); err != nil {
 			return nil, err
 		}
@@ -831,36 +848,64 @@ func (q *Queries) ListRunQuestions(ctx context.Context, arg ListRunQuestionsPara
 }
 
 const listRuns = `-- name: ListRuns :many
-SELECT id, set_id, user_id, started_at, finished_at, run_date, total_count, correct_count FROM review_runs
-WHERE set_id = $1 AND user_id = $2
-ORDER BY started_at DESC
-LIMIT $3
+SELECT r.id, r.set_id, r.user_id, r.started_at, r.finished_at, r.run_date, r.total_count, r.correct_count, count(*) OVER () AS total
+FROM review_runs r
+WHERE r.set_id = $1 AND r.user_id = $2 AND r.finished_at IS NOT NULL
+ORDER BY r.started_at DESC, r.id DESC
+LIMIT $4 OFFSET $3
 `
 
 type ListRunsParams struct {
-	SetID  uuid.UUID `json:"set_id"`
-	UserID uuid.UUID `json:"user_id"`
-	Limit  int32     `json:"limit"`
+	SetID     uuid.UUID `json:"set_id"`
+	UserID    uuid.UUID `json:"user_id"`
+	RowOffset int32     `json:"row_offset"`
+	RowLimit  int32     `json:"row_limit"`
 }
 
-func (q *Queries) ListRuns(ctx context.Context, arg ListRunsParams) ([]ReviewRun, error) {
-	rows, err := q.db.Query(ctx, listRuns, arg.SetID, arg.UserID, arg.Limit)
+type ListRunsRow struct {
+	ReviewRun ReviewRun `json:"review_run"`
+	Total     int64     `json:"total"`
+}
+
+// The history of a set: finished sittings only, newest first, one page at a
+// time.
+//
+// It used to return every run up to a hardcoded twenty with no OFFSET, so the
+// twenty-first sitting of a set existed, counted in run_count, appeared in the
+// export, and could not be reached by any request the API was able to express
+// — the same failure D-084 fixed for notes and cards.
+//
+// Finished only, because the open run is not history: it is the thing the
+// Mulai button resumes, and the detail response carries it separately through
+// GetOpenRun. Folding it into a paged list would make "is there one open"
+// depend on which page you happened to be looking at. It also makes `total`
+// here exactly the run_count the set carries, which counts finished runs for
+// the same reason.
+// id breaks the tie, as in every other paged list.
+func (q *Queries) ListRuns(ctx context.Context, arg ListRunsParams) ([]ListRunsRow, error) {
+	rows, err := q.db.Query(ctx, listRuns,
+		arg.SetID,
+		arg.UserID,
+		arg.RowOffset,
+		arg.RowLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ReviewRun{}
+	items := []ListRunsRow{}
 	for rows.Next() {
-		var i ReviewRun
+		var i ListRunsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.SetID,
-			&i.UserID,
-			&i.StartedAt,
-			&i.FinishedAt,
-			&i.RunDate,
-			&i.TotalCount,
-			&i.CorrectCount,
+			&i.ReviewRun.ID,
+			&i.ReviewRun.SetID,
+			&i.ReviewRun.UserID,
+			&i.ReviewRun.StartedAt,
+			&i.ReviewRun.FinishedAt,
+			&i.ReviewRun.RunDate,
+			&i.ReviewRun.TotalCount,
+			&i.ReviewRun.CorrectCount,
+			&i.Total,
 		); err != nil {
 			return nil, err
 		}

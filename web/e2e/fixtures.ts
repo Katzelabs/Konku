@@ -110,6 +110,33 @@ export function seedNotes(email: string, n: number) {
 }
 
 /**
+ * A saved review set with `n` finished sittings behind it.
+ *
+ * Straight to the database for the same reason seedNotes is: sixty sittings
+ * driven through the real screens would take a minute to reach a state this
+ * test only wants to read. The scores are all distinct — run i scored i out of
+ * n — so a single row can be named, and the oldest sitting is the one only the
+ * second page holds.
+ */
+export function seedReviewSetWithRuns(email: string, title: string, n: number) {
+  psql(
+    `WITH u AS (SELECT id FROM users WHERE email = '${email}'),
+          s AS (
+            INSERT INTO review_sets (user_id, title, selection, question_count, format)
+            SELECT u.id, '${title}', 'random', 1, 'recall' FROM u
+            RETURNING id, user_id
+          )
+     INSERT INTO review_runs (set_id, user_id, run_date, started_at, finished_at,
+                              total_count, correct_count)
+     SELECT s.id, s.user_id, CURRENT_DATE,
+            now() - make_interval(secs => i + 1),
+            now() - make_interval(secs => i),
+            ${n}, i
+       FROM s, generate_series(0, ${n - 1}) AS i`,
+  )
+}
+
+/**
  * Brings this account's cards forward so they are due now.
  *
  * A card written today is scheduled for *tomorrow* — srs.Intervals[0] is 1,

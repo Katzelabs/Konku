@@ -18,19 +18,34 @@ import { useSessions } from './queries'
  * what time, how long, which domain.
  *
  * The per-day total is a sum, not a score. It is compared with nothing.
+ *
+ * What it shows is a window over the log, not the whole of it, and it says so
+ * (D-084). A panel that renders thirty rows reads identically whether the
+ * account holds thirty sessions or three hundred, and stating the smaller
+ * number as if it were the collection is the misinforming half of that bug.
+ * Browsing back past the window is the Activity log (PRD §5.10) and is still
+ * deferred — which is why this states the count and offers no "load more".
  */
 export function SessionLog() {
-  const { data: sessions, isPending, error } = useSessions()
+  const { sessions, total, truncated, isPending, error } = useSessions()
   // The display path needs archived domains too — a session keeps its tag when
   // the domain is archived, and the record is the point (D-051).
   const { data: domains } = useAllDomains()
 
   const days = groupByDay(sessions ?? [])
+  const shown = sessions?.length ?? 0
 
   return (
     <Card>
-      <CardHeader>
+      {/* flex-row explicitly: CardHeader is a column by default, and
+          tailwind-merge only drops a class that a later one contradicts. */}
+      <CardHeader className="flex-row items-baseline justify-between gap-3">
         <CardTitle>Sesi terakhir</CardTitle>
+        {total > 0 && (
+          <span className="text-xs text-subtle-fg tabular-nums">
+            {total} sesi
+          </span>
+        )}
       </CardHeader>
 
       {isPending && (
@@ -99,6 +114,17 @@ export function SessionLog() {
               </ul>
             </section>
           ))}
+
+          {/*
+            Said plainly rather than implied by a list that simply stops. It is
+            a statement of what is on screen, not a prompt to do anything —
+            there is nothing to load and nothing being withheld as a nudge.
+          */}
+          {truncated && (
+            <p className="border-t border-border px-5 py-2.5 text-xs text-subtle-fg">
+              Menampilkan {shown} sesi terakhir dari {total}.
+            </p>
+          )}
         </div>
       )}
     </Card>

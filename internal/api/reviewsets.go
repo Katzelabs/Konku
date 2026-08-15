@@ -37,7 +37,6 @@ const (
 	maxQuestions   = 100
 	maxTimeLimit   = 480
 	maxSetDomains  = 20
-	runsPerPage    = 20
 )
 
 type reviewSetRequest struct {
@@ -87,15 +86,41 @@ func toSetResponse(s gen.ReviewSet, domains, categories []uuid.UUID, runCount in
 	}
 }
 
+// handleListReviewSets answers with one page of saved sets, newest first.
+//
+// It had no limit at all before, which is the shape D-084 removed from the
+// index lists: the three aggregates each row carries ran once per set on every
+// load of the Ulangan screen, and there was nothing bounding how many that was.
 func (s *Server) handleListReviewSets(w http.ResponseWriter, r *http.Request) {
 	user, _ := UserFrom(r.Context())
 
-	rows, err := scoped(s, r, func(q *gen.Queries) ([]gen.ListReviewSetsRow, error) {
-		return q.ListReviewSets(r.Context(), gen.ListReviewSetsParams{
-			UserID:   user.ID,
-			Archived: r.URL.Query().Get("archived") == "true",
+	paging := listParamsFrom(r)
+	params := gen.ListReviewSetsParams{
+		UserID:    user.ID,
+		Archived:  r.URL.Query().Get("archived") == "true",
+		RowLimit:  int32(paging.Limit),
+		RowOffset: int32(paging.Offset),
+	}
+
+	list := func(p gen.ListReviewSetsParams) ([]gen.ListReviewSetsRow, error) {
+		return scoped(s, r, func(q *gen.Queries) ([]gen.ListReviewSetsRow, error) {
+			return q.ListReviewSets(r.Context(), p)
 		})
-	})
+	}
+
+	rows, err := list(params)
+	if err != nil {
+		writeInternal(w, r, err)
+		return
+	}
+
+	total, err := pageTotal(rows, paging.Offset,
+		func(row gen.ListReviewSetsRow) int64 { return row.Total },
+		func() ([]gen.ListReviewSetsRow, error) {
+			top := params
+			top.RowLimit, top.RowOffset = 1, 0
+			return list(top)
+		})
 	if err != nil {
 		writeInternal(w, r, err)
 		return
@@ -106,7 +131,7 @@ func (s *Server) handleListReviewSets(w http.ResponseWriter, r *http.Request) {
 		out = append(out, toSetResponse(setFromListRow(row), row.DomainIds, row.CategoryIds, row.RunCount))
 	}
 
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, newPage(out, total, paging))
 }
 
 func (s *Server) handleGetReviewSet(w http.ResponseWriter, r *http.Request) {
@@ -117,33 +142,43 @@ func (s *Server) handleGetReviewSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	runs, err := scoped(s, r, func(q *gen.Queries) ([]gen.ReviewRun, error) {
-		return q.ListRuns(r.Context(), gen.ListRunsParams{
-			SetID: set.ID, UserID: user.ID, Limit: runsPerPage,
+	// The sitting in progress, asked for directly rather than found by scanning
+	// a list of runs for one with no finishedAt. A set has at most one open run
+	// — a partial unique index says so — and the screen needs to know whether
+	// there is one in order to label its button "Lanjutkan". Deriving that from
+	// the history list would make the answer depend on which page of history
+	// happened to be loaded, which is exactly what paging the history breaks.
+	open, err := scoped(s, r, func(q *gen.Queries) (gen.ReviewRun, error) {
+		return q.GetOpenRun(r.Context(), gen.GetOpenRunParams{
+			SetID: set.ID, UserID: user.ID,
 		})
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		writeInternal(w, r, err)
 		return
+	}
+	var openRun *runResponse
+	if err == nil {
+		run := toRunResponse(open)
+		openRun = &run
 	}
 
 	out := struct {
 		reviewSetResponse
-		Runs []runResponse `json:"runs"`
+		// The sitting in progress, or null. The finished ones are a paged list
+		// of their own at GET /review/sets/{id}/runs — embedding them here
+		// meant a hardcoded twenty with no way to ask for the twenty-first.
+		OpenRun *runResponse `json:"openRun"`
 		// The pinned set, for a 'fixed' set. Empty for 'random', whose
 		// questions only exist once a run draws them.
 		Cards []pinnedCard `json:"cards"`
 	}{
-		// RunCount comes from the query's own count, not len(runs): that list
-		// is capped at runsPerPage and includes an unfinished run, so using its
-		// length would make the same field mean something different here than
-		// it does in the list.
+		// RunCount counts finished runs, which is also the total of the runs
+		// list. The two are separate queries and must keep agreeing: both count
+		// `finished_at IS NOT NULL` for this set.
 		reviewSetResponse: toSetResponse(setFromDetailRow(set), set.DomainIds, set.CategoryIds, set.RunCount),
-		Runs:              make([]runResponse, 0, len(runs)),
+		OpenRun:           openRun,
 		Cards:             []pinnedCard{},
-	}
-	for _, a := range runs {
-		out.Runs = append(out.Runs, toRunResponse(a))
 	}
 
 	if set.Selection == "fixed" {
@@ -687,6 +722,63 @@ type runResponse struct {
 	RunDate      string     `json:"runDate"`
 	TotalCount   int32      `json:"totalCount"`
 	CorrectCount int32      `json:"correctCount"`
+}
+
+// handleListSetRuns answers with one page of a set's finished sittings.
+//
+// This list used to be twenty rows embedded in the set detail, drawn by a query
+// with a hardcoded LIMIT and no OFFSET — so a set worked through twenty-one
+// times had a sitting that was counted in runCount, exported, and unreachable
+// by any request the API could express. That is the D-084 failure in a corner
+// the original pass did not sweep.
+//
+// The open run is not here; it comes back on the detail. See the query.
+func (s *Server) handleListSetRuns(w http.ResponseWriter, r *http.Request) {
+	user, _ := UserFrom(r.Context())
+
+	set, ok := s.setOr404(w, r)
+	if !ok {
+		return
+	}
+
+	paging := listParamsFrom(r)
+	params := gen.ListRunsParams{
+		SetID:     set.ID,
+		UserID:    user.ID,
+		RowLimit:  int32(paging.Limit),
+		RowOffset: int32(paging.Offset),
+	}
+
+	list := func(p gen.ListRunsParams) ([]gen.ListRunsRow, error) {
+		return scoped(s, r, func(q *gen.Queries) ([]gen.ListRunsRow, error) {
+			return q.ListRuns(r.Context(), p)
+		})
+	}
+
+	rows, err := list(params)
+	if err != nil {
+		writeInternal(w, r, err)
+		return
+	}
+
+	total, err := pageTotal(rows, paging.Offset,
+		func(row gen.ListRunsRow) int64 { return row.Total },
+		func() ([]gen.ListRunsRow, error) {
+			top := params
+			top.RowLimit, top.RowOffset = 1, 0
+			return list(top)
+		})
+	if err != nil {
+		writeInternal(w, r, err)
+		return
+	}
+
+	out := make([]runResponse, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toRunResponse(row.ReviewRun))
+	}
+
+	writeJSON(w, http.StatusOK, newPage(out, total, paging))
 }
 
 func toRunResponse(a gen.ReviewRun) runResponse {

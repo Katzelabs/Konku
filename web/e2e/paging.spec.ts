@@ -1,4 +1,4 @@
-import { expect, seedNotes, test } from './fixtures'
+import { expect, seedNotes, seedReviewSetWithRuns, test } from './fixtures'
 
 /**
  * A long list is reachable to the end (D-084).
@@ -57,5 +57,40 @@ test.describe('a list longer than one page', () => {
 
     await expect(page.getByRole('button', { name: /catatan 59/ })).toBeVisible()
     await expect(page.getByText('1 catatan')).toBeVisible()
+  })
+})
+
+/**
+ * A set's history is reachable to the end.
+ *
+ * The Go half is TestRunHistoryPagesPastTheOldCap. This is the other layer,
+ * for the same reason the notes guard has two: the bug was never in one of
+ * them. `runsPerPage = 20` was a constant in the handler with no page after
+ * it, and the screen rendered whatever list arrived — so the twenty-first
+ * sitting of a set was counted in the header, written to the export, and
+ * shown nowhere.
+ */
+test.describe('a run history longer than one page', () => {
+  test('states the real count and loads the rest on request', async ({ page, email }) => {
+    seedReviewSetWithRuns(email, 'Latihan panjang', SEEDED)
+
+    await page.goto('/review')
+    await page.getByRole('link', { name: /Latihan panjang/ }).click()
+
+    // The heading counts every sitting, not the page of them that loaded.
+    await expect(page.getByText(`${SEEDED}× dikerjakan`)).toBeVisible()
+
+    // The oldest sitting scored 59 out of 60 and sits last in a newest-first
+    // list, so it is on the second page — which nothing could ask for before.
+    const oldest = page.getByText(`${SEEDED - 1} / ${SEEDED}`, { exact: true })
+    await expect(oldest).toHaveCount(0)
+
+    const more = page.getByRole('button', { name: /Muat lebih banyak/ })
+    await expect(more).toContainText('10 percobaan lagi')
+    await more.click()
+
+    await expect(oldest).toBeVisible()
+    await expect(more).toHaveCount(0)
+    await expect(page.getByText(`${SEEDED}× dikerjakan`)).toBeVisible()
   })
 })

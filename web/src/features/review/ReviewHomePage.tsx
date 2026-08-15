@@ -8,6 +8,7 @@ import { Card } from '../../components/ui/card'
 import { EmptyState } from '../../components/ui/empty-state'
 import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
+import { LoadMore } from '../../components/ui/load-more'
 import { Notice } from '../../components/ui/notice'
 import { PageHeader } from '../../components/ui/page-header'
 import { Loading } from '../../components/ui/spinner'
@@ -102,12 +103,20 @@ function DueToday() {
 }
 
 function SetList({ adding }: { adding: boolean }) {
-  const { data, isPending, error } = useReviewSets()
+  const {
+    sets,
+    total,
+    isPending,
+    error,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useReviewSets()
 
   if (isPending) return <Loading />
-  if (error) return <Notice>{error.message}</Notice>
-
-  const sets = data ?? []
+  // Only a first page that never arrived is nothing to show. A failed later
+  // page keeps its rows and reports itself under the list instead.
+  if (error && sets.length === 0) return <Notice>{error.message}</Notice>
 
   if (sets.length === 0 && !adding) {
     return (
@@ -119,11 +128,23 @@ function SetList({ adding }: { adding: boolean }) {
   }
 
   return (
-    <ul className="flex flex-col gap-2">
-      {sets.map((s) => (
-        <SetRow key={s.id} set={s} />
-      ))}
-    </ul>
+    <div className="flex flex-col gap-3">
+      <ul className="flex flex-col gap-2">
+        {sets.map((s) => (
+          <SetRow key={s.id} set={s} />
+        ))}
+      </ul>
+
+      <LoadMore
+        loaded={sets.length}
+        total={total}
+        hasMore={Boolean(hasNextPage)}
+        loading={isFetchingNextPage}
+        error={error}
+        onLoadMore={() => fetchNextPage()}
+        noun="latihan"
+      />
+    </div>
   )
 }
 

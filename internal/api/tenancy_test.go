@@ -231,8 +231,12 @@ func TestTenancyListsNeverLeakAnotherAccountsRows(t *testing.T) {
 			t.Errorf("GET %s leaked %s belonging to another account", tc.path, tc.what)
 		}
 		// The session list carries no id the test can pin, so assert on the
-		// content instead: Bob has run no sessions, so his log is empty.
-		if tc.path == "/sessions" && raw != "[]\n" && raw != "[]" {
+		// content instead: Bob has run no sessions, so his log is empty — and
+		// the count of it is zero. The total is a window function over the
+		// same query, so a scoping bug would inflate it even while the rows
+		// stayed correctly empty.
+		if tc.path == "/sessions" &&
+			(!strings.Contains(raw, `"items":[]`) || !strings.Contains(raw, `"total":0`)) {
 			t.Errorf("GET /sessions returned %s for an account with no sessions", raw)
 		}
 	}

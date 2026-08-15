@@ -119,34 +119,45 @@ func TestListSessions(t *testing.T) {
 		}), http.StatusCreated, nil)
 	}
 
-	var got []sessionBody
+	var got pageBody[sessionBody]
 	c.expect(c.do(http.MethodGet, "/sessions", nil), http.StatusOK, &got)
 
-	if len(got) != 3 {
-		t.Fatalf("got %d sessions, want 3", len(got))
+	if len(got.Items) != 3 {
+		t.Fatalf("got %d sessions, want 3", len(got.Items))
 	}
 	for i, want := range []srs.Date{today, today.AddDays(-1), today.AddDays(-2)} {
-		if got[i].SessionDate != string(want) {
-			t.Errorf("session %d date = %q, want %q — not newest first", i, got[i].SessionDate, want)
+		if got.Items[i].SessionDate != string(want) {
+			t.Errorf("session %d date = %q, want %q — not newest first", i, got.Items[i].SessionDate, want)
 		}
 	}
 
 	// Another user's sessions are invisible, and it is the WHERE clause that
-	// makes them so — an empty list, never a 403 (D-039).
+	// makes them so — an empty list, never a 403 (D-039). The total is counted
+	// by the same query, so it is scoped by the same clause.
 	other := app.newClient(t)
 	other.expect(other.do(http.MethodPost, "/sessions", map[string]any{
 		"durationMinutes": 45,
 		"sessionDate":     string(today),
 	}), http.StatusCreated, nil)
 
-	var mine []sessionBody
+	var mine pageBody[sessionBody]
 	c.expect(c.do(http.MethodGet, "/sessions", nil), http.StatusOK, &mine)
-	if len(mine) != 3 {
-		t.Errorf("got %d sessions, want 3 — another user's session leaked in", len(mine))
+	if len(mine.Items) != 3 {
+		t.Errorf("got %d sessions, want 3 — another user's session leaked in", len(mine.Items))
+	}
+	if mine.Total != 3 {
+		t.Errorf("total = %d, want 3 — another user's session was counted", mine.Total)
 	}
 }
 
-func TestListSessionsLimit(t *testing.T) {
+// The log is a window, and it now says what it is a window onto.
+//
+// It answered with a bounded slice and no count, so a screen showing thirty
+// rows could not tell whether the account held thirty sessions or three
+// hundred — the half of D-084's bug that misinforms rather than hides. There
+// is deliberately no offset: browsing back through months is the Activity log
+// (PRD §5.10) and that is still deferred.
+func TestListSessionsWindowReportsTheWholeLog(t *testing.T) {
 	app := newApp(t)
 	c := app.newClient(t)
 
@@ -158,10 +169,23 @@ func TestListSessionsLimit(t *testing.T) {
 		}), http.StatusCreated, nil)
 	}
 
-	var got []sessionBody
+	var got pageBody[sessionBody]
 	c.expect(c.do(http.MethodGet, "/sessions?limit=2", nil), http.StatusOK, &got)
-	if len(got) != 2 {
-		t.Errorf("got %d sessions, want 2", len(got))
+	if len(got.Items) != 2 {
+		t.Errorf("got %d sessions, want the 2 asked for", len(got.Items))
+	}
+	if got.Total != 3 {
+		t.Errorf("total = %d, want 3 — the log, not the window", got.Total)
+	}
+
+	// An empty log really is zero. With no offset there is no page past the
+	// end for the count to ride on, which is why this endpoint needs none of
+	// pageTotal's re-ask.
+	empty := app.newClient(t)
+	var none pageBody[sessionBody]
+	empty.expect(empty.do(http.MethodGet, "/sessions", nil), http.StatusOK, &none)
+	if len(none.Items) != 0 || none.Total != 0 {
+		t.Errorf("empty log = %d rows / total %d, want 0/0", len(none.Items), none.Total)
 	}
 }
 

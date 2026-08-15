@@ -733,9 +733,9 @@ func TestDeleteReviewSetOnlyBeforeItIsRun(t *testing.T) {
 
 	// Archiving takes the set off the list.
 	c.expect(c.do(http.MethodPost, "/review/sets/"+run.ID+"/archive", nil), http.StatusOK, nil)
-	var sets []setBody
+	var sets pageBody[setBody]
 	c.expect(c.do(http.MethodGet, "/review/sets", nil), http.StatusOK, &sets)
-	for _, e := range sets {
+	for _, e := range sets.Items {
 		if e.ID == run.ID {
 			t.Error("an archived set is still listed")
 		}
@@ -745,7 +745,7 @@ func TestDeleteReviewSetOnlyBeforeItIsRun(t *testing.T) {
 	c.expect(c.do(http.MethodPost, "/review/sets/"+run.ID+"/unarchive", nil), http.StatusOK, nil)
 	c.expect(c.do(http.MethodGet, "/review/sets", nil), http.StatusOK, &sets)
 	found := false
-	for _, e := range sets {
+	for _, e := range sets.Items {
 		if e.ID == run.ID {
 			found = true
 		}

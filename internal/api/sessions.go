@@ -86,19 +86,29 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 
 // handleListSessions returns the recent focus sessions, newest first.
 //
-// A plain log, not a report: no totals, no streak, no per-domain quota
-// progress. What it answers is "did I sit down, and for how long" — the
-// weekly quota stays a direction marker rather than a debt to settle
-// (D-007, D-009, D-054).
+// A plain log, not a report: no streak, no per-domain quota progress, no
+// target. What it answers is "did I sit down, and for how long" — the weekly
+// quota stays a direction marker rather than a debt to settle (D-007, D-009,
+// D-054).
+//
+// It answers with the page shape for `total`, and only for `total`. There is
+// deliberately no offset: this is a window over the log, not a browsable
+// history, and scrolling back through months of it is the Activity log
+// (PRD §5.10), still deferred. What it could not do before was say how many
+// sessions it was a window onto — thirty rows read identically whether the
+// account held thirty or three hundred, which is the half of D-084's bug that
+// misinforms rather than hides.
 func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	user, _ := UserFrom(r.Context())
 
-	limit := intParam(r, "limit", defaultLimit, 1, maxLimit)
+	// Limit only. Offset stays zero, so the echoed `offset: 0` is the truth
+	// about this endpoint rather than a page position.
+	paging := listParams{Limit: intParam(r, "limit", defaultLimit, 1, maxLimit)}
 
-	rows, err := scoped(s, r, func(q *gen.Queries) ([]gen.FocusSession, error) {
+	rows, err := scoped(s, r, func(q *gen.Queries) ([]gen.ListRecentFocusSessionsRow, error) {
 		return q.ListRecentFocusSessions(r.Context(), gen.ListRecentFocusSessionsParams{
 			UserID: user.ID,
-			Limit:  int32(limit),
+			Limit:  int32(paging.Limit),
 		})
 	})
 	if err != nil {
@@ -106,12 +116,19 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out := make([]sessionResponse, 0, len(rows))
-	for _, sess := range rows {
-		out = append(out, toSessionResponse(sess))
+	// The total rides on the rows, and with no offset an empty result really
+	// does mean an empty log — so this needs none of pageTotal's re-ask.
+	var total int64
+	if len(rows) > 0 {
+		total = rows[0].Total
 	}
 
-	writeJSON(w, http.StatusOK, out)
+	out := make([]sessionResponse, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toSessionResponse(row.FocusSession))
+	}
+
+	writeJSON(w, http.StatusOK, newPage(out, total, paging))
 }
 
 func toSessionResponse(sess gen.FocusSession) sessionResponse {

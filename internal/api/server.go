@@ -266,6 +266,7 @@ func (s *Server) Routes() http.Handler {
 						r.Post("/{id}/archive", s.handleArchiveReviewSet)
 						r.Post("/{id}/unarchive", s.handleUnarchiveReviewSet)
 						r.Put("/{id}/cards", s.handleSetReviewSetCards)
+						r.Get("/{id}/runs", s.handleListSetRuns)
 						r.Post("/{id}/runs", s.handleStartRun)
 					})
 

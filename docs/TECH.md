@@ -240,7 +240,8 @@ GET    /api/categories                shared by notes and cards (D-055)
 GET    /api/review/due                capped due list
 GET    /api/review/due/:cardId/answer reveal, as its own request (D-003)
 POST   /api/review/due/:cardId        {rating} → reschedule + log
-GET    /api/review/sets?archived=     saved configurations (D-075)
+GET    /api/review/sets?archived=     saved configurations (D-075), paged
+GET    /api/review/sets/:id/runs      finished sittings, paged (D-087)
 POST   /api/review/sets/:id/runs      start; draw + options snapshotted (D-050)
 POST   /api/review/runs/:id/:cardId   {rating} or {choice} → review_logs,
                                       graded server-side, schedule unmoved (D-049)
@@ -251,13 +252,17 @@ GET    /api/stats/retention           headline metric
 
 **A card is addressed by its own uuid.** It used to take a note *and* an ID together, because card IDs were unique only within the note they were parsed out of — the primary key was `(note_id, id)`. D-055 made cards their own resource with a uuid primary key, and the note segment went with it.
 
-**The two index lists are paginated** (D-084). `GET /api/notes` and `GET /api/cards` take `?limit=` (default 50, capped at 200) and `?offset=`, and answer with an envelope rather than a bare array:
+**Four lists are paginated** — `/api/notes` and `/api/cards` since D-084, `/api/review/sets` and `/api/review/sets/:id/runs` since D-087. They take `?limit=` (default 50, capped at 200) and `?offset=`, and answer with an envelope rather than a bare array:
 
 ```json
 { "items": [ … ], "total": 312, "limit": 50, "offset": 0 }
 ```
 
-`total` is how many rows match the filters before `LIMIT`, computed by a `count(*) OVER ()` on the list query itself — one round trip, and one copy of the `WHERE` clause, so the number and the rows cannot describe different sets. An offset past the end is an empty page with the real total, not a 400. Both lists order with `id` as a tiebreaker so a page boundary cannot land inside a tie. `?q=` searches titles on notes and both sides on cards, `ILIKE` against the trigram indexes; ranked full-text stays deferred (D-031). The settings lists — domains, categories — still answer with a bare array.
+`total` is how many rows match the filters before `LIMIT`, computed by a `count(*) OVER ()` on the list query itself — one round trip, and one copy of the `WHERE` clause, so the number and the rows cannot describe different sets. An offset past the end is an empty page with the real total, not a 400. Every paged list orders with `id` as a tiebreaker so a page boundary cannot land inside a tie. `?q=` searches titles on notes and both sides on cards, `ILIKE` against the trigram indexes; ranked full-text stays deferred (D-031).
+
+`GET /api/sessions` answers with the same envelope for `total` alone: it takes `?limit=` and **no `?offset=`**, because the focus log is a window rather than a browsable history — paging back through months of it is the Activity log (§5.10), still deferred. `GET /api/review/sets/:id/runs` lists **finished** sittings only; the one in progress comes back as `openRun` on the set detail, so "is there one to resume" is a fact about the set rather than about which page of history loaded.
+
+The pickers still answer with a bare array on purpose: `/api/domains` and `/api/categories` feed searchable multi-selects that filter the whole list client-side, and paging their source would make "no match" and "not on this page" the same empty state — the bug D-084's server-side note search removed. `/api/review/due` is capped and unpaged by D-009: the cap is the feature.
 
 Public and account endpoints added by D-058:
 

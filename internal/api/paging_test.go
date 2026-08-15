@@ -229,3 +229,237 @@ func TestNoteSearchReachesPastTheFirstPage(t *testing.T) {
 		}
 	})
 }
+
+// The two lists D-084's original pass did not reach.
+//
+// `/review/sets` had no LIMIT in its SQL at all, and a set's run history was
+// twenty rows drawn by a query with a hardcoded LIMIT and no OFFSET — so the
+// twenty-first sitting of a set was counted in runCount, written to the
+// export, and unreachable by any request the API could express. That is the
+// same failure, in a corner the first sweep missed.
+
+// seedPagedSets fills an account with n saved sets.
+func seedPagedSets(c *testClient, n int) {
+	c.t.Helper()
+	for i := range n {
+		c.createSet(map[string]any{
+			"title":         fmt.Sprintf("latihan %02d", i),
+			"selection":     "random",
+			"questionCount": 1,
+		})
+	}
+}
+
+func TestReviewSetListPages(t *testing.T) {
+	app := newApp(t)
+	c := app.newClient(t)
+
+	seedPagedSets(c, pageTestRows)
+
+	first := pageOfIDs(c, "/review/sets")
+	if len(first.Items) != 50 {
+		t.Fatalf("default page = %d rows, want 50", len(first.Items))
+	}
+	if first.Total != pageTestRows {
+		t.Errorf("total = %d, want %d", first.Total, pageTestRows)
+	}
+
+	second := pageOfIDs(c, "/review/sets?offset=50")
+	if len(second.Items) != 1 {
+		t.Fatalf("second page = %d rows, want the one left over", len(second.Items))
+	}
+
+	// Every set exactly once across the whole walk. The tiebreaker on id is
+	// what stops a page boundary inside a created_at tie from serving one row
+	// twice and skipping another — and sets made in a loop tie readily.
+	seen := map[string]bool{}
+	for offset := 0; offset < pageTestRows; offset += 10 {
+		got := pageOfIDs(c, fmt.Sprintf("/review/sets?limit=10&offset=%d", offset))
+		for _, row := range got.Items {
+			if seen[row.ID] {
+				t.Errorf("set %s served twice while paging", row.ID)
+			}
+			seen[row.ID] = true
+		}
+	}
+	if len(seen) != pageTestRows {
+		t.Errorf("paged over %d distinct sets, want %d", len(seen), pageTestRows)
+	}
+
+	// The archive is its own list with its own total, exactly as Terhapus is
+	// for notes. An archive stating the live total would be the same lie.
+	archived := first.Items[0].ID
+	c.expect(c.do(http.MethodPost, "/review/sets/"+archived+"/archive", nil), http.StatusOK, nil)
+
+	live := pageOfIDs(c, "/review/sets")
+	if live.Total != pageTestRows-1 {
+		t.Errorf("live total = %d, want %d", live.Total, pageTestRows-1)
+	}
+	inArchive := pageOfIDs(c, "/review/sets?archived=true")
+	if inArchive.Total != 1 {
+		t.Errorf("archive total = %d, want 1", inArchive.Total)
+	}
+}
+
+// runTimes works a set through n complete sittings and returns their ids,
+// newest last. Each run draws one question, answers it and finishes, because
+// only a finished run is history.
+func runTimes(c *testClient, setID string, n int) []string {
+	c.t.Helper()
+
+	out := make([]string, 0, n)
+	for range n {
+		run := c.startRun(setID, http.StatusCreated)
+		for _, q := range run.Questions {
+			c.answer(run.ID, q.CardID, map[string]any{"rating": "ingat"})
+		}
+		c.expect(c.do(http.MethodPost, "/review/runs/"+run.ID+"/finish", nil),
+			http.StatusOK, nil)
+		out = append(out, run.ID)
+	}
+	return out
+}
+
+func TestRunHistoryPagesPastTheOldCap(t *testing.T) {
+	app := newApp(t)
+	c := app.newClient(t)
+
+	c.seedCards(1, nil)
+	set := c.createSet(map[string]any{
+		"title": "Diulang terus", "selection": "random", "questionCount": 1,
+	})
+
+	// One past the twenty the old handler was hardcoded to.
+	const sittings = 21
+	ids := runTimes(c, set.ID, sittings)
+
+	all := pageOfIDs(c, "/review/sets/"+set.ID+"/runs")
+	if all.Total != sittings {
+		t.Errorf("total = %d, want %d", all.Total, sittings)
+	}
+	if len(all.Items) != sittings {
+		t.Fatalf("first page = %d runs, want all %d — the cap of 20 is still there",
+			len(all.Items), sittings)
+	}
+
+	// The oldest sitting is the one the cap used to cut off. It is the last
+	// row of a newest-first list, so reaching it needs an offset the API never
+	// used to accept.
+	tail := pageOfIDs(c, fmt.Sprintf("/review/sets/%s/runs?limit=1&offset=%d", set.ID, sittings-1))
+	if len(tail.Items) != 1 {
+		t.Fatalf("got %d runs at the end of the history, want 1", len(tail.Items))
+	}
+	if tail.Items[0].ID != ids[0] {
+		t.Errorf("last row = %s, want the first sitting %s", tail.Items[0].ID, ids[0])
+	}
+	if tail.Total != sittings {
+		t.Errorf("total on the last page = %d, want %d", tail.Total, sittings)
+	}
+
+	// An offset past the end reports the real total rather than zero. The
+	// count rides on the rows, and there are none here to carry it.
+	past := pageOfIDs(c, "/review/sets/"+set.ID+"/runs?offset=9999")
+	if len(past.Items) != 0 {
+		t.Errorf("got %d runs past the end, want none", len(past.Items))
+	}
+	if past.Total != sittings {
+		t.Errorf("total past the end = %d, want %d", past.Total, sittings)
+	}
+
+	// Walking it end to end yields every sitting exactly once.
+	seen := map[string]bool{}
+	for offset := 0; offset < sittings; offset += 4 {
+		got := pageOfIDs(c, fmt.Sprintf("/review/sets/%s/runs?limit=4&offset=%d", set.ID, offset))
+		for _, row := range got.Items {
+			if seen[row.ID] {
+				t.Errorf("run %s served twice while paging", row.ID)
+			}
+			seen[row.ID] = true
+		}
+	}
+	if len(seen) != sittings {
+		t.Errorf("paged over %d distinct runs, want %d", len(seen), sittings)
+	}
+}
+
+// The open sitting is not history, and the two numbers on the screen agree.
+//
+// The detail carries the unfinished run directly instead of the screen finding
+// it in a list of runs — which is what makes "is there one to resume" a fact
+// about the set rather than a fact about which page of history was loaded.
+func TestOpenRunIsSeparateFromTheHistory(t *testing.T) {
+	app := newApp(t)
+	c := app.newClient(t)
+
+	c.seedCards(1, nil)
+	set := c.createSet(map[string]any{
+		"title": "Setengah jalan", "selection": "random", "questionCount": 1,
+	})
+	runTimes(c, set.ID, 2)
+
+	// A third sitting, left open.
+	open := c.startRun(set.ID, http.StatusCreated)
+
+	var detail struct {
+		RunCount int64 `json:"runCount"`
+		OpenRun  *struct {
+			ID string `json:"id"`
+		} `json:"openRun"`
+	}
+	c.expect(c.do(http.MethodGet, "/review/sets/"+set.ID, nil), http.StatusOK, &detail)
+
+	if detail.OpenRun == nil {
+		t.Fatal("openRun is null while a sitting is in progress")
+	}
+	if detail.OpenRun.ID != open.ID {
+		t.Errorf("openRun = %s, want the run in progress %s", detail.OpenRun.ID, open.ID)
+	}
+
+	history := pageOfIDs(c, "/review/sets/"+set.ID+"/runs")
+	if history.Total != 2 {
+		t.Errorf("history total = %d, want 2 — the open sitting is not a score", history.Total)
+	}
+	for _, row := range history.Items {
+		if row.ID == open.ID {
+			t.Error("the open sitting is listed as history")
+		}
+	}
+
+	// runCount on the set and total on its history are separate queries and
+	// must keep agreeing: both count finished runs.
+	if detail.RunCount != history.Total {
+		t.Errorf("runCount = %d but history total = %d — the two drifted",
+			detail.RunCount, history.Total)
+	}
+
+	// Finishing it moves it into the history and both numbers follow.
+	c.expect(c.do(http.MethodPost, "/review/runs/"+open.ID+"/finish", nil), http.StatusOK, nil)
+	after := pageOfIDs(c, "/review/sets/"+set.ID+"/runs")
+	if after.Total != 3 {
+		t.Errorf("history total = %d after finishing, want 3", after.Total)
+	}
+	c.expect(c.do(http.MethodGet, "/review/sets/"+set.ID, nil), http.StatusOK, &detail)
+	if detail.OpenRun != nil {
+		t.Error("openRun is still set after the sitting was finished")
+	}
+}
+
+// Another user's run history is not found, never forbidden (D-039). A new
+// route is a new place to leak, and this is the test that is not negotiable.
+func TestRunHistoryIsScopedToItsOwner(t *testing.T) {
+	app := newApp(t)
+	c := app.newClient(t)
+
+	c.seedCards(1, nil)
+	set := c.createSet(map[string]any{
+		"title": "Punya A", "selection": "random", "questionCount": 1,
+	})
+	runTimes(c, set.ID, 1)
+
+	b := app.newClient(t)
+	res := b.do(http.MethodGet, "/review/sets/"+set.ID+"/runs", nil)
+	if res.StatusCode != http.StatusNotFound {
+		t.Errorf("status = %d, want 404 — another user's history must not be probeable",
+			res.StatusCode)
+	}
+}

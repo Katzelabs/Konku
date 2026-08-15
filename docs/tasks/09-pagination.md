@@ -205,6 +205,30 @@ One thing the plan did not mention and should have: both list queries needed
 inside a tie serves one row twice and skips another — a list that loses
 something while paging, which is the failure this task exists to fix.
 
+## What it missed, swept later (D-087)
+
+The scope here was "the two index screens", and that was the right scope for
+the ticket. It was not the whole of the bug. An audit of every remaining list
+endpoint found the identical failure in the review feature:
+
+- **A set's run history** was twenty rows embedded in the set detail, drawn by
+  a query with a hardcoded `LIMIT` and **no `OFFSET`** — exactly what `ListCards`
+  had. The twenty-first sitting was counted in `runCount`, exported, and
+  unreachable. It is `GET /api/review/sets/{id}/runs` now.
+- **`/api/review/sets`** had no `LIMIT` in its SQL at all, with three correlated
+  subqueries per row.
+- **`/api/sessions`** returned a bounded slice with no `total`, so thirty rows
+  looked the same whether the log held thirty or three hundred.
+
+Two lists were deliberately left alone, and D-087 says why at length: paging
+`/domains` or `/categories` would break the searchable pickers that filter them
+client-side, and `/review/due` is capped by D-009 on purpose.
+
+The lesson for the next task of this shape: the grep that finds the bug is not
+"which screens truncate" but **"which `:many` queries have a `LIMIT` and no
+`OFFSET`, or no `LIMIT` at all"**. Both halves are wrong in different ways, and
+neither is visible from the screen.
+
 ## Acceptance
 
 - With 300 notes and 1.200 cards seeded, every one of them is reachable

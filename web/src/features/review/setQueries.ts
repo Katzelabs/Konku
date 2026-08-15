@@ -1,9 +1,17 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import { api } from '../../api/client'
+import { PAGE_SIZE, nextOffset, pageItems, pageTotal } from '../../api/paging'
 import { useCards } from '../cards/queries'
 import type {
   AnswerResult,
   CardAnswer,
+  Page,
   Rating,
   Run,
   RunDetail,
@@ -24,17 +32,71 @@ export const setKeys = {
   all: ['reviewSets'] as const,
   list: (archived: boolean) => [...setKeys.all, 'list', archived] as const,
   detail: (id: string) => [...setKeys.all, 'detail', id] as const,
+  /**
+   * A set's finished sittings. Under setKeys.all deliberately: finishing or
+   * discarding a run already invalidates that key, and a history list keyed
+   * outside it would keep showing a score the user just changed.
+   */
+  history: (setId: string) => [...setKeys.all, 'history', setId] as const,
   run: (id: string) => ['reviewRuns', id] as const,
   answer: (runId: string, cardId: string) =>
     ['reviewRuns', runId, 'answer', cardId] as const,
 }
 
+/**
+ * The saved sets, one page at a time.
+ *
+ * `total` is how many exist, not how many are loaded. The endpoint had no
+ * limit at all before this, so the screen asked for every set an account had
+ * ever made — each row carrying three aggregate subqueries — on every visit.
+ */
 export function useReviewSets(archived = false) {
-  return useQuery({
+  const query = useInfiniteQuery({
     queryKey: setKeys.list(archived),
-    queryFn: () =>
-      api.get<ReviewSet[]>(`/review/sets${archived ? '?archived=true' : ''}`),
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams({
+        limit: String(PAGE_SIZE),
+        offset: String(pageParam),
+      })
+      if (archived) params.set('archived', 'true')
+      return api.get<Page<ReviewSet>>(`/review/sets?${params}`)
+    },
+    initialPageParam: 0,
+    getNextPageParam: nextOffset,
+    placeholderData: keepPreviousData,
   })
+
+  return {
+    ...query,
+    sets: pageItems(query.data?.pages),
+    total: pageTotal(query.data?.pages),
+  }
+}
+
+/**
+ * A set's history: finished sittings, newest first, one page at a time.
+ *
+ * It used to arrive embedded in the set detail, capped at twenty by a constant
+ * with no page after it, so the twenty-first sitting of a set was counted in
+ * `runCount` and reachable by nothing (D-084's shape, in a corner the original
+ * pass missed). The open run is not in here — it is `set.openRun`.
+ */
+export function useSetRuns(setId: string) {
+  const query = useInfiniteQuery({
+    queryKey: setKeys.history(setId),
+    queryFn: ({ pageParam }) =>
+      api.get<Page<Run>>(
+        `/review/sets/${setId}/runs?limit=${PAGE_SIZE}&offset=${pageParam}`,
+      ),
+    initialPageParam: 0,
+    getNextPageParam: nextOffset,
+  })
+
+  return {
+    ...query,
+    runs: pageItems(query.data?.pages),
+    total: pageTotal(query.data?.pages),
+  }
 }
 
 export function useReviewSet(id: string) {

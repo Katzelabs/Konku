@@ -26,14 +26,22 @@ SELECT s.*,
                 '{}')::uuid[] AS domain_ids,
        COALESCE((SELECT array_agg(sc.category_id ORDER BY sc.category_id)
                    FROM review_set_categories sc WHERE sc.set_id = s.id),
-                '{}')::uuid[] AS category_ids
+                '{}')::uuid[] AS category_ids,
+       -- How many match before LIMIT, carried on every row — the same shape
+       -- ListNotes and ListCards use (D-084). This list had no LIMIT at all
+       -- before, so every subquery above ran once per set the account had ever
+       -- made, on every load of the Ulangan screen.
+       count(*) OVER () AS total
 FROM review_sets s
 WHERE s.user_id = $1
   AND CASE WHEN sqlc.arg(archived)::bool
            THEN s.archived_at IS NOT NULL
            ELSE s.archived_at IS NULL
       END
-ORDER BY s.created_at DESC;
+-- id breaks the tie. created_at is not unique, and a page boundary landing
+-- inside a tie serves one row twice and skips another.
+ORDER BY s.created_at DESC, s.id DESC
+LIMIT sqlc.arg(row_limit) OFFSET sqlc.arg(row_offset);
 
 -- name: GetReviewSet :one
 SELECT s.*,
@@ -147,10 +155,26 @@ VALUES ($1, $2, sqlc.arg(run_date)::date)
 RETURNING *;
 
 -- name: ListRuns :many
-SELECT * FROM review_runs
-WHERE set_id = $1 AND user_id = $2
-ORDER BY started_at DESC
-LIMIT $3;
+-- The history of a set: finished sittings only, newest first, one page at a
+-- time.
+--
+-- It used to return every run up to a hardcoded twenty with no OFFSET, so the
+-- twenty-first sitting of a set existed, counted in run_count, appeared in the
+-- export, and could not be reached by any request the API was able to express
+-- — the same failure D-084 fixed for notes and cards.
+--
+-- Finished only, because the open run is not history: it is the thing the
+-- Mulai button resumes, and the detail response carries it separately through
+-- GetOpenRun. Folding it into a paged list would make "is there one open"
+-- depend on which page you happened to be looking at. It also makes `total`
+-- here exactly the run_count the set carries, which counts finished runs for
+-- the same reason.
+SELECT sqlc.embed(r), count(*) OVER () AS total
+FROM review_runs r
+WHERE r.set_id = $1 AND r.user_id = $2 AND r.finished_at IS NOT NULL
+-- id breaks the tie, as in every other paged list.
+ORDER BY r.started_at DESC, r.id DESC
+LIMIT sqlc.arg(row_limit) OFFSET sqlc.arg(row_offset);
 
 -- name: FinishRun :one
 -- The counts are recomputed here rather than accepted from the client. total

@@ -18,6 +18,7 @@ import {
   usePickableCards,
   useReviewSet,
   useSetReviewSetCards,
+  useSetRuns,
   useStartRun,
 } from './setQueries'
 
@@ -39,8 +40,10 @@ export default function ReviewSetPage() {
   const pickedDomains = domains?.filter((d) => set.domainIds.includes(d.id)) ?? []
   const pickedCategories =
     categories?.filter((c) => set.categoryIds.includes(c.id)) ?? []
-  const open = set.runs.find((a) => a.finishedAt === null)
-  const finished = set.runs.filter((a) => a.finishedAt !== null)
+  // Read off the set rather than found by scanning the history for a run with
+  // no finishedAt. The history is one page of finished sittings now, so that
+  // search would have been asking a page a question only the set can answer.
+  const open = set.openRun
 
   function begin() {
     start.mutate(
@@ -115,20 +118,7 @@ export default function ReviewSetPage() {
         <CardPicker setId={id} domainIds={set.domainIds} pinned={set.cards} />
       )}
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium text-muted-fg">Riwayat</h2>
-        {finished.length === 0 ? (
-          <p className="text-sm text-subtle-fg">Belum pernah dikerjakan.</p>
-        ) : (
-          <Card>
-            <ul className="divide-y divide-border">
-              {finished.map((a) => (
-                <RunRow key={a.id} run={a} />
-              ))}
-            </ul>
-          </Card>
-        )}
-      </section>
+      <RunHistory setId={id} />
 
       <Separator />
 
@@ -267,6 +257,75 @@ function CardPicker({
             Simpan daftar soal
           </Button>
           {save.isError && <Notice>{save.error.message}</Notice>}
+        </>
+      )}
+    </section>
+  )
+}
+
+/**
+ * The finished sittings, newest first, one page at a time.
+ *
+ * It used to be twenty rows embedded in the set detail, drawn by a query with
+ * a hardcoded limit and no offset — so the twenty-first sitting of a set was
+ * counted in the header, written to the export, and unreachable. The heading
+ * states the real count for the same reason the index headers do (D-084): a
+ * screen that reports the length of what it loaded describes its own
+ * truncation.
+ */
+function RunHistory({ setId }: { setId: string }) {
+  const {
+    runs,
+    total,
+    isPending,
+    error,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useSetRuns(setId)
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="text-sm font-medium text-muted-fg">Riwayat</h2>
+        {total > 0 && (
+          <span className="text-xs text-subtle-fg tabular-nums">
+            {total}× dikerjakan
+          </span>
+        )}
+      </div>
+
+      {isPending && <Loading />}
+
+      {/*
+        A failed first page is the only one that leaves nothing to show. A
+        later one keeps its rows and reports itself under the list.
+      */}
+      {error && runs.length === 0 && <Notice>{error.message}</Notice>}
+
+      {!isPending && !error && runs.length === 0 && (
+        <p className="text-sm text-subtle-fg">Belum pernah dikerjakan.</p>
+      )}
+
+      {runs.length > 0 && (
+        <>
+          <Card>
+            <ul className="divide-y divide-border">
+              {runs.map((a) => (
+                <RunRow key={a.id} run={a} />
+              ))}
+            </ul>
+          </Card>
+
+          <LoadMore
+            loaded={runs.length}
+            total={total}
+            hasMore={Boolean(hasNextPage)}
+            loading={isFetchingNextPage}
+            error={error}
+            onLoadMore={() => fetchNextPage()}
+            noun="percobaan"
+          />
         </>
       )}
     </section>

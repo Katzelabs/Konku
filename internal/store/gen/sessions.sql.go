@@ -48,9 +48,10 @@ func (q *Queries) InsertFocusSession(ctx context.Context, arg InsertFocusSession
 }
 
 const listRecentFocusSessions = `-- name: ListRecentFocusSessions :many
-SELECT id, user_id, duration_minutes, session_date, completed_at, domain_id FROM focus_sessions
-WHERE user_id = $1
-ORDER BY session_date DESC, completed_at DESC
+SELECT f.id, f.user_id, f.duration_minutes, f.session_date, f.completed_at, f.domain_id, count(*) OVER () AS total
+FROM focus_sessions f
+WHERE f.user_id = $1
+ORDER BY f.session_date DESC, f.completed_at DESC
 LIMIT $2
 `
 
@@ -59,22 +60,37 @@ type ListRecentFocusSessionsParams struct {
 	Limit  int32     `json:"limit"`
 }
 
-func (q *Queries) ListRecentFocusSessions(ctx context.Context, arg ListRecentFocusSessionsParams) ([]FocusSession, error) {
+type ListRecentFocusSessionsRow struct {
+	FocusSession FocusSession `json:"focus_session"`
+	Total        int64        `json:"total"`
+}
+
+// A window over the log, and deliberately not a page: there is no OFFSET here
+// because scrolling back through months of sessions is the Activity log
+// (PRD §5.10) and that is still deferred.
+//
+// `total` is not, though. The list answered with a bounded slice and no count,
+// so thirty sessions out of three hundred and thirty out of thirty looked
+// identical on screen — the half of D-084's bug that misinforms rather than
+// hides. Counting it here rather than in a second query keeps the number and
+// the rows describing the same thing.
+func (q *Queries) ListRecentFocusSessions(ctx context.Context, arg ListRecentFocusSessionsParams) ([]ListRecentFocusSessionsRow, error) {
 	rows, err := q.db.Query(ctx, listRecentFocusSessions, arg.UserID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []FocusSession{}
+	items := []ListRecentFocusSessionsRow{}
 	for rows.Next() {
-		var i FocusSession
+		var i ListRecentFocusSessionsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.DurationMinutes,
-			&i.SessionDate,
-			&i.CompletedAt,
-			&i.DomainID,
+			&i.FocusSession.ID,
+			&i.FocusSession.UserID,
+			&i.FocusSession.DurationMinutes,
+			&i.FocusSession.SessionDate,
+			&i.FocusSession.CompletedAt,
+			&i.FocusSession.DomainID,
+			&i.Total,
 		); err != nil {
 			return nil, err
 		}

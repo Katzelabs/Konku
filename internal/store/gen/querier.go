@@ -347,7 +347,16 @@ type Querier interface {
 	// pages of the same list — once as the last row of one page and never again,
 	// or twice. Paging by offset needs a total order to slice.
 	ListNotes(ctx context.Context, arg ListNotesParams) ([]ListNotesRow, error)
-	ListRecentFocusSessions(ctx context.Context, arg ListRecentFocusSessionsParams) ([]FocusSession, error)
+	// A window over the log, and deliberately not a page: there is no OFFSET here
+	// because scrolling back through months of sessions is the Activity log
+	// (PRD §5.10) and that is still deferred.
+	//
+	// `total` is not, though. The list answered with a bounded slice and no count,
+	// so thirty sessions out of three hundred and thirty out of thirty looked
+	// identical on screen — the half of D-084's bug that misinforms rather than
+	// hides. Counting it here rather than in a second query keeps the number and
+	// the rows describing the same thing.
+	ListRecentFocusSessions(ctx context.Context, arg ListRecentFocusSessionsParams) ([]ListRecentFocusSessionsRow, error)
 	// Review sets: a saved, repeatable configuration for a review over the cards
 	// that already exist (D-048, renamed by D-075). There is no question bank — a
 	// second place for knowledge to live is exactly what D-005 collapsed.
@@ -366,6 +375,8 @@ type Querier interface {
 	// `archived` switches the whole list to the archive, one query rather than two
 	// so the aggregation cannot drift between them — same reason ListCards folds
 	// the Terhapus view in rather than forking.
+	// id breaks the tie. created_at is not unique, and a page boundary landing
+	// inside a tie serves one row twice and skips another.
 	ListReviewSets(ctx context.Context, arg ListReviewSetsParams) ([]ListReviewSetsRow, error)
 	// The run's question set in presentation order, each with the answer already
 	// given if there is one. This is what makes a run resumable: the unanswered
@@ -381,7 +392,22 @@ type Querier interface {
 	// cards so that deleting one cannot erase a finished run's history. A question
 	// whose card is gone still occupies its position in the score.
 	ListRunQuestions(ctx context.Context, arg ListRunQuestionsParams) ([]ListRunQuestionsRow, error)
-	ListRuns(ctx context.Context, arg ListRunsParams) ([]ReviewRun, error)
+	// The history of a set: finished sittings only, newest first, one page at a
+	// time.
+	//
+	// It used to return every run up to a hardcoded twenty with no OFFSET, so the
+	// twenty-first sitting of a set existed, counted in run_count, appeared in the
+	// export, and could not be reached by any request the API was able to express
+	// — the same failure D-084 fixed for notes and cards.
+	//
+	// Finished only, because the open run is not history: it is the thing the
+	// Mulai button resumes, and the detail response carries it separately through
+	// GetOpenRun. Folding it into a paged list would make "is there one open"
+	// depend on which page you happened to be looking at. It also makes `total`
+	// here exactly the run_count the set carries, which counts finished runs for
+	// the same reason.
+	// id breaks the tie, as in every other paged list.
+	ListRuns(ctx context.Context, arg ListRunsParams) ([]ListRunsRow, error)
 	// Newest activity first, which is the order the screen reads in.
 	//
 	// Deliberately does NOT select id: that column is the credential, and a list

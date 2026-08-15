@@ -1734,6 +1734,74 @@ fifty rows a page is not where that cost lives; and clearing the theme on sign
 out, which would repaint the login screen white on a device somebody
 deliberately set to dark, in the name of a privacy it does not provide.
 
+### D-087 — Ulangan pages too, and the lists that must not
+
+D-084 fixed the two index screens and stopped there. An audit of every remaining
+list endpoint found the same failure in a corner it had not swept, plus two
+lists that would be actively worse for being paged — so this decision records
+both halves, because the second is the one a later pass is likely to undo.
+
+**The framing was wrong, and it matters.** This was raised as a performance
+task. It is not one: D-086 already rejected virtualising the long lists on the
+grounds that fifty rows a page is not where that cost lives, and the endpoints
+left unpaged hold tens of rows, not thousands. The reason to do it is the one
+D-084 was built on — a row that exists, counts against the quota, appears in the
+export, and cannot be reached from the app is the disappearance this product
+exists to prevent. Reachability, not speed.
+
+**A set's run history had a `runsPerPage` and no page after it.** `ListRuns`
+ended at `LIMIT $3` with the constant `20` hardcoded at the call site and no
+`OFFSET` in the SQL at all — the exact shape `ListCards` had before D-084. Work
+a set through twenty-one sittings and the twenty-first was counted in
+`runCount`, written to the export, and shown nowhere. It is now
+`GET /api/review/sets/{id}/runs`, its own paged endpoint with a `count(*) OVER
+()` total, an `id` tiebreaker, and the shared `page[T]`.
+
+**The history lists finished sittings only, and the open one moved to the set.**
+The detail response carried `runs` and the screen picked the unfinished one out
+of it with a `.find()`. That works only while the list is complete: once it is a
+page, "is there a sitting to resume" becomes a question about which page
+loaded rather than about the set. The detail now carries `openRun` from
+`GetOpenRun` — a partial unique index already guarantees at most one — and the
+history is finished-only, which also makes its `total` exactly the `runCount`
+the set reports. Two queries that must keep agreeing, and a test that fails when
+they drift.
+
+**`/api/review/sets` had no `LIMIT` in its SQL at all.** Each row carries three
+correlated subqueries (the run count and two `array_agg`s), so the Ulangan
+screen ran all of them once per set the account had ever made, on every visit.
+It pages now. This is the one place in the change where the query cost was real,
+and it is still not why it was done.
+
+**The focus log gets a total and deliberately no offset.** `/api/sessions`
+answered with a bounded slice and no count, so thirty rows read identically
+whether the account held thirty sessions or three hundred — D-084's misinforming
+half. It answers with the envelope now, for `total` alone: there is no `?offset=`
+and no **Muat lebih banyak**, because browsing back through months of sessions
+is the Activity log (PRD §5.10) and that stays deferred. The panel states
+"Menampilkan 30 sesi terakhir dari 312" and offers nothing to press. Adding the
+offset later is a two-line change; adding it now would be building the deferred
+feature by accident.
+
+**Rejected: paging `/api/domains` and `/api/categories`.** They feed the
+searchable multi-select filters and the create-on-type pickers, which filter the
+whole list client-side. A paged source would make "no match" and "not on this
+page" the same empty state — precisely the bug D-084 removed by moving note
+search into SQL, reintroduced one layer down. They stay bare arrays, and the
+absence of a quota on them is a known gap rather than an oversight: an account
+with ten thousand categories has a stranger problem than a slow picker.
+
+**Rejected: paging `/api/review/due`.** The cap is D-009 and it is the feature.
+Returning after two weeks to forty due cards is demotivating regardless of
+styling, and a **Muat lebih banyak** under the due queue would be a button whose
+only function is to undo the one mechanic protecting against quitting. It
+already reports its true total separately so the screen can say "sisanya besok".
+
+**Rejected: keyset pagination**, for the same reasons D-084 gave — every
+mutation invalidates the whole key and TanStack refetches every loaded page, so
+the drift window is an edit from a second device between two page fetches, and
+these collections are smaller than the ones offset already serves.
+
 ---
 
 ## Open questions
