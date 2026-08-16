@@ -489,6 +489,7 @@ greps the body for the number, and scrapes `/metrics` for
 | Notes | 5.000 live | `MAX_NOTES` |
 | Cards | 20.000 live | `MAX_CARDS` |
 | Writes | 300/minute/account | `MAX_WRITES_PER_MINUTE` |
+| Login | 10/5 minutes/IP | `MAX_LOGIN_ATTEMPTS` |
 | Request body | 1 MiB | in code |
 | Note markdown | 256 KiB | in code |
 | Note title | 200 characters | in code |

@@ -95,7 +95,7 @@ func (s *Server) Routes() http.Handler {
 	r.Use(enforceOrigin)
 	r.Use(middleware.Timeout(30 * time.Second))
 
-	loginLimit := newRateLimiter(10, 5*time.Minute)
+	loginLimit := newRateLimiter(loginAttempts(s.cfg), loginLimitWindow)
 	// Tighter than login and over a longer window: every request on these
 	// routes can cause a message to be sent to somebody, and the per-address
 	// limiter inside the handlers is the other half of that (07 L3).

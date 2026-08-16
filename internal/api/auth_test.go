@@ -7,10 +7,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/Katzelabs/Konku/internal/api"
+	"github.com/Katzelabs/Konku/internal/config"
 )
 
 const testPassword = "kata sandi yang panjang"
@@ -210,5 +212,46 @@ func TestLoginIsRateLimited(t *testing.T) {
 
 	if lastStatus != http.StatusTooManyRequests {
 		t.Errorf("after 15 failed logins status = %d, want 429", lastStatus)
+	}
+}
+
+// The budget above is the default; MAX_LOGIN_ATTEMPTS can raise it.
+//
+// It is configurable because the key is an IP and there is no account yet when
+// the limiter applies, so everyone behind one address shares one budget — an
+// office NAT, a phone network, and the end-to-end suite, which signs a fresh
+// account in for every test from 127.0.0.1 and used to take a 429 partway
+// through. A setting that nothing asserts is a setting that quietly stops
+// being read, which is how this limiter shipped broken the first time.
+func TestLoginLimitIsConfigurable(t *testing.T) {
+	const budget = 2
+
+	app := newAppWith(t, config.Config{
+		Dev:              true,
+		SessionTTL:       time.Hour,
+		AllowSignup:      true,
+		MaxLoginAttempts: budget,
+	})
+
+	email := "api-" + uuid.NewString() + "@example.com"
+	user, err := app.auth.CreateUser(app.ctx, email, testPassword)
+	if err != nil {
+		t.Fatalf("creating user: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = app.store.Pool().Exec(context.Background(), "DELETE FROM users WHERE id = $1", user.ID)
+	})
+
+	for i := 1; i <= budget+1; i++ {
+		res := login(t, app.srv, email, "wrong password")
+		res.Body.Close()
+
+		want := http.StatusUnauthorized
+		if i > budget {
+			want = http.StatusTooManyRequests
+		}
+		if res.StatusCode != want {
+			t.Errorf("attempt %d = %d, want %d", i, res.StatusCode, want)
+		}
 	}
 }

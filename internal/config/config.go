@@ -86,6 +86,15 @@ type Config struct {
 	MaxNotes           int
 	MaxCards           int
 	MaxWritesPerMinute int
+	// MaxLoginAttempts is the per-IP login budget over five minutes.
+	//
+	// Configurable for the same reason the quotas are, and for one more: the
+	// key is an IP, so the budget is shared by everyone behind it. An office
+	// NAT, a phone network, or the end-to-end suite — which signs a fresh
+	// account in per test, from one address, in under two minutes — all look
+	// like one client to this limiter. The default stays tight; raising it is
+	// a deliberate act by whoever knows the deployment.
+	MaxLoginAttempts int
 	// MetricsAddr is where /metrics is served, on its own listener.
 	//
 	// A separate socket cannot be exposed by a reverse-proxy misconfiguration
@@ -116,6 +125,7 @@ func Load() (Config, error) {
 		MaxNotes:             envInt("MAX_NOTES", 5_000),
 		MaxCards:             envInt("MAX_CARDS", 20_000),
 		MaxWritesPerMinute:   envInt("MAX_WRITES_PER_MINUTE", 300),
+		MaxLoginAttempts:     envInt("MAX_LOGIN_ATTEMPTS", 10),
 		MailFrom:             os.Getenv("MAIL_FROM"),
 		PublicBaseURL:        env("PUBLIC_BASE_URL", "http://localhost:5173"),
 		// LookupEnv, not env(): METRICS_ADDR is documented as "empty disables

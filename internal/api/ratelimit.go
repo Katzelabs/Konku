@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/Katzelabs/Konku/internal/config"
 )
 
 // rateLimiter is a fixed-window per-key counter.
@@ -26,6 +28,24 @@ type rateLimiter struct {
 type window struct {
 	count int
 	reset time.Time
+}
+
+// The login budget, per IP. Tight on purpose: this is the one unauthenticated
+// path where a correct guess is a whole account, and ten tries in five minutes
+// is far more than a person who has forgotten a password needs and far less
+// than a guessing loop wants.
+const (
+	defaultMaxLoginAttempts = 10
+	loginLimitWindow        = 5 * time.Minute
+)
+
+// loginAttempts is read at construction because the limiter is built once,
+// mirroring writesPerMinute in quota.go.
+func loginAttempts(cfg config.Config) int {
+	if cfg.MaxLoginAttempts > 0 {
+		return cfg.MaxLoginAttempts
+	}
+	return defaultMaxLoginAttempts
 }
 
 func newRateLimiter(limit int, per time.Duration) *rateLimiter {

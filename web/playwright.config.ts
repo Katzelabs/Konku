@@ -53,12 +53,23 @@ export default defineConfig({
   webServer: {
     // `make build` embeds the frontend into the binary, so this is the same
     // artifact a deploy would run.
+    //
+    // MAX_LOGIN_ATTEMPTS is the one production default this suite overrides.
+    // The limiter keys on IP (there is no account yet when it applies), and
+    // every test here signs a fresh account in from 127.0.0.1 — so the whole
+    // suite is one client spending a budget meant for one person, and the
+    // eleventh test took a 429 on the login form and failed on a URL
+    // assertion that said nothing about rate limiting. Raised rather than
+    // worked around: the alternative is sharing one signed-in session across
+    // tests, which trades a real login per test for residue between them.
+    // TestLoginIsRateLimited still asserts the real default.
     command: `cd .. && make build && \
       DATABASE_URL='${APP_DB}' \
       MIGRATION_DATABASE_URL='${OWNER_DB}' \
       PORT=${PORT} \
       DEV=false \
       SESSION_SECRET=e2e-session-secret-not-used-anywhere-else \
+      MAX_LOGIN_ATTEMPTS=1000 \
       METRICS_ADDR= \
       SENTRY_DSN= \
       ./bin/konku`,
