@@ -107,11 +107,15 @@ Transactional with card sync, free FTS via generated `tsvector`, pgvector later 
 Single user: nothing to cache, no queue pressure, sessions live in a cookie. Adding it now is portfolio theater and reviewers read it as such. There *is* a legitimate reason later — a job queue for LLM calls and embedding generation — and adding it then comes with a real answer to "why is this here."
 
 ### D-024 — Shared Postgres in prod, isolated Postgres in dev
+> **Amended by D-088.** The conclusion holds — shared Postgres, two compose files — but the infrastructure below is not what was built. The network is **`platform`**, not `shared`; the stack is `Katzelabs/platform` with a standalone edge rather than an `infra/docker-compose.yml`; and there is no Mongo on the box.
+
 Konku is one of several projects on the VPS. Shared wins on the things that bite a solo operator: memory is the scarce resource, one backup pipeline, one upgrade path. Isolation buys little with one operator, no untrusted tenants, and no real load.
 The main objection — "clone the repo and it doesn't run" — is solved by two compose files: `docker-compose.yml` self-contained for dev and CI, `docker-compose.prod.yml` app-only joining the external `shared` network. The app only ever reads `DATABASE_URL`.
 **The decision is cheap to reverse** (`pg_dump` → new service → `pg_restore`, ~10 min), so it was not worth agonizing over. Tripwires in `TECH.md` §10.
 
 ### D-025 — `pgvector/pgvector:pg17` from day one, extensions enabled at creation
+> **Amended by D-088.** The reasoning holds and is why the platform instance is a pgvector image at all. The version is **pg18** now, in prod, dev and CI — the box was moved to 18 before Konku's first deploy, for the reach to EOL 2030-11-14. `pg_trgm` turns out to be *trusted* in PG13+, so migration `00001` creates it as the owner and only pgvector needs provisioning.
+
 pgvector must exist on the server, not just be `CREATE EXTENSION`-ed. On a shared instance, installing it later means changing the image and restarting Postgres — coordinated downtime across every project by then. The pgvector image is a drop-in superset of the official one. Same reasoning for pinning the major version. `pg_trgm` enabled too, for fuzzy search.
 Decided while the infra was still fresh with zero projects on it — deliberately.
 
@@ -725,6 +729,12 @@ Once separated, almost nothing in the remaining plan actually needs the box.
 - The deploy itself — Caddy, HTTPS, the shared network, provisioning the
   database and role
 - Nightly backups running as a cron *on the box*
+  > **Amended by D-088.** Both of the above shrank. The box is
+  > `Katzelabs/platform` now: the network is `platform`, TLS and hostname
+  > routing come free from the edge, and the nightly `pg_dumpall` plus its
+  > off-box shipping and watchdog already run for every tenant. What is left of
+  > the first item is provisioning and the `konku_app` bootstrap; the second is
+  > a verification, not a build.
 - **Email deliverability** — SPF, DKIM and DMARC on a real sending domain
 - The half of the release pipeline where the VPS pulls an image by digest
 - Uptime monitoring and alert routing against a real endpoint
@@ -1364,7 +1374,7 @@ separate. The **bind address** was wrong, and wrong in the way that is hardest
 to notice: it looked like the careful choice.
 
 A container has its own network namespace. `127.0.0.1:9090` inside it is the
-*container's* loopback — not the host's, and not the `shared` network's. So
+*container's* loopback — not the host's, and not the `platform` network's. So
 nothing could scrape it: not a host agent, not a sibling Prometheus, not
 `curl` over SSH. The comment in `docker-compose.prod.yml` claimed the metrics
 were "reachable from the box and not from the internet", and neither half was
@@ -1373,7 +1383,7 @@ and it was observable only through `docker exec`.**
 
 **Production binds `0.0.0.0:9090` and lists no `ports:` entry.** The privacy
 comes from not publishing, which it always did — an unpublished port is
-unroutable from the internet whatever it binds, while a container on `shared`
+unroutable from the internet whatever it binds, while a container on `platform`
 can still reach it. The bind address was never what was protecting anything.
 
 **The default in `internal/config/config.go` stays `127.0.0.1:9090`,** because
@@ -1390,7 +1400,7 @@ there, and the compose file now says so where somebody would add it.
 
 **Rejected:** publishing to the host's loopback (`127.0.0.1:9090:9090`), which
 works and is what a host-level agent would want, but adds a published port to
-buy something the `shared` network already provides — and D-062's instinct to
+buy something the `platform` network already provides — and D-062's instinct to
 keep the surface minimal is worth honouring where it costs nothing. Also
 rejected: putting `/metrics` back on the main mux behind an auth check, which
 trades a socket boundary for a code path, and code paths are the thing that get
@@ -1801,6 +1811,96 @@ already reports its true total separately so the screen can say "sisanya besok".
 mutation invalidates the whole key and TanStack refetches every loaded page, so
 the drift window is an edit from a second device between two page fetches, and
 these collections are smaller than the ones offset already serves.
+
+---
+
+### D-088 — The box is `Katzelabs/platform`, and Konku is a tenant of it *(amends D-024, D-025, supersedes part of D-064)*
+
+**Decision:** the VPS is owned by a separate repo, `Katzelabs/platform`, whose
+`PLATFORM.md` is the deploy contract for every app on the machine. Konku obeys
+it. The network is **`platform`**, not `shared`; the shared Postgres is **18**,
+not 17; and backups are the platform's `pg_dumpall` pipeline, not a Konku cron.
+
+D-024 described an `infra/docker-compose.yml` holding Caddy, Postgres and Mongo
+on a network called `shared`. That stack was extracted out of Tuan Tanah and
+rebuilt: the edge is now a **standalone** caddy-docker-proxy (`compose/edge.yml`)
+that is the only thing on the box publishing a port, the data tier is a separate
+compose project so restarting the proxy cannot risk the database, and Mongo is
+not on the box at all. The network was renamed in the process. Konku's compose
+file declared `shared` as `external: true` for a network that has never existed
+under that name, so the first deploy would have failed at `up`, before anything
+interesting could go wrong.
+
+**Postgres 18, and dev and CI move with it.** The platform tracks the most
+demanding tenant, which is Konku (pgvector), and it is pinned to
+`pgvector/pgvector:pg18` — EOL 2030-11-14, chosen deliberately over 17 because a
+major bump is a coordinated dump/restore for *every* tenant and doing it now
+costs one tenant and ~8 MB. Konku's dev compose and CI were on pg17. Testing a
+different major than the one holding real users' data is exactly the drift the
+platform README warns about, so both moved. pg18 also **changed `PGDATA`** to
+`/var/lib/postgresql/18/docker`, so the dev compose mounts the parent and lets
+the image own the subdirectory; the old volume is left in place and
+`make db-upgrade-pg18` dumps through a throwaway pg17 container rather than
+touching it, because the dev database holds real review history (D-067, D-029).
+
+**Konku imports none of the edge's shared header snippets, and that is a
+considered deviation.** PLATFORM.md's template says `caddy.import:
+security_headers` so that a new service cannot forget its headers. Konku does
+not forget them — `internal/api/security.go` sets the whole set, with a stricter
+`Permissions-Policy` than the snippet and two headers (COOP, CORP) it does not
+have. Caddy's `header` directive *sets* rather than merges, so importing the
+snippet would quietly replace this app's values with weaker ones. It would also
+break HSTS: the platform Caddyfile documents that two `header` directives in one
+site block do not merge — Caddy keeps the first and silently drops the second —
+so an import plus Konku's own `caddy.header.Strict-Transport-Security` label
+yields one of them, no warning, and a header that ships nowhere. `csp_spa` is
+refused for the same reason plus a worse one (it allows `style-src
+'unsafe-inline'` and `connect-src wss:`, and D-060's policy allows neither), and
+`no_uploads` caps bodies at 64 KB against a 256 KiB markdown allowance. HSTS
+stays the one header the edge adds, because only the component terminating TLS
+knows the connection was secure.
+
+**The deploy has one ordering trap, and it is written down because nothing
+enforces it.** `cmd/konku` opens the pool and pings it *before* it runs
+migrations — deliberately, so a bad `DATABASE_URL` fails at startup rather than
+on the first request. But `konku_app` is created by migration `00006`, as
+`NOLOGIN` with no password, because a password in a migration is a secret in
+git. On a fresh production database the first boot therefore authenticates as a
+role that does not exist yet, and `restart: unless-stopped` turns that into a
+loop whose log line reads like a network problem. `make provision` on the
+platform side creates the **owner** only. So the app role is an explicit operator
+step before the first `up`, and `00006`'s `IF NOT EXISTS` guard is what makes
+doing it early safe. This is the same thing CI has always done and `make
+db-app-role` does locally; production was the only place it was unwritten.
+
+**Backups: Konku configures nothing** (superseding D-064's restic plan and
+`04-ship.md` S3). The platform's nightly `pg_dumpall` covers every database on
+the instance, ships to R2, and has a watchdog that is silent when healthy and
+already alerting for Tuan Tanah. Building a second, Konku-specific pipeline
+beside it would double the thing that can rot without anyone noticing. Two
+consequences are Konku's problem and are recorded in `deploy.md`: a `pg_dumpall`
+is one file containing every tenant, so a Konku-only restore is
+`pg_restore`-into-a-scratch-instance and never `psql <` against production; and
+retention is now enforced in a different repo from the one that promises it —
+14 days locally, ~28 in R2, against a `/privacy` promise of 30, which holds by
+four days and would be falsified by an edit to `ship-backups.sh` that nothing in
+this repo would fail on.
+
+**Rejected: adding a `/health` alias.** PLATFORM.md's contract asks for `GET
+/health`. Konku serves `/healthz` and `/readyz` and the split is D-062 — the
+correct response to each is the opposite of the other, and collapsing them is
+how a database blip becomes a restart that throws away the warm pool. Nothing on
+the platform actually probes the path: the edge routes by hostname and the
+healthcheck is Konku's own, in Konku's compose file. So this is a documentation
+mismatch, not a behavioural one, and the right fix is a line in PLATFORM.md
+rather than an endpoint here.
+
+**Rejected: keeping `Caddyfile` as an unchecked reference copy, silently.** It
+still exists and is still the readable statement of what the labels produce, but
+it now says so at the bottom, in the imperative: verify against the running
+edge's admin API, and delete the file rather than let it drift. It described
+`reverse_proxy app:8080` on a network that did not exist, which is precisely the
+failure it warned about in its own header.
 
 ---
 

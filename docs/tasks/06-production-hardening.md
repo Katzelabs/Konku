@@ -38,7 +38,7 @@ gating every task below rather than arriving after them (D-067).
 `.github/workflows/ci.yml` — the repo is on GitHub (`Katzelabs/Konku`) and
 **nothing runs on push at all**; there is no `.github/` directory.
 
-- Postgres service container (`pgvector/pgvector:pg17`) for integration tests
+- Postgres service container (`pgvector/pgvector:pg18`, matching prod) for integration tests
 - `go vet ./...`, `go test ./...`, `make check-pure`
 - `make sqlc && git diff --exit-code` — generated code must match the queries
 - `cd web && npm ci && npm run typecheck && npm run build`

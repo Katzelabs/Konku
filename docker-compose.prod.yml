@@ -1,7 +1,24 @@
-# Production: app only. Postgres, Caddy and Mongo live in the shared infra
-# stack on the VPS and are reached over the external `shared` network (D-024).
+# Production: app only. Postgres and the edge live in `Katzelabs/platform` on
+# the VPS and are reached over the external `platform` network (D-024, D-088).
 #
-#   docker network create shared    # once, when standing up the infra stack
+# The network was called `shared` until 2026-08-17 and never actually existed
+# on the box under that name — the platform stack creates `platform`. This file
+# is the app half of the contract in platform/PLATFORM.md:
+#
+#   - no `ports:` — the edge is the only thing on the box that publishes any
+#   - `caddy.*` labels are the routing config; caddy-docker-proxy reads them off
+#     the running container and reconfigures the edge live, without a restart
+#   - a memory limit, a healthcheck and `restart: unless-stopped`, so one app
+#     cannot take the box down for every other app on it
+#
+#   docker compose --env-file .env -f docker-compose.prod.yml up -d
+#
+# `platform` is created by the platform stack (`make net` there), not here.
+
+# Pin the project name. Compose otherwise derives it from the directory, and
+# the directory on the box is what somebody happened to clone into.
+name: konku
+
 services:
   app:
     # The image to run, and it must be a **digest** ref (D-061):
@@ -29,14 +46,23 @@ services:
       #
       # DATABASE_URL is konku_app: the non-owner role FORCE ROW LEVEL SECURITY
       # actually applies to, with no DDL rights at all.
-      DATABASE_URL: ${DATABASE_URL}      # postgres://konku_app:...@postgres:5432/konku
+      #
+      # **konku_app must already be able to log in before this container is
+      # ever started.** cmd/konku opens the pool and pings it *before* it runs
+      # migrations, and migration 00006 is what creates konku_app — as NOLOGIN,
+      # with no password, because a password in a migration is a secret in git.
+      # So on a fresh database the first boot connects as a role that does not
+      # exist yet and the container dies. `make provision` on the platform side
+      # creates the owner only; the app role is a separate, explicit step. See
+      # docs/runbooks/deploy.md.
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL to the konku_app role, e.g. postgres://konku_app:...@postgres:5432/konku}
       # MIGRATION_DATABASE_URL is the owner, used once at startup and then
       # closed. **Required here**: leaving it unset falls back to DATABASE_URL,
       # which cannot run DDL — and migrations run at startup with a failure
       # that is fatal by design, so the container would not survive its first
       # boot on a fresh database.
-      MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL}  # postgres://konku:...@postgres:5432/konku
-      SESSION_SECRET: ${SESSION_SECRET}
+      MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL:?set MIGRATION_DATABASE_URL to the owner role, e.g. postgres://konku:...@postgres:5432/konku}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET, openssl rand -base64 32}
       ALLOW_SIGNUP: "false"
       DEV: "false"
 
@@ -53,19 +79,25 @@ services:
       #
       # 0.0.0.0 here, and that is not the mistake it looks like. A container
       # has its own network namespace, so 127.0.0.1 inside it is the
-      # *container's* loopback: nothing on the host and nothing on the `shared`
-      # network could reach it, and the metric this app is most likely to fall
-      # over on — pool saturation — was observable only through `docker exec`.
+      # *container's* loopback: nothing on the host and nothing on the
+      # `platform` network could reach it, and the metric this app is most
+      # likely to fall over on — pool saturation — was observable only through
+      # `docker exec`.
       #
       # The property the old value was reaching for is delivered by the absence
       # of a `ports:` entry, not by the bind address. Unpublished means
       # unroutable from the internet no matter what it binds, while a sibling
-      # Prometheus on `shared` can still scrape it. A separate socket still
+      # Prometheus on `platform` can still scrape it. A separate socket still
       # cannot be exposed by a Caddy misconfiguration the way a route on the
       # main mux can, which was always the real argument.
       #
       # Do NOT add 9090 to `ports:`. That is the line that would make this
       # public, and it is the only one.
+      #
+      # 9090 is also Cockpit's port on this box, and Cockpit's exposure was a
+      # live finding (VPS Infra P1.1). They are unrelated: this one is inside a
+      # container namespace and publishes nothing. Do not confuse them when
+      # auditing `ss -ltnp` on the host.
       METRICS_ADDR: 0.0.0.0:9090
 
       # Mail (07 L2, D-068). Resend over SMTP on 465 — smtps, not smtp:
@@ -74,12 +106,15 @@ services:
       # These are required before ALLOW_SIGNUP can become "true" (07 L10):
       # config refuses to start without them, because an account that cannot
       # be verified can never be recovered either.
+      #
+      # No `:?` on these two: ALLOW_SIGNUP is "false", and config only demands
+      # a transport when signup is open. They become required at 07 L10.
       SMTP_URL: ${SMTP_URL}              # smtps://resend:re_...@smtp.resend.com:465
       MAIL_FROM: ${MAIL_FROM}            # Konku <konku@katzeapps.com>
       # Must match KONKU_HOST. Every verification and reset link is built
       # against it, and a wrong value is only discovered after the mail has
-      # already been delivered.
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}  # https://konkuapp.katzeapps.com
+      # already been delivered — so this one *is* guarded.
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL to https://$KONKU_HOST}
     # A wedged process counts as up forever under `restart: unless-stopped`,
     # and /healthz exists precisely so it does not have to.
     #
@@ -133,13 +168,40 @@ services:
       - /tmp:size=64m
 
     networks:
-      - shared
+      - platform
+
+    # This label set IS the production routing config. caddy-docker-proxy reads
+    # it off the running container and rewrites the edge's Caddyfile live.
     labels:
-      caddy: ${KONKU_HOST}
+      caddy: ${KONKU_HOST:?set KONKU_HOST, e.g. konkuapp.katzeapps.com}
+      # 8080 must be the port the binary actually listens on (PORT's default).
+      # Nothing checks that these agree; if they drift the edge generates a
+      # proxy to a dead port and every request is a 502.
       caddy.reverse_proxy: "{{upstreams 8080}}"
-      # HSTS. Set here because this label set is what caddy-docker-proxy
-      # actually reads; the Caddyfile carries the same directive and the
-      # reasoning, and the two must be changed together.
+
+      # Deliberately NOT `caddy.import: security_headers`, and this is a
+      # considered deviation from PLATFORM.md's template rather than an
+      # omission (D-088).
+      #
+      # internal/api/security.go already sets X-Content-Type-Options,
+      # Referrer-Policy, X-Frame-Options, Permissions-Policy, COOP and CORP,
+      # with a *stricter* Permissions-Policy than the shared snippet and two
+      # headers the snippet does not have. Caddy's `header` directive sets
+      # rather than appends, so importing the snippet would quietly replace
+      # this app's values with weaker ones.
+      #
+      # It would also break the HSTS below. The platform Caddyfile documents
+      # that two `header` directives in one site block do not merge — Caddy
+      # keeps the first and silently drops the second — so an import plus this
+      # label yields one of them and no error.
+      #
+      # For the same reason, do not import `csp_spa`: it allows
+      # style-src 'unsafe-inline' and connect-src wss:, and this app's own CSP
+      # allows neither. Do not import `no_uploads` either — it caps bodies at
+      # 64 KB and a note is allowed 256 KiB of markdown.
+      #
+      # HSTS is the one header the edge must add, because only the component
+      # that terminates TLS knows the connection was really secure.
       #
       # Short max-age deliberately — HSTS cannot be withdrawn inside its own
       # window, so a year-long policy over broken renewal makes the site
@@ -149,5 +211,10 @@ services:
       caddy.header.Strict-Transport-Security: "max-age=300"
 
 networks:
-  shared:
+  # Created by the platform stack (`make net` in Katzelabs/platform), not here.
+  # `name:` is redundant for an external network — Compose does not prefix
+  # those — and is written out anyway to match PLATFORM.md's template, so the
+  # network this joins is stated rather than inferred from a YAML key.
+  platform:
     external: true
+    name: platform

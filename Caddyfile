@@ -1,28 +1,61 @@
-# Reference config for the shared infra stack. Caddy terminates TLS and routes
-# by hostname to each project's app container on the `shared` network.
+# Reference copy of what Konku's production routing resolves to. NOT the file
+# that runs, and nothing reads it — see the warning at the bottom.
 #
-# What actually runs on the VPS is the label set on docker-compose.prod.yml,
-# read by caddy-docker-proxy. This file is the readable copy of the same
-# intent, and the two have to be changed together — a header added here and not
-# there ships nowhere at all.
-{$KONKU_HOST} {
-	encode zstd gzip
+# The edge is `Katzelabs/platform` (`compose/edge.yml`): one standalone
+# caddy-docker-proxy that owns :80 and :443 for the whole box and is the only
+# thing on it publishing a port. It builds its config from the `caddy.*` labels
+# on every running container attached to the `platform` network, so Konku's
+# routing lives in `docker-compose.prod.yml` and nowhere else. Adding or
+# changing a site never touches the platform repo and never restarts the edge.
+#
+# Two files feed the config Caddy actually loads:
+#
+#   platform/compose/Caddyfile   global: the ACME email, the admin endpoint,
+#                                and the shared snippets (security_headers,
+#                                csp_spa, no_uploads, streaming)
+#   konku/docker-compose.prod.yml   the `caddy.*` labels below, per container
+#
+# Konku imports **none** of the shared snippets, deliberately. The reasoning is
+# on the labels in docker-compose.prod.yml and is worth reading before adding
+# one: internal/api/security.go already sets the whole header set, more
+# strictly, and Caddy's `header` directive replaces rather than merges.
 
-	# HSTS lives here and nowhere else.
+{$KONKU_HOST} {
+	# HSTS lives at the edge and nowhere else.
 	#
 	# internal/api/security.go deliberately omits it: only the component that
 	# terminates TLS knows whether the connection was really secure, and the app
 	# would have to guess from a forwarded header. That reasoning is right, and
-	# it is also why this was missed — Caddy does not emit the header on its
-	# own, so between the two components it was set by neither.
+	# it is also why this was missed once — Caddy does not emit the header on
+	# its own, so between the two components it was set by neither.
 	#
 	# max-age starts short on purpose. HSTS cannot be withdrawn inside its own
 	# window: if certificate renewal turns out to be broken, a year-long policy
 	# makes the site unreachable for a year, in every browser that saw it once.
 	# Raise this to 31536000 once renewal has been observed to work on the box
-	# (04-ship S1), and add includeSubDomains only if every host under
-	# katzeapps.com can serve TLS — the apex is shared across projects (D-068).
+	# (04-ship S1).
 	header Strict-Transport-Security "max-age=300"
 
-	reverse_proxy app:8080
+	# `{{upstreams 8080}}` in the label resolves to the container's address on
+	# the `platform` network. There is no `app:8080` hostname involved and no
+	# hand-written site block on the box.
+	reverse_proxy konku-app-1:8080
 }
+
+# ---------------------------------------------------------------------------
+# Everything above is a comment with syntax highlighting.
+#
+# It is here because a label set is hard to read as a policy, and this states
+# the same intent in the form the intent is usually discussed in. It is also
+# the classic way to ship a header nowhere at all: change one and not the
+# other and the difference is invisible until someone checks the response.
+#
+# So: `docker-compose.prod.yml` is the source of truth. Verify against the
+# running edge, never against this file —
+#
+#   curl -sI https://konkuapp.katzeapps.com | grep -i strict-transport
+#   docker exec edge-caddy-1 wget -qO- http://127.0.0.1:2019/config/
+#
+# and if keeping the two in step ever costs more than it explains, delete this
+# file rather than let it drift.
+# ---------------------------------------------------------------------------

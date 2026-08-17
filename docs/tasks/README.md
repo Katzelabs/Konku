@@ -42,8 +42,12 @@ hitting it before the fix does.
 A short list, and everything not on it is local work against
 `docker-compose.yml`:
 
-- The deploy — Caddy, HTTPS, the shared network, database and role
-- Nightly backups running as a cron *on the box*
+- The deploy — joining the `platform` network, provisioning the database and
+  **both** roles, and pointing DNS at the box. TLS is the platform edge's and
+  needs nothing from us (D-088)
+- ~~Nightly backups running as a cron *on the box*~~ — the platform's
+  `pg_dumpall` already covers every tenant and ships off-box. What is left is
+  verifying Konku is in the dump, which is not a build task
 - **Email deliverability** — SPF, DKIM, DMARC on a real sending domain
 - The half of the release pipeline where the VPS pulls an image by digest
 - Uptime monitoring and alert routing against a real endpoint

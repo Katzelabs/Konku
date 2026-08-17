@@ -23,39 +23,53 @@ actually depends on (S6).
 
 ## S1 — VPS deploy
 
-`todo` · ~3 h · no deps
+`todo` · ~2 h · no deps
 
-Follows `TECH.md` §11.
+Follows `TECH.md` §11 and `docs/runbooks/deploy.md`. **The box is already
+standing** — that is the change since this file was written (D-088). The
+platform stack, the standalone edge, the shared Postgres 18, the nightly dumps
+and the off-box shipping all exist and are serving Tuan Tanah. Konku is a tenant
+of it, and `Katzelabs/platform/PLATFORM.md` is the contract.
 
-**Shared infra stack** (once, if not already up):
+Tracked as **VPS Infra P3.2** (the `shared` → `platform` rename, done) and
+**P3.3** (this deploy) in ClickUp.
+
+**The network already exists.** No infra stack to stand up:
 ```bash
-docker network create shared
-# caddy + pgvector/pgvector:pg17 + mongo on that network
+cd ~/projects/platform && make net      # idempotent, and `make up` does it too
 ```
 
-**Provision konku's database and roles:**
-```sql
-CREATE ROLE konku LOGIN PASSWORD '...';           -- owns the schema, runs migrations
-CREATE DATABASE konku OWNER konku;
-REVOKE CONNECT ON DATABASE konku FROM PUBLIC;
-\c konku
-CREATE EXTENSION IF NOT EXISTS vector;
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-
-CREATE ROLE konku_app LOGIN PASSWORD '...';       -- the running app (06 P1)
+**Provision konku's database and the owner role:**
+```bash
+cd ~/projects/platform
+make provision NAME=konku PASS="$(openssl rand -base64 24 | tr -d '/+=')" EXT=vector
 ```
+
+**Then create `konku_app` by hand, before the first `up`.** This is the one
+ordering trap and `make provision` cannot do it for you — the app pings its pool
+before it migrates, and the role is created `NOLOGIN` by migration `00006`, so a
+fresh database boots into a restart loop whose log line reads like a network
+problem. Exact statement in `deploy.md`.
 
 - The app connects as `konku_app`, **never** as `postgres` and — since `06` P1
   — never as the owner either. A table owner bypasses its own RLS policies,
-  which is the difference between RLS and the appearance of it (D-059)
-- `pgvector` image from day one even though nothing uses vectors until v1.3 —
-  installing it later on a shared instance means coordinated downtime across
-  every project on the box (D-025)
-- Deploy `docker-compose.prod.yml`. The variables it expects, all of them:
-  `KONKU_HOST`, `DATABASE_URL` (as **`konku_app`**),
+  which is the difference between RLS and the appearance of it (D-059).
+  `rolsuper` and `rolbypassrls` must both be `f`; check before going further
+- `pgvector` is installed by provisioning, not by Konku's migrations: untrusted
+  extensions need superuser. It goes in from day one even though nothing uses
+  vectors until v1.3 — installing it later on a shared instance means
+  coordinated downtime across every project on the box (D-025)
+- Deploy `docker-compose.prod.yml`. `.env.prod.example` is the annotated list;
+  copy it to `.env` on the box, `chmod 600`. The required ones are guarded with
+  `:?` so a missing value refuses to start and names itself: `KONKU_IMAGE` (a
+  **digest**), `KONKU_HOST`, `DATABASE_URL` (as **`konku_app`**),
   **`MIGRATION_DATABASE_URL`** (as the owner `konku`),
-  `SESSION_SECRET` (`openssl rand -base64 32`), `SENTRY_DSN`, `SMTP_URL`,
-  `MAIL_FROM`, `PUBLIC_BASE_URL`
+  `SESSION_SECRET` (`openssl rand -base64 32`), `PUBLIC_BASE_URL`. `SENTRY_DSN`,
+  `SMTP_URL` and `MAIL_FROM` are unguarded because signup is closed until L10
+- The host in both URLs is `postgres` — the platform service name over the
+  `platform` network. Never `localhost`, and never the `127.0.0.1:5432`
+  mapping, which exists for `psql` from the box's shell and is unreachable from
+  a container
 - **`MIGRATION_DATABASE_URL` is not optional here.** Unset, it falls back to
   `DATABASE_URL` — which is the role with no DDL rights — and migrations run
   at startup with a failure that is fatal by design. The container would not
@@ -96,22 +110,35 @@ down.
 
 ## S3 — Backups on the box
 
-`todo` · ~2 h · needs S1
+`todo` · ~30 min · needs S1
 
-`06` P11 gave the local database a dump and `06` P10 rehearsed the restore.
-This is the production version (D-064):
+**Mostly already done, and not by us** (D-088). The platform runs a nightly
+`pg_dumpall` covering every database on the instance, ships the newest dump to
+Cloudflare R2 with 7 daily + 4 weekly retention, and has a watchdog at 04:00
+that is silent when healthy and already alerting for Tuan Tanah. This item is
+now *verifying it covers Konku*, not building it. The restic plan in D-064 is
+superseded — a second pipeline beside it would double the thing that can rot
+unnoticed.
 
-- Nightly `pg_dump -Fc konku` — **per-database, not `pg_dumpall`**, so
-  restoring Konku never disturbs the other projects sharing that Postgres
-- Push off the box with restic to B2 or S3, encrypted, with a retention
-  policy. A couple of dollars a month. A backup on the same machine as the
-  database is not a backup
-- **Retention is at most 30 days, and that is now a promise rather than a
-  preference.** The privacy policy (`07` L9) tells users their data is gone
-  from backups within 30 days of deleting their account, which is only true if
-  `--keep-daily` and friends add up to 30 or fewer. Set it deliberately
-- **The job alerts on failure** (S5). A silent cron that stopped working in
-  March is the standard way this goes wrong
+- **Check Konku is actually in the dump**, rather than assuming a provisioned
+  tenant is: `gunzip -c <newest> | grep -c 'CREATE DATABASE konku'`. Two
+  healthy-looking dumps taken before a tenant existed is on PLATFORM.md's list
+  of silent failures already found on this box
+- **A `pg_dumpall` is one file containing every tenant**, which the per-database
+  plan existed to avoid. Restoring Konku alone is `pg_restore` into a scratch
+  instance, never `psql <` against production. Write that into `restore.md`
+  before the drill, not during it
+- **Retention is at most 30 days, and that is a promise rather than a
+  preference.** The privacy policy (`07` L9) tells users their data is gone from
+  backups within 30 days of deleting their account. 14 days locally and ~28 in
+  R2 satisfies it — by four days, enforced in a repo that does not contain the
+  promise. Note the coupling somewhere the next person editing
+  `ship-backups.sh` will see it
+- **`/privacy` also says the backups are encrypted.** True of R2, which encrypts
+  at rest; not true of the plaintext gzip in `~/projects/platform/backups` on
+  the VPS. Narrow the wording or encrypt the local copy — this is a published
+  legal document making a claim about a thing we control
+- The watchdog already covers failure (S5). Do not build a second one
 
 **Done when:** you have restored last night's production dump into local dev
 and logged in against it — timed, and written into `docs/runbooks/restore.md`.

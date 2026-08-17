@@ -12,12 +12,22 @@ has its own page: `rollback.md`.
 
 ## Before the first deploy
 
-The box is **shared**. Postgres, Caddy and Mongo already serve other projects
-on the `shared` Docker network, and every step below is written so that a
-mistake here costs Konku and not them.
+The box belongs to `Katzelabs/platform`, and **its `PLATFORM.md` is the
+contract this page obeys** — read that first. What it means here:
+
+- One process owns `:80`/`:443` for the whole machine: the edge
+  (`compose/edge.yml`, caddy-docker-proxy). Konku publishes **no ports**. It
+  joins the `platform` network, declares `caddy.*` labels, and the edge picks it
+  up within seconds without being restarted.
+- One shared Postgres 18 serves every app, each with its own database and role.
+- Nothing in the platform repo changes when Konku is deployed.
+
+The network was called `shared` in this repo until 2026-08-17 and never existed
+under that name on the box. It is `platform`, created once by the platform
+stack:
 
 ```bash
-docker network create shared     # once, if the infra stack is not already up
+cd ~/projects/platform && make net      # idempotent; `make up` also does it
 ```
 
 ### Roles and database
@@ -26,16 +36,50 @@ Two principals, and the difference is load-bearing (D-059). A table owner
 bypasses its own RLS policies, so an app connecting as the owner has RLS in
 name only.
 
-```sql
-CREATE ROLE konku LOGIN PASSWORD '...';        -- owns the schema, runs migrations
-CREATE DATABASE konku OWNER konku;
-REVOKE CONNECT ON DATABASE konku FROM PUBLIC;
-\c konku
-CREATE EXTENSION IF NOT EXISTS vector;         -- from day one (D-025)
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
+`make provision` creates the **owner** and the database, and installs the
+extensions — pgvector is untrusted and needs superuser, which is why it is done
+here rather than by Konku's own migrations (D-025):
 
-CREATE ROLE konku_app LOGIN PASSWORD '...';    -- the running app
+```bash
+cd ~/projects/platform
+make provision NAME=konku PASS="$(openssl rand -base64 24 | tr -d '/+=')" EXT=vector
 ```
+
+`pg_trgm` is *trusted* in PG13+, so migration `00001` creates it itself as the
+owner and it does not need listing in `EXT`. Adding it there anyway is harmless.
+
+**Then create the app role by hand, and do it before the container ever
+starts.** This is the one ordering trap in the whole deploy, and it is not
+something `make provision` can do for you:
+
+```bash
+docker compose --env-file .env -f compose/postgres.yml exec -T postgres \
+  psql -v ON_ERROR_STOP=1 -U postgres -d konku -c \
+  "DO \$\$ BEGIN
+     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'konku_app') THEN
+       CREATE ROLE konku_app LOGIN PASSWORD '<app password>';
+     ELSE
+       ALTER ROLE konku_app WITH LOGIN PASSWORD '<app password>';
+     END IF;
+   END \$\$;"
+```
+
+Why it cannot be skipped or reordered:
+
+- `cmd/konku` opens the pool and **pings it before it migrates** — the ping is
+  there so a bad `DATABASE_URL` fails at startup instead of on the first
+  request.
+- `konku_app` is created by migration `00006`, as `NOLOGIN` with no password,
+  because a password in a migration is a secret in git.
+- So on a fresh database the first boot tries to authenticate as a role that
+  does not exist yet, dies, and `restart: unless-stopped` turns that into a
+  loop. The log line is `store: connecting to database`, which reads like a
+  network problem and is not one.
+
+The `IF NOT EXISTS` guard in `00006` means creating the role early is safe:
+the migration finds it and only applies its grants. This is the same thing CI
+does before running the image, and the same thing `make db-app-role` does
+locally.
 
 **Check the app role cannot bypass RLS before going further.** This is the one
 that silently invalidates everything else, and it is the bug that was found in
@@ -47,6 +91,13 @@ SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'konku_app'
 ```
 
 ### Environment
+
+`.env.prod.example` is the annotated copy. On the box:
+
+```bash
+cd ~/projects/konku
+cp .env.prod.example .env && chmod 600 .env && $EDITOR .env
+```
 
 Every variable `docker-compose.prod.yml` expects:
 
@@ -85,22 +136,26 @@ symptom:
 
 ```bash
 # 1. Verify the digest you intend to run, before it touches the box.
+#    Locally, against the dev database.
 make release-verify REF=ghcr.io/katzelabs/konku@sha256:<digest>
 
 # 2. Back up first. Every deploy runs migrations.
-/opt/konku/scripts/backup.sh
+cd ~/projects/platform && make backup-now && bash scripts/ship-backups.sh
 
 # 3. Point the compose file at that exact digest. Record it somewhere the
 #    next deploy can read: rolling back means knowing what the previous one
 #    was, and `docker inspect` after the fact is not a plan.
-echo 'KONKU_IMAGE=ghcr.io/katzelabs/konku@sha256:<digest>' >> /opt/konku/.env
+cd ~/projects/konku
+$EDITOR .env                                    # set KONKU_IMAGE=...@sha256:<digest>
 
-# 4. Pull and start, on the box.
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
+# 4. Pull and start, on the box. --env-file is not optional: without it
+#    Compose reads .env for interpolation but the `:?` guards still fire on
+#    anything the shell has not exported.
+docker compose --env-file .env -f docker-compose.prod.yml pull
+docker compose --env-file .env -f docker-compose.prod.yml up -d
 
-# 4. Watch it come up. Migrations run at startup.
-docker compose -f docker-compose.prod.yml logs -f app
+# 5. Watch it come up. Migrations run at startup.
+docker compose --env-file .env -f docker-compose.prod.yml logs -f app
 ```
 
 **Never `docker build` on the server.** The image is built and published by CI
@@ -120,10 +175,21 @@ docker inspect --format '{{.State.Health.Status}}' konku-app-1   # healthy
 # against a running Caddy.
 curl -sI https://$KONKU_HOST | grep -i strict-transport-security
 
-# Metrics are reachable on the shared network and NOT from the internet.
-docker run --rm --network shared alpine:3.21 \
-  wget -qO- http://app:9090/metrics | head -3
+# The edge actually generated a route for this host. Checking the app answers
+# is not the same as checking the edge knows about it.
+docker exec edge-caddy-1 wget -qO- http://127.0.0.1:2019/config/ \
+  | grep -o "$KONKU_HOST"
+
+# Metrics are reachable on the platform network and NOT from the internet.
+docker run --rm --network platform alpine:3.21 \
+  wget -qO- http://konku-app-1:9090/metrics | head -3
 curl -s --max-time 5 https://$KONKU_HOST:9090/metrics   # must fail
+
+# And 9090 is not published on the host. Cockpit also uses 9090 on this box
+# (VPS Infra P1.1) — if something is listening, confirm which it is before
+# concluding this container leaked it.
+ss -ltnp | grep 9090 || echo "nothing on 9090 — correct"
+docker port konku-app-1 || echo "no published ports — correct"
 ```
 
 Then sign in from your phone. That is the check the others stand in for.
@@ -146,38 +212,48 @@ The apex is shared across projects, so this commits them too.
 
 ## Backups
 
-`scripts/backup.sh`, nightly from cron:
+**Konku configures nothing.** The platform's `postgres-backup` sidecar runs
+`pg_dumpall` nightly, which covers *every* database on the shared instance, so
+a provisioned tenant is backed up from the moment it exists. `ship-backups.sh`
+pushes the newest dump to Cloudflare R2, `check-backups.sh` verifies both and is
+silent when healthy, and `r2-restore-test.sh` proves the off-box copy restores.
+All of it lives in `Katzelabs/platform` and is already running for Tuan Tanah.
 
-```
-15 3 * * *  /opt/konku/scripts/backup.sh >> /var/log/konku-backup.log 2>&1
-```
+This replaces the restic plan in `04-ship.md` S3 and the per-project
+`scripts/backup.sh` cron this page used to describe (D-088). Konku's
+`scripts/backup.sh` is now dev-only.
 
-Its config lives in `/opt/konku/backup.env`, `chmod 600`, never in the repo.
+What is worth checking rather than assuming, the first time:
 
-**It dumps, then restores what it dumped into a scratch database and compares
-row counts, in the same run.** That is the point: "the backup ran" and "the
-backup is restorable" are one signal rather than two. A cron that stops running
-is caught by the alert; a cron that keeps running and writes files nobody can
-read back is silent for months and is discovered on the worst possible day.
+- **Konku's database is actually in the dump.** `pg_dumpall` covers everything
+  the *superuser* can see, and provisioning revokes `CONNECT` from `PUBLIC` —
+  that does not affect the superuser, but "two healthy-looking 1.2 KB dumps
+  taken before the tenant existed" is on PLATFORM.md's list of silent failures
+  found on this box. Check the effect:
 
-The script fails loudly and pings nothing on failure — **the alert is the
-absence of the heartbeat**, so a failure that still pinged would be a backup
-reporting itself healthy while broken.
+  ```bash
+  cd ~/projects/platform
+  gunzip -c "$(ls -t backups/pg_dumpall_*.sql.gz | head -1)" \
+    | grep -c 'CREATE DATABASE konku'      # must be 1
+  ```
 
-Two properties that must be changed together with something else:
+- **Restoring Konku must not disturb the other tenants.** A `pg_dumpall` is one
+  file containing every database, so replaying the whole thing is not a
+  Konku-only restore. `restore.md` is the drill; the extraction is
+  `pg_restore`-into-a-scratch-instance, not `psql < dump` against production.
 
-- **Retention is 30 days because `/privacy` says so.** `--keep-daily 30` is a
-  promise to users that their data is gone from backups within 30 days of
-  deleting their account. Changing it without changing the policy makes the
-  policy false.
-- **The verify uses `--no-owner --no-privileges`.** It proves the *data* came
-  back. It does not prove the grants and policies did — that is the full drill
-  in `restore.md`, which is a different exercise on a different cadence, and
-  it is the one that produces the RTO number in `PRD.md` §9.
+- **Retention is a promise, not a preference.** `/privacy` tells users their
+  data is gone from backups within 30 days of deleting their account. The
+  platform keeps 14 days locally and 7 daily + 4 weekly (~28 days) in R2, so
+  the promise holds — but it holds by four days, and it is enforced in a
+  different repo from the one that makes the promise. Changing
+  `BACKUP_RETENTION_DAYS`, or the `--min-age` values in `ship-backups.sh`,
+  makes `/privacy` false without anything failing.
 
-Restic pushes off the box. A backup on the same machine as the database
-survives a bad migration and `docker compose down -v`; it does not survive
-losing the machine, which is the case that ends the project.
+- **`/privacy` says the backups are encrypted.** R2 encrypts objects at rest,
+  so that is defensible for the off-box copy; the nightly dumps sitting in
+  `~/projects/platform/backups` on the VPS are plaintext gzip. Either narrow
+  the wording or encrypt the local copy — do not leave it as it is.
 
 ---
 
@@ -190,11 +266,18 @@ nobody has seen fire is an alert you are guessing about.
 |---|---|---|
 | Service down | `/readyz` failing 2 min | stop the app container |
 | Shipped broken | 5xx above 0.1% for 5 min | `/api/__panic` is dev-only, so force a 500 another way |
-| Backup did not complete | no heartbeat in 26 h | point `BACKUP_OWNER_URL` at nothing and run the script |
+| Backup did not complete | the platform watchdog | already wired: `check-backups.sh` at 04:00 → `#alerts` |
+
+The third one is **done and not Konku's** — the platform's watchdog covers
+every tenant's dump and speaks only when something is wrong. Do not build a
+second one; verify this one sees Konku (above).
 
 The second alert needs something scraping `/metrics`, which nothing does yet.
-Standing up a Prometheus on the `shared` network is part of S5 and is what
-makes the metrics bind (D-081) worth anything.
+PLATFORM.md rules out Prometheus/Grafana on this box deliberately (~1 GB of RAM
+to watch a handful of containers), so S5 needs a decision rather than the
+sidecar this page used to assume: either the silent-cron-watchdog pattern the
+platform already uses, or accept that `konku_http_5xx` is scraped by nothing and
+the metrics bind (D-081) buys observability by `docker exec` only.
 
 **The status page must not live on this box.** An app that is down cannot serve
 the page saying it is down. GitHub Pages from `Katzelabs/Konku` is enough.

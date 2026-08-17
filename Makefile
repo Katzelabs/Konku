@@ -51,7 +51,7 @@ KONKU_BACKUP_DIR ?= $(HOME)/Backups/konku
 # needs RESTORE_DB=konku CONFIRM=yes, typed on purpose.
 RESTORE_DB ?= konku_restore
 
-.PHONY: help setup dev dev-api dev-web build test test-integration test-mail sqlc sqlc-diff lint check check-pure migrate-up migrate-down db-up db-down db-app-role db-dump db-restore mail-up mail-down release-verify clean
+.PHONY: help setup dev dev-api dev-web build test test-integration test-mail sqlc sqlc-diff lint check check-pure migrate-up migrate-down db-up db-down db-app-role db-dump db-restore db-upgrade-pg18 mail-up mail-down release-verify clean
 
 help:
 	@grep -E '^[a-zA-Z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -152,6 +152,67 @@ db-restore: ## Restore a dump into $RESTORE_DB. FILE=path, or the newest dump.
 	echo "restored. Row counts in $(RESTORE_DB):"; \
 	docker compose exec -T db psql -U konku -d "$(RESTORE_DB)" -c \
 	  "select relname, n_live_tup from pg_stat_user_tables where n_live_tup > 0 order by n_live_tup desc;"
+
+# One-time: move the dev database from the pg17 volume to the pg18 one (D-088).
+#
+# The dev volume holds real notes and real review history, and review_logs
+# cannot be reconstructed after the fact (D-029) — so this dumps through a
+# throwaway pg17 container rather than trusting anything to happen in place.
+# `docker compose up` on pg18 would otherwise just hand you an empty database
+# while the pg17 data sits in a volume nothing mounts any more.
+#
+# Nothing here writes to the pg17 volume: it is mounted read-only, and the
+# target is safe to re-run and safe to abandon halfway.
+db-upgrade-pg18: ## One-time: migrate the dev database from the pg17 volume to pg18
+	@set -e; \
+	old=$$(docker volume ls -q -f name='^konku[-_]konku-dev-data$$' | head -1); \
+	if [ -z "$$old" ]; then \
+	  echo "no pg17 volume found — nothing to upgrade."; \
+	  echo "If this is a fresh clone, just run \`make db-up\`."; \
+	  exit 0; \
+	fi; \
+	echo "pg17 volume: $$old"; \
+	tmp=$$(mktemp -d); \
+	trap 'rm -rf "$$tmp"' EXIT; \
+	echo "dumping from a throwaway pg17 (volume mounted read-only)..."; \
+	docker run --rm -d --name konku-pg17-dump \
+	  -v "$$old":/var/lib/postgresql/data:ro \
+	  -e POSTGRES_USER=konku -e POSTGRES_PASSWORD=konku -e POSTGRES_DB=konku \
+	  pgvector/pgvector:pg17 >/dev/null; \
+	trap 'docker rm -f konku-pg17-dump >/dev/null 2>&1 || true; rm -rf "$$tmp"' EXIT; \
+	for i in $$(seq 1 30); do \
+	  docker exec konku-pg17-dump pg_isready -U konku -d konku >/dev/null 2>&1 && break; \
+	  [ "$$i" = 30 ] && { echo "pg17 never became ready"; docker logs konku-pg17-dump; exit 1; }; \
+	  sleep 1; \
+	done; \
+	docker exec konku-pg17-dump pg_dump -Fc -U konku -d konku > "$$tmp/pg17.dump"; \
+	docker rm -f konku-pg17-dump >/dev/null; \
+	[ -s "$$tmp/pg17.dump" ] || { echo "the pg17 dump was empty; refusing to continue"; exit 1; }; \
+	echo "dumped $$(du -h "$$tmp/pg17.dump" | cut -f1)"; \
+	echo "starting pg18..."; \
+	docker compose up -d db; \
+	for i in $$(seq 1 60); do \
+	  docker compose exec -T db pg_isready -U konku -d konku >/dev/null 2>&1 && break; \
+	  [ "$$i" = 60 ] && { echo "pg18 never became ready"; docker compose logs db; exit 1; }; \
+	  sleep 1; \
+	done; \
+	rows=$$(docker compose exec -T db psql -tA -U konku -d konku -c \
+	  "select count(*) from pg_stat_user_tables" 2>/dev/null || echo 0); \
+	if [ "$$rows" != "0" ]; then \
+	  echo "the pg18 database already has $$rows tables. Refusing to restore over it."; \
+	  echo "If you want to start again: docker compose down && docker volume rm konku_konku-dev-pg18"; \
+	  exit 1; \
+	fi; \
+	echo "restoring into pg18..."; \
+	docker compose exec -T db pg_restore -U konku -d konku --no-owner < "$$tmp/pg17.dump"; \
+	$(MAKE) --no-print-directory db-app-role; \
+	echo; \
+	echo "restored. Row counts on pg18:"; \
+	docker compose exec -T db psql -U konku -d konku -c \
+	  "select relname, n_live_tup from pg_stat_user_tables where n_live_tup > 0 order by n_live_tup desc;"; \
+	echo; \
+	echo "The pg17 volume ($$old) is untouched. Remove it once you trust this:"; \
+	echo "  docker volume rm $$old"
 
 dev-api: ## Run the Go server on :8080
 	go run ./cmd/konku

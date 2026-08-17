@@ -12,7 +12,7 @@
 |---|---|---|
 | Backend | **Go** | single binary, monolith |
 | Router | **chi** | thin; handlers stay `http.HandlerFunc` (D-042) |
-| Database | **Postgres 17** (`pgvector/pgvector:pg17`) | shared instance in prod, own container in dev |
+| Database | **Postgres 18** (`pgvector/pgvector:pg18`) | shared platform instance in prod, own container in dev; same major in both (D-088) |
 | DB access | **pgx + sqlc** | write SQL, generate type-safe Go. No ORM (D-043) |
 | Tenancy | `WHERE user_id` **plus** Postgres RLS | two independent mechanisms (D-059) |
 | Migrations | **goose** | embedded in the binary, runs at startup |
@@ -28,7 +28,7 @@
 | Frontend tests | **Vitest + Testing Library** | dev only (D-063) |
 | E2E | **Playwright** | core loop and auth flows, in CI (D-063) |
 | CI/CD | **GitHub Actions** | merge gate on `main`, deploys from tags (D-061) |
-| Reverse proxy | Caddy | automatic TLS, lives in the shared infra stack |
+| Reverse proxy | Caddy | automatic TLS; the standalone edge in `Katzelabs/platform`, configured from this app's labels (D-088) |
 | Cache/queue | **none** | Redis only when there is a real job queue — see D-023 |
 | Mobile | PWA; native optional later | API-first keeps Flutter/RN/Swift cheap |
 
@@ -47,7 +47,7 @@ konku/
 ├── go.mod  go.sum  sqlc.yaml
 ├── Makefile  Dockerfile  Caddyfile  .env.example
 ├── docker-compose.yml          # dev, self-contained (postgres :5433)
-├── docker-compose.prod.yml     # app only, joins external `shared` network
+├── docker-compose.prod.yml     # app only, joins external `platform` network
 ├── .github/workflows/          # ci.yml (merge gate) · release.yml (D-061)
 ├── docs/
 │   ├── runbooks/               # restore, rollback, secret rotation (D-064)
@@ -455,34 +455,39 @@ Backend coverage is real — 13 test files, table-driven, integration tests agai
 
 ### Topology
 
+The VPS is owned by **`Katzelabs/platform`** and its `PLATFORM.md` is the deploy contract (D-088). Konku is a tenant of it and changes nothing there.
+
 ```
-infra/docker-compose.yml     caddy · postgres (pgvector) · mongo   → network: shared
-konku/docker-compose.prod.yml   app only                            → network: shared (external)
-other-project/...               app only                            → network: shared (external)
+platform/compose/edge.yml       caddy-docker-proxy   → the ONLY thing publishing :80/:443
+platform/compose/postgres.yml   postgres 18 (pgvector) + nightly pg_dumpall
+konku/docker-compose.prod.yml      app only          → network: platform (external)
+other-project/...                  app only          → network: platform (external)
 ```
 
 ```bash
-docker network create shared
+cd ~/projects/platform && make net      # creates `platform`; idempotent
 ```
 
-### Prod: shared Postgres, isolated database and role
+The network was called `shared` here until 2026-08-17 and never existed under that name on the box. Konku publishes **no ports**: it joins `platform`, declares `caddy.*` labels, and the edge reconfigures itself live from them within seconds.
 
-```sql
-CREATE ROLE konku LOGIN PASSWORD '...';
-CREATE DATABASE konku OWNER konku;
-REVOKE CONNECT ON DATABASE konku FROM PUBLIC;
-\c konku
-CREATE EXTENSION IF NOT EXISTS vector;
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
+### Prod: shared Postgres, isolated database and two roles
+
+```bash
+cd ~/projects/platform
+make provision NAME=konku PASS='...' EXT=vector
 ```
 
-Both extensions are enabled at creation even though nothing uses them until M2 — `CREATE EXTENSION` is invisible to other projects, and it makes semantic search purely application work later.
+That creates the database and its **owner** role, revokes `CONNECT` from `PUBLIC`, and installs pgvector — untrusted extensions need superuser, which is why provisioning does it and not Konku's migrations (D-025). `pg_trgm` is trusted in PG13+, so migration `00001` creates it itself.
 
-The app connects as `konku`, **never** as `postgres`.
+`konku_app`, the runtime role, is **not** created by provisioning. It is created `NOLOGIN` by migration `00006` and must be given `LOGIN` and a password *before the first container start* — the app pings the pool before it migrates, so a fresh database otherwise boots into a restart loop. The exact statement is in `docs/runbooks/deploy.md`.
+
+The app connects as `konku_app`, **never** as the owner and never as `postgres`. A table owner bypasses its own RLS policies (D-059).
 
 ### Dev: self-contained
 
 `docker-compose.yml` ships its own Postgres so `git clone && docker compose up` works, on port 5433 to avoid collisions. Also what CI uses for integration tests.
+
+**It tracks the platform's major version** — `pgvector/pgvector:pg18`. Dev and CI on a different major than production means local work silently tests against a different engine. pg18 moved `PGDATA` into a per-major subdirectory, so the volume mounts `/var/lib/postgresql` rather than `.../data`; `make db-upgrade-pg18` moves an existing pg17 dev volume across without writing to it.
 
 ### Connection pool — the failure you will actually hit
 

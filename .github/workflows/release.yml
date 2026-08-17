@@ -103,7 +103,7 @@ jobs:
     # than during it.
     services:
       postgres:
-        image: pgvector/pgvector:pg17
+        image: pgvector/pgvector:pg18
         env:
           POSTGRES_USER: konku
           POSTGRES_PASSWORD: konku

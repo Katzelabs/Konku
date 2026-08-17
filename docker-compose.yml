@@ -2,7 +2,18 @@
 # Also what CI uses for integration tests.
 services:
   db:
-    image: pgvector/pgvector:pg17
+    # pg18, matching the shared platform Postgres on the VPS (D-088). Dev and
+    # CI on a different major than production means local dev silently tests
+    # against a different engine than the one that holds real users' data.
+    #
+    # **This was pg17 until 2026-08-17 and the upgrade is not automatic.** The
+    # dev volume holds weeks of real notes and review history (D-067), and
+    # review_logs in particular cannot be reconstructed. `make db-upgrade-pg18`
+    # dumps the pg17 volume and restores it into the pg18 one; the old volume
+    # is left untouched either way, so nothing here can lose data by being run
+    # in the wrong order. Starting this service before that runs just gives you
+    # an empty database.
+    image: pgvector/pgvector:pg18
     environment:
       POSTGRES_USER: konku
       POSTGRES_PASSWORD: konku
@@ -11,7 +22,17 @@ services:
       # 5433 so it cannot collide with a local Postgres on 5432.
       - "5433:5432"
     volumes:
-      - konku-dev-data:/var/lib/postgresql/data
+      # PG18 CHANGED THIS PATH. Up to pg17 the image used
+      # PGDATA=/var/lib/postgresql/data; from pg18 it is
+      # /var/lib/postgresql/18/docker, so major versions sit in their own
+      # subdirectory and `pg_upgrade --link` works without crossing a mount
+      # boundary. Mounting the old path on pg18 makes the volume an "unused
+      # mount" and the real data would live inside the container, lost on
+      # recreate. Mount the PARENT and let the image own the subdirectory.
+      #   docker-library/postgres#1259
+      #
+      # A new volume name, so the pg17 data is still there to dump from.
+      - konku-dev-pg18:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U konku -d konku"]
       interval: 5s
@@ -47,4 +68,10 @@ services:
       retries: 10
 
 volumes:
+  # The live one, pg18.
+  konku-dev-pg18:
+  # The pg17 volume, kept so `make db-upgrade-pg18` has something to read and
+  # so the upgrade is reversible. Delete it once the pg18 database has been in
+  # daily use long enough that you trust it — `docker volume rm
+  # konku_konku-dev-data` — and not before.
   konku-dev-data:
