@@ -169,7 +169,10 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          # web/.nvmrc, not a number here: this and the Dockerfile's node
+          # image are what must agree, and a literal in this file is a third
+          # place to forget. make check-toolchains enforces the pair.
+          node-version-file: web/.nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -243,7 +246,10 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          # web/.nvmrc, not a number here: this and the Dockerfile's node
+          # image are what must agree, and a literal in this file is a third
+          # place to forget. make check-toolchains enforces the pair.
+          node-version-file: web/.nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
 

@@ -51,7 +51,7 @@ KONKU_BACKUP_DIR ?= $(HOME)/Backups/konku
 # needs RESTORE_DB=konku CONFIRM=yes, typed on purpose.
 RESTORE_DB ?= konku_restore
 
-.PHONY: help setup dev dev-api dev-web build test test-integration test-mail sqlc sqlc-diff lint check check-pure migrate-up migrate-down db-up db-down db-app-role db-dump db-restore db-upgrade-pg18 mail-up mail-down release-verify clean
+.PHONY: help setup dev dev-api dev-web build test test-integration test-mail sqlc sqlc-diff lint check check-pure check-toolchains migrate-up migrate-down db-up db-down db-app-role db-dump db-restore db-upgrade-pg18 mail-up mail-down release-verify clean
 
 help:
 	@grep -E '^[a-zA-Z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -328,7 +328,37 @@ sqlc-diff: ## Fail if generated code is stale
 		echo "sqlc not installed (go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest); skipping drift check"; \
 	fi
 
-check: lint test check-pure sqlc-diff ## All checks
+check: lint test check-pure check-toolchains sqlc-diff ## All checks
+
+# The image builds with the toolchains the test jobs use (D-088).
+#
+# Two pairs, each with a source of truth and a copy of it in the Dockerfile:
+# go.mod's `go` directive against `golang:X.Y-alpine`, and web/.nvmrc against
+# `node:X-alpine`. Nothing linked them, and both had drifted — Dependabot moved
+# the base images to golang 1.26 and node 26 while CI stayed on go 1.25.13 and
+# node 24. Neither is unsafe on its own; together they meant the artifact that
+# ships was compiled and bundled by toolchains nothing in CI ever ran.
+#
+# Dependabot will keep proposing those bumps, and it should. This turns a
+# silent divergence into a red PR that names the two files to change together.
+check-toolchains: ## Assert the Dockerfile builds with the toolchains CI tests on
+	@fail=0; \
+	want_go=$$(awk '/^go /{split($$2,v,"."); print v[1]"."v[2]; exit}' go.mod); \
+	got_go=$$(sed -n 's|^FROM.*golang:\([0-9][0-9.]*\)-alpine.*|\1|p' Dockerfile | head -1); \
+	if [ "$$want_go" != "$$got_go" ]; then \
+	  echo "toolchain drift: go.mod says go $$want_go, Dockerfile builds with golang:$$got_go"; \
+	  echo "  bump the Dockerfile only when go.mod moves — CI reads go.mod"; \
+	  fail=1; \
+	fi; \
+	want_node=$$(tr -dc '0-9' < web/.nvmrc); \
+	got_node=$$(sed -n 's|^FROM.*node:\([0-9][0-9.]*\)-alpine.*|\1|p' Dockerfile | head -1 | cut -d. -f1); \
+	if [ "$$want_node" != "$$got_node" ]; then \
+	  echo "toolchain drift: web/.nvmrc says node $$want_node, Dockerfile builds with node:$$got_node"; \
+	  echo "  change both, or CI tests a bundle the image does not build"; \
+	  fail=1; \
+	fi; \
+	[ "$$fail" = 0 ] || exit 1; \
+	echo "toolchains agree: go $$want_go, node $$want_node"
 
 migrate-up: ## Apply migrations
 	goose -dir migrations postgres "$$DATABASE_URL" up
