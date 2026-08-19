@@ -88,6 +88,26 @@ describe('useAutoSelect', () => {
     expect(await screen.findByText('/notes/b')).toBeInTheDocument()
   })
 
+  it('stays quiet when the list fills up after it has been disabled', async () => {
+    // The list is handing over to the editor.
+    //
+    // Creating a note invalidates the list and navigates, but the editor is
+    // lazy and Router navigates in a transition, so the list is still mounted
+    // when the refetch turns it from empty into one row with nothing peeked.
+    // Answering that would `select()` with replace:true over the pending
+    // navigation, and the new note would open in the read-only peek instead of
+    // the editor. NotesPage latches `enabled` off before it navigates; this is
+    // the half of that fix which lives in the hook's contract.
+    const { rerender } = render(<Harness enabled ids={[]} />)
+    expect(screen.getByTestId('url')).toHaveTextContent('/notes')
+
+    rerender(<Harness enabled={false} ids={['a']} />)
+
+    // Still the list's own URL: no peek was opened over the navigation.
+    expect(screen.getByTestId('url')).toHaveTextContent('/notes')
+    expect(screen.getByTestId('peeked')).toHaveTextContent('none')
+  })
+
   it('leaves an already-open item alone', async () => {
     // It selects the *top* item only when nothing valid is open. Re-selecting
     // on every render would drag the preview back to the top of the list every
