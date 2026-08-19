@@ -14,7 +14,20 @@
 # hardcoded numbers with nothing linking them, and they were 26 here and 24
 # there — so the bundle that shipped was built by a Node the test jobs never
 # ran. `make check-toolchains` is what notices now.
-FROM --platform=$BUILDPLATFORM node:26-alpine AS web
+#
+# 24 rather than the 26 Dependabot proposed, and the reason is not caution:
+# **the unit suite cannot run on Node 26.** Node 26 defines a built-in
+# `localStorage` global which is disabled unless --localstorage-file is passed
+# ("ExperimentalWarning: localStorage is not available"). Under vitest's jsdom
+# environment that global shadows jsdom's own window.localStorage, so
+# src/test/setup.ts fails in afterEach:
+#
+#     TypeError: Cannot read properties of undefined (reading 'clear')
+#
+# and takes all 207 tests with it. Node 24 has no such global, so jsdom's wins.
+# Raise this when vitest or jsdom handles it — not before, or the bundle ships
+# built by a runtime nothing can test on.
+FROM --platform=$BUILDPLATFORM node:24-alpine AS web
 WORKDIR /src
 COPY web/package*.json ./web/
 RUN cd web && npm ci
