@@ -121,6 +121,15 @@ jobs:
       - name: internal/srs stays pure
         run: make check-pure
 
+      # The image must build with the toolchains these jobs test on. Enforced
+      # here rather than only in `make check` for the reason at the top of this
+      # file: a rule that depends on someone remembering to run it locally is a
+      # rule that decays (D-061). It is the check that would have caught the
+      # skew #8 introduced — golang 1.26 and node 26 in the Dockerfile against
+      # go 1.25.13 and node 24 here.
+      - name: the image builds with the toolchains CI tests on
+        run: make check-toolchains
+
       - name: go test
         run: go test ./...
 
