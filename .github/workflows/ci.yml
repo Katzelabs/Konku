@@ -204,6 +204,14 @@ jobs:
     name: End-to-end
     runs-on: ubuntu-latest
 
+    # The whole job takes 2-3 minutes. The default is six *hours*, which is
+    # not a timeout so much as a promise that a hung run occupies a required
+    # check until somebody notices and cancels it by hand. Twice in one day
+    # the browser download below hung for twenty-plus minutes and cleared on a
+    # re-run, so this is the backstop that turns "why is this still pending"
+    # into a failure you can just re-run.
+    timeout-minutes: 20
+
     services:
       postgres:
         image: pgvector/pgvector:pg18
@@ -259,9 +267,13 @@ jobs:
       # Only chromium. The suite tests this application's behaviour, not
       # browser compatibility, and three engines is three times the minutes
       # for the same signal.
+      # Its own timeout, tighter than the job's, so the failure names the step
+      # rather than the job. This normally takes well under a minute; when it
+      # hangs it is the CDN, not us, and the answer is a re-run.
       - name: install playwright chromium
         run: npx playwright install --with-deps chromium
         working-directory: web
+        timeout-minutes: 6
 
       # playwright.config.ts runs `make build` itself and then serves the
       # binary, so the embedded assets and the SPA fallback are exercised

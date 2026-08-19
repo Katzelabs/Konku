@@ -161,8 +161,30 @@ db-restore: ## Restore a dump into $RESTORE_DB. FILE=path, or the newest dump.
 # `docker compose up` on pg18 would otherwise just hand you an empty database
 # while the pg17 data sits in a volume nothing mounts any more.
 #
-# Nothing here writes to the pg17 volume: it is mounted read-only, and the
-# target is safe to re-run and safe to abandon halfway.
+# Nothing here writes to the pg17 volume, and the target is safe to re-run and
+# safe to abandon halfway.
+#
+# It gets that by *copying* the volume and starting pg17 on the copy. Mounting
+# the original `:ro` is the obvious way to say "do not touch this" and it does
+# not work: Postgres writes postmaster.pid before it will accept a connection,
+# so a read-only PGDATA fails at startup with
+#
+#     FATAL: could not create lock file "postmaster.pid": Read-only file system
+#
+# and the container is gone by the time the readiness loop gives up, which is
+# why the failure reported itself as "pg17 never became ready" followed by "No
+# such container". That is how this target shipped, and it means it had never
+# actually run — a procedure written before it was needed and never rehearsed.
+# The copy costs one disk's worth of the volume for the length of one dump and
+# keeps the guarantee the `:ro` was reaching for.
+#
+# konku_app is created before the restore for the same reason it is created by
+# hand before the first production `up`: roles are cluster-level, so a fresh
+# pg18 volume has none, while a single-database `pg_dump` carries the GRANTs
+# that name konku_app without the CREATE ROLE that makes it exist. Restoring
+# without it fails 22 statements and leaves the app role with no privileges on
+# a database that otherwise looks restored. NOLOGIN and no password here, the
+# same shape migration 00006 uses; db-app-role below is what makes it usable.
 db-upgrade-pg18: ## One-time: migrate the dev database from the pg17 volume to pg18
 	@set -e; \
 	old=$$(docker volume ls -q -f name='^konku[-_]konku-dev-data$$' | head -1); \
@@ -174,12 +196,18 @@ db-upgrade-pg18: ## One-time: migrate the dev database from the pg17 volume to p
 	echo "pg17 volume: $$old"; \
 	tmp=$$(mktemp -d); \
 	trap 'rm -rf "$$tmp"' EXIT; \
-	echo "dumping from a throwaway pg17 (volume mounted read-only)..."; \
+	scratch=konku-pg17-upgrade-scratch; \
+	echo "copying the pg17 volume to a scratch copy (the original is never mounted writable)..."; \
+	docker volume rm "$$scratch" >/dev/null 2>&1 || true; \
+	docker volume create "$$scratch" >/dev/null; \
+	trap 'docker rm -f konku-pg17-dump >/dev/null 2>&1 || true; docker volume rm "$$scratch" >/dev/null 2>&1 || true; rm -rf "$$tmp"' EXIT; \
+	docker run --rm -v "$$old":/from:ro -v "$$scratch":/to alpine \
+	  sh -c 'cp -a /from/. /to/' >/dev/null; \
+	echo "dumping from a throwaway pg17 on the copy..."; \
 	docker run --rm -d --name konku-pg17-dump \
-	  -v "$$old":/var/lib/postgresql/data:ro \
+	  -v "$$scratch":/var/lib/postgresql/data \
 	  -e POSTGRES_USER=konku -e POSTGRES_PASSWORD=konku -e POSTGRES_DB=konku \
 	  pgvector/pgvector:pg17 >/dev/null; \
-	trap 'docker rm -f konku-pg17-dump >/dev/null 2>&1 || true; rm -rf "$$tmp"' EXIT; \
 	for i in $$(seq 1 30); do \
 	  docker exec konku-pg17-dump pg_isready -U konku -d konku >/dev/null 2>&1 && break; \
 	  [ "$$i" = 30 ] && { echo "pg17 never became ready"; docker logs konku-pg17-dump; exit 1; }; \
@@ -203,6 +231,13 @@ db-upgrade-pg18: ## One-time: migrate the dev database from the pg17 volume to p
 	  echo "If you want to start again: docker compose down && docker volume rm konku_konku-dev-pg18"; \
 	  exit 1; \
 	fi; \
+	echo "creating konku_app before the restore..."; \
+	docker compose exec -T db psql -v ON_ERROR_STOP=1 -U konku -d konku -c \
+	  "DO \$$\$$ BEGIN \
+	     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'konku_app') THEN \
+	       CREATE ROLE konku_app NOLOGIN; \
+	     END IF; \
+	   END \$$\$$;" >/dev/null; \
 	echo "restoring into pg18..."; \
 	docker compose exec -T db pg_restore -U konku -d konku --no-owner < "$$tmp/pg17.dump"; \
 	$(MAKE) --no-print-directory db-app-role; \
