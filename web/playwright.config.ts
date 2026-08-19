@@ -40,7 +40,14 @@ export default defineConfig({
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? 'line' : 'list',
+  // `line` is what makes the CI log readable; `html` is what makes a failure
+  // diagnosable afterwards. It used to be `line` alone, and the upload step in
+  // ci.yml pointed at playwright-report/ — a directory only the html reporter
+  // writes. So every red run uploaded nothing, and the e2e failure that sat on
+  // main from 2026-08-12 had to be reconstructed from byte counts in the
+  // request log. A test tier nobody can read the output of is a test tier that
+  // gets ignored.
+  reporter: process.env.CI ? [['line'], ['html', { open: 'never' }]] : 'list',
 
   use: {
     baseURL: BASE_URL,

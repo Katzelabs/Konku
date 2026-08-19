@@ -46,7 +46,13 @@ export default defineConfig({
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? 'line' : 'list',
+  // Same reasoning as the main config: line for the log, html so a failure
+  // leaves something to upload. Its own output directories, so the two suites
+  // cannot clear each other's evidence.
+  reporter: process.env.CI
+    ? [['line'], ['html', { open: 'never', outputFolder: 'playwright-report-dev-proxy' }]]
+    : 'list',
+  outputDir: 'test-results-dev-proxy',
 
   use: {
     // The browser must load the app from Vite, not from the API. Going
