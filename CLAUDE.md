@@ -100,6 +100,8 @@ make sqlc              # after editing internal/store/queries/*.sql
 make db-dump           # pg_dump -Fc into $KONKU_BACKUP_DIR (refuses inside the repo)
 make db-restore        # restore the newest dump into konku_restore
 go run ./cmd/konku seed-user -email you@example.com
+make seed-demo         # fill demo@konku.app with screenshot-ready content
+make seed-demo ARGS="-reset"   # replace what a previous run wrote
 ```
 
 ## Hard rules

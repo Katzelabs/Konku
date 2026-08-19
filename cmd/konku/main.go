@@ -41,6 +41,17 @@ func main() {
 		return
 	}
 
+	// Demo content for one account: screenshots, design work, and showing the
+	// thing to somebody. It guards itself against a non-dev config and against
+	// an account that already has content — see seed_demo.go.
+	if len(os.Args) > 1 && os.Args[1] == "seed-demo" {
+		if err := seedDemo(os.Args[2:]); err != nil {
+			slog.Error("seed-demo failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if err := run(); err != nil {
 		slog.Error("server failed", "error", err)
 		os.Exit(1)

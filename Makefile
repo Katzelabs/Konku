@@ -51,7 +51,7 @@ KONKU_BACKUP_DIR ?= $(HOME)/Backups/konku
 # needs RESTORE_DB=konku CONFIRM=yes, typed on purpose.
 RESTORE_DB ?= konku_restore
 
-.PHONY: help setup dev dev-api dev-web build test test-integration test-mail sqlc sqlc-diff lint check check-pure check-toolchains migrate-up migrate-down db-up db-down db-app-role db-dump db-restore db-upgrade-pg18 mail-up mail-down release-verify clean
+.PHONY: help setup dev dev-api dev-web build test test-integration test-mail seed-demo sqlc sqlc-diff lint check check-pure check-toolchains migrate-up migrate-down db-up db-down db-app-role db-dump db-restore db-upgrade-pg18 mail-up mail-down release-verify clean
 
 help:
 	@grep -E '^[a-zA-Z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -399,6 +399,18 @@ test-mail: mail-up ## Run the mail tests against the dev SMTP catcher
 	MAILPIT_API_URL="$(MAILPIT_API_URL)" \
 	MAILPIT_SMTP_URL="$(MAILPIT_SMTP_URL)" \
 	go test ./internal/mail/ -v
+
+# Screenshot- and demo-ready content for one account (never for the account you
+# actually use — it takes an -email and only ever touches that one).
+#
+#   make seed-demo                              first run; prompts for a password
+#   make seed-demo ARGS="-reset"                replace what a previous run wrote
+#   make seed-demo ARGS="-email you@x.com -reset"
+#
+# It refuses to run with DEV=false unless -force is passed, and refuses to write
+# into an account that already has notes or cards unless -reset is.
+seed-demo: ## Fill a demo account with realistic content (ARGS="-reset")
+	go run ./cmd/konku seed-demo $(ARGS)
 
 sqlc: ## Regenerate type-safe Go from SQL
 	sqlc generate
