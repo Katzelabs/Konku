@@ -139,8 +139,40 @@ export default function NotesPage() {
   const removeMany = useDeleteNotes()
   const restoreMany = useRestoreNotes()
 
+  /*
+   * Set the moment this screen hands over to the editor, and never unset:
+   * the component is about to unmount either way.
+   *
+   * Creating a note invalidates the list, and the editor is `lazy()` while
+   * React Router runs navigation as a transition — so this list stays mounted
+   * and live while the editor's chunk is still in flight. If the refetch lands
+   * in that window it takes the list from empty to one row with nothing
+   * peeked, which is exactly what useAutoSelect exists to answer: it calls
+   * `select()` with `replace: true` and overwrites the pending navigation with
+   * a peek at the same URL. Same address bar, different history state, and the
+   * editor never mounts — the brand new note opens read-only, with no field to
+   * type in.
+   *
+   * That window only opens when the list was empty, because a list with rows
+   * has already auto-selected one and that peekedId short-circuits the effect.
+   * "Empty" is a new account writing its first note, which makes this the
+   * first thing the product does to somebody (hard rule 7). The e2e suite
+   * caught it on a loaded CI runner and stayed green on every laptop.
+   */
+  const [leaving, setLeaving] = useState(false)
+
   function newNote() {
-    create.mutate({ contentMd: '' }, { onSuccess: (n) => navigate(`/notes/${n.id}`) })
+    create.mutate(
+      { contentMd: '' },
+      {
+        onSuccess: (n) => {
+          // Before navigate, and synchronous, so the render that the refetch
+          // triggers already sees auto-select disabled.
+          setLeaving(true)
+          navigate(`/notes/${n.id}`)
+        },
+      },
+    )
   }
 
   // The search runs in SQL now (D-084). It used to filter the loaded list,
@@ -208,7 +240,7 @@ export default function NotesPage() {
   // In list view the top note is open on arrival, so the second column is
   // never a placeholder asking for a click it could have made itself.
   useAutoSelect({
-    enabled: split,
+    enabled: split && !leaving,
     ids: useMemo(() => notes.map((n) => n.id), [notes]),
     peekedId: peekId,
     toPath: (id) => `/notes/${id}`,
