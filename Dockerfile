@@ -10,7 +10,7 @@
 # frontend bundle is architecture-independent, and CGO_ENABLED=0 makes the Go
 # binary a straight GOARCH swap.
 
-FROM --platform=$BUILDPLATFORM node:24-alpine AS web
+FROM --platform=$BUILDPLATFORM node:26-alpine AS web
 WORKDIR /src
 COPY web/package*.json ./web/
 RUN cd web && npm ci
@@ -18,7 +18,7 @@ COPY web ./web
 # Vite writes into ../internal/web/dist, so that path must exist in this stage.
 RUN mkdir -p internal/web && cd web && npm run build
 
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -39,7 +39,7 @@ ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -ldflags="-s -w -X main.version=${VERSION}" -o /konku ./cmd/konku
 
-FROM alpine:3.21
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates tzdata \
     && adduser -D -u 10001 konku
 USER konku
