@@ -282,11 +282,28 @@ jobs:
         run: npx playwright test --config playwright.dev-proxy.config.ts
         working-directory: web
 
+      # The evidence, not just the summary.
+      #
+      # This pointed at playwright-report/ alone while the CI reporter was
+      # `line`, which never writes that directory — so a red run uploaded an
+      # empty artifact and the screenshot, the trace and the error context all
+      # died with the runner. test-results/ is where those actually land, and
+      # it is the half worth having: the trace is the only artifact that shows
+      # what the browser was looking at when it gave up.
+      #
+      # if-no-files-found: ignore because a failure in one suite leaves the
+      # other's directories absent, and a warning about that reads like a
+      # second problem.
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-report
-          path: web/playwright-report/
+          name: playwright-evidence
+          path: |
+            web/playwright-report/
+            web/test-results/
+            web/playwright-report-dev-proxy/
+            web/test-results-dev-proxy/
+          if-no-files-found: ignore
           retention-days: 7
 
   docker:
