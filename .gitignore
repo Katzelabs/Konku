@@ -23,5 +23,9 @@ web/*.tsbuildinfo
 # Playwright
 web/test-results/
 web/playwright-report/
+# The dev-proxy suite writes its own, so a failure in one cannot clear the
+# other's screenshots and traces before CI uploads them.
+web/test-results-dev-proxy/
+web/playwright-report-dev-proxy/
 web/blob-report/
 web/.playwright/
