@@ -24,6 +24,10 @@ updates:
   # Majors stay separate on purpose: a major is a change with a migration note
   # to read, and burying one in a batch of patch bumps is how a breaking change
   # gets merged unread.
+  #
+  # The exception is a set of packages that peer-depend on each other, where
+  # "one major per PR" produces PRs that are individually impossible rather
+  # than merely separate. See vite-toolchain below.
 
   - package-ecosystem: gomod
     directory: /
@@ -46,6 +50,41 @@ updates:
       day: monday
     open-pull-requests-limit: 3
     groups:
+      # The build toolchain, majors included — and the inclusion is the point.
+      #
+      # These packages pin each other, so a major in one is half a change
+      # rather than a whole one. Raised separately, each half is a PR that can
+      # never go green — not a migration note to read at leisure, but two PRs
+      # that are impossible on their own. It happened: #4 (vite 8) and #5
+      # (plugin-react 6) were both closed unmerged and combined by hand in #10.
+      #
+      # Two kinds of coupling, both real:
+      #
+      #   peer ranges on vite — @vitejs/plugin-react, vitest and
+      #   @tailwindcss/vite each declare one, so a vite major outside the range
+      #   fails `npm ci` with ERESOLVE until its partner moves too;
+      #
+      #   exact pins — @tailwindcss/vite depends on `tailwindcss` at the
+      #   identical version (4.3.3 today), and @vitest/coverage-v8 on vitest.
+      #   Bumping one alone installs a second nested copy of the other and the
+      #   build breaks on a version skew npm was happy to resolve.
+      #
+      # `tailwindcss` is therefore here despite a Tailwind major being a
+      # genuine migration (the design tokens live in CSS — see docs/DESIGN.md).
+      # Splitting it would not buy the careful read the majors rule is after;
+      # it would buy two red PRs instead of one readable one.
+      #
+      # Listed before the catch-all: a dependency joins the first group whose
+      # rules it matches, so these leave via this group for every update type
+      # while everything else keeps the majors-stay-separate policy above.
+      build-toolchain:
+        patterns:
+          - "vite"
+          - "@vitejs/*"
+          - "vitest"
+          - "@vitest/*"
+          - "tailwindcss"
+          - "@tailwindcss/*"
       npm-minor-and-patch:
         patterns: ["*"]
         update-types: [minor, patch]
