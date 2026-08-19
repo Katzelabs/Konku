@@ -28,13 +28,28 @@ export default defineConfig({
          * so giving them a stable chunk means a release invalidates the app's
          * hash and not 180 kB of vendor code the browser already has.
          *
-         * Named packages rather than a path-matching function on purpose. A
-         * function that tests `id.includes('react')` also catches
-         * react-markdown, and the failure is silent: a bigger chunk, still
-         * correct, discovered months later.
+         * This was a named-package object until Vite 8, which builds with
+         * rolldown rather than rollup and accepts only the function form.
+         *
+         * The object form was chosen to avoid exactly the trap the function
+         * form invites: `id.includes('react')` also catches react-markdown,
+         * and the failure is silent — a bigger chunk, still correct,
+         * discovered months later. So the pattern is anchored on path
+         * separators and matches whole directory names. `node_modules/react/`
+         * is not `node_modules/react-markdown/`, and the separators are what
+         * make that true.
+         *
+         * scheduler and react-router are named explicitly because they were
+         * in this chunk implicitly before: the object form pulled the
+         * dependencies of the modules it listed, and a function is asked
+         * about every module on its own.
          */
-        manualChunks: {
-          react: ['react', 'react-dom', 'react-dom/client', 'react-router-dom'],
+        manualChunks(id: string) {
+          return /[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/.test(
+            id,
+          )
+            ? 'react'
+            : undefined
         },
       },
     },
