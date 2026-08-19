@@ -463,8 +463,27 @@ test, or a broken review flow cannot be merged.
 
 ## P9 — Build and publish the release artifact
 
-`done` (local half) · `todo` (a real tag, which publishes to GHCR) · ~2 h ·
-needs P8
+`done` · ~2 h · needs P8
+
+**Closed 2026-08-19.** `v0.1.1` is published and verified:
+
+```
+verifying ghcr.io/katzelabs/konku@sha256:f36de4daf20f2502a6c28a8aa455d76f245b049ed5187176d7a189a9dadc6dd7
+ready: {"schema_version":12,"status":"ok"}
+the embedded frontend is served
+```
+
+That digest is what `04-ship.md` S1 puts in `KONKU_IMAGE`.
+
+`v0.1.0` was the first attempt and **is not deployable** — it built and pushed
+a correct image, then failed to verify it, because the workflow used
+`github.repository` verbatim (`Katzelabs/Konku`) and a Docker reference must be
+lowercase. The verify job was the loud half; the quiet half printed a
+mixed-case digest into the step summary, which is exactly the string an
+operator copies into `.env` on the box, where the same error would read as a
+broken deploy rather than a broken workflow. Each job normalises the name into
+`IMAGE` now. `v0.1.0` was left in place rather than re-pointed: a tag that
+moves is the thing deploying by digest exists to prevent.
 
 `release.yml` builds on a `v*` tag, pushes to GHCR, then a **second job pulls
 the published image back by digest and runs it** against a Postgres service

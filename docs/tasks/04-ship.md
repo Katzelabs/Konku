@@ -25,6 +25,32 @@ actually depends on (S6).
 
 `todo` · ~2 h · no deps
 
+**Pre-flight, verified 2026-08-19 against `Katzelabs/platform@e36cd6e`:**
+
+| Checked | Result |
+|---|---|
+| `KONKU_IMAGE` | `ghcr.io/katzelabs/konku@sha256:f36de4daf20f2502a6c28a8aa455d76f245b049ed5187176d7a189a9dadc6dd7` (`v0.1.1`, verified by the release workflow — **not** `v0.1.0`) |
+| compose joins `platform` | yes, `external: true` (VPS Infra P3.2 done) |
+| no `ports:` (rule 1) | none |
+| `mem_limit`, healthcheck, `restart` (rule 3) | `512m`, `/healthz`, `unless-stopped` |
+| image pinned (rule 5) | by digest, guarded with `:?` |
+| six required vars guarded | `KONKU_IMAGE`, `KONKU_HOST`, `DATABASE_URL`, `MIGRATION_DATABASE_URL`, `SESSION_SECRET`, `PUBLIC_BASE_URL` |
+| `make provision … EXT=vector` exists | yes — the platform Makefile names Konku in its own usage line |
+| the three `8080`s agree | `PORT`, `{{upstreams 8080}}`, healthcheck URL — `PORT` is now stated explicitly rather than inherited from the binary's default |
+
+Two known deviations from PLATFORM.md, both deliberate: the shared
+`security_headers`/`csp_spa`/`no_uploads` snippets are **not** imported
+(`internal/api/security.go` is stricter and Caddy's `header` replaces rather
+than merges — see the comment in `docker-compose.prod.yml`), and the app serves
+`/healthz` + `/readyz` rather than the `/health` PLATFORM.md's contract names.
+Nothing on the platform calls `/health` — the edge does not health-check, and
+the Docker healthcheck is Konku's own — so this is a wording mismatch, not a
+functional one. Worth reconciling in one of the two documents.
+
+**HSTS is `max-age=300` on purpose** and should be raised to `31536000` once
+certificate renewal is observed working on the box. HSTS cannot be withdrawn
+inside its own window.
+
 Follows `TECH.md` §11 and `docs/runbooks/deploy.md`. **The box is already
 standing** — that is the change since this file was written (D-088). The
 platform stack, the standalone edge, the shared Postgres 18, the nightly dumps

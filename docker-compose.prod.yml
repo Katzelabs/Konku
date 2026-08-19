@@ -66,6 +66,16 @@ services:
       ALLOW_SIGNUP: "false"
       DEV: "false"
 
+      # Stated rather than left to the binary's default, because three places
+      # have to agree on this number and only one of them was written down:
+      # this port, `{{upstreams 8080}}` in the caddy label, and the healthcheck
+      # URL. PLATFORM.md calls a mismatch here "the single easiest mistake to
+      # make with this template" — caddy-docker-proxy generates config pointing
+      # at a dead port and every request is a 502 with "connection refused"
+      # buried in the edge's logs. Nothing checks that they agree, so the least
+      # this file can do is not rely on a default defined in another repository.
+      PORT: "8080"
+
       # Error tracking (06 P3).
       #
       # SENTRY_RELEASE is deliberately absent: the binary carries the version
