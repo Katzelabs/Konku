@@ -10,7 +10,24 @@
 # frontend bundle is architecture-independent, and CGO_ENABLED=0 makes the Go
 # binary a straight GOARCH swap.
 
-FROM --platform=$BUILDPLATFORM node:26-alpine AS web
+# Node's major must match web/.nvmrc, which is what CI installs. They are two
+# hardcoded numbers with nothing linking them, and they were 26 here and 24
+# there — so the bundle that shipped was built by a Node the test jobs never
+# ran. `make check-toolchains` is what notices now.
+#
+# 24 rather than the 26 Dependabot proposed, and the reason is not caution:
+# **the unit suite cannot run on Node 26.** Node 26 defines a built-in
+# `localStorage` global which is disabled unless --localstorage-file is passed
+# ("ExperimentalWarning: localStorage is not available"). Under vitest's jsdom
+# environment that global shadows jsdom's own window.localStorage, so
+# src/test/setup.ts fails in afterEach:
+#
+#     TypeError: Cannot read properties of undefined (reading 'clear')
+#
+# and takes all 207 tests with it. Node 24 has no such global, so jsdom's wins.
+# Raise this when vitest or jsdom handles it — not before, or the bundle ships
+# built by a runtime nothing can test on.
+FROM --platform=$BUILDPLATFORM node:24-alpine AS web
 WORKDIR /src
 COPY web/package*.json ./web/
 RUN cd web && npm ci
@@ -18,7 +35,13 @@ COPY web ./web
 # Vite writes into ../internal/web/dist, so that path must exist in this stage.
 RUN mkdir -p internal/web && cd web && npm run build
 
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
+# Go's minor must match the `go` directive in go.mod, which is what CI reads —
+# "so the toolchain cannot drift from the module" is already the rule, and this
+# is the half of it that lives outside CI. It was 1.26 here against go 1.25.13
+# in go.mod, so tests ran on 1.25.13 and the shipped binary was compiled by
+# 1.26.6. Well-defined under Go's compatibility promise, and still a binary
+# nothing tested. Bump this when go.mod moves, not before.
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

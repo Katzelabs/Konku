@@ -121,6 +121,15 @@ jobs:
       - name: internal/srs stays pure
         run: make check-pure
 
+      # The image must build with the toolchains these jobs test on. Enforced
+      # here rather than only in `make check` for the reason at the top of this
+      # file: a rule that depends on someone remembering to run it locally is a
+      # rule that decays (D-061). It is the check that would have caught the
+      # skew #8 introduced — golang 1.26 and node 26 in the Dockerfile against
+      # go 1.25.13 and node 24 here.
+      - name: the image builds with the toolchains CI tests on
+        run: make check-toolchains
+
       - name: go test
         run: go test ./...
 
@@ -169,7 +178,10 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          # web/.nvmrc, not a number here: this and the Dockerfile's node
+          # image are what must agree, and a literal in this file is a third
+          # place to forget. make check-toolchains enforces the pair.
+          node-version-file: web/.nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -243,7 +255,10 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          # web/.nvmrc, not a number here: this and the Dockerfile's node
+          # image are what must agree, and a literal in this file is a third
+          # place to forget. make check-toolchains enforces the pair.
+          node-version-file: web/.nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -270,10 +285,31 @@ jobs:
       # Its own timeout, tighter than the job's, so the failure names the step
       # rather than the job. This normally takes well under a minute; when it
       # hangs it is the CDN, not us, and the answer is a re-run.
-      - name: install playwright chromium
-        run: npx playwright install --with-deps chromium
+      # Split, because the two halves fail for completely different reasons.
+      #
+      # This half is `apt-get` against the runner's Ubuntu mirrors, and it is
+      # what hung this job four times in one day: azure.archive.ubuntu.com
+      # stalls, apt retries `Ign:` for six minutes, and the browser download
+      # never starts. Nothing about that is our dependency or our network, and
+      # it has no bearing on whether the tests can run — ubuntu-latest already
+      # ships the libraries Chromium needs.
+      #
+      # So it is best-effort: short timeout, failure tolerated. If the runner
+      # genuinely lacks a library, the browser download below still succeeds
+      # and Playwright fails on launch with the missing library named, which is
+      # a better failure than six minutes of apt output and a timeout.
+      - name: chromium system dependencies (best effort)
+        run: npx playwright install-deps chromium
         working-directory: web
-        timeout-minutes: 6
+        continue-on-error: true
+        timeout-minutes: 4
+
+      # This half is the browser download, which is the part that actually
+      # matters and has never been the one that hung.
+      - name: install playwright chromium
+        run: npx playwright install chromium
+        working-directory: web
+        timeout-minutes: 5
 
       # playwright.config.ts runs `make build` itself and then serves the
       # binary, so the embedded assets and the SPA fallback are exercised
