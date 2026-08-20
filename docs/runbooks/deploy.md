@@ -762,10 +762,21 @@ what `incident.md` says to use.
 
 ## What to write down afterwards
 
-This file is unrehearsed, so the first run is also its review.
+The first run was also this file's review. Keep doing this on every subsequent
+deploy — the list below is the standing instruction, and the notes record where
+the 2026-08-20 run left each item.
 
-- Every command that needed correcting — **here**, in the same session
-- The restore timing from the real drill → `restore.md` and `PRD.md` §9
-- Whether the HSTS label produced the header, and at what quoting
-- `CLAUDE.md`'s "Current state" still says the app has never been deployed.
-  That sentence is the deploy's last step.
+- **Every command that needed correcting — here, in the same session.**
+  Done: 28 corrections, all in place rather than appended.
+- **The restore timing from the real drill** → `restore.md` and `PRD.md` §9.
+  **Still outstanding.** No restore drill was run against production, and
+  `make restore` cannot do a single-tenant restore anyway — see the hand-backs
+  under `## Backups`.
+- **Whether the HSTS label produced the header, and at what quoting.**
+  Answered for the shipped value only: `"max-age=300"` in plain YAML double
+  quotes, verified against the running edge and proven to originate at the edge
+  label rather than the app. The **raised** value's quoting is still unverified,
+  and deliberately so.
+- **`CLAUDE.md`'s "Current state".** Done — it says the app is deployed. On the
+  next deploy this is again the last step, after the operator can actually log
+  in, and not before.
