@@ -1,6 +1,6 @@
 # DECISIONS.md — Decision Log
 
-**Last updated:** 2026-08-09
+**Last updated:** 2026-08-20
 
 Why this file exists: `PRD.md` and `TECH.md` say *what* was decided. This says *why*, and what was **rejected**. Without it, every future session re-litigates the same trade-offs and quietly reintroduces the things that were deliberately cut.
 
@@ -1901,6 +1901,58 @@ it now says so at the bottom, in the imperative: verify against the running
 edge's admin API, and delete the file rather than let it drift. It described
 `reverse_proxy app:8080` on a network that did not exist, which is precisely the
 failure it warned about in its own header.
+
+### D-089 — `provision-db.sh` prints instructions that contradict this repo, and the screen wins *(amends D-088, protects D-059)*
+
+**Decision:** `deploy.md` states the two-role split as a table at the top of
+`### Roles and database`, and names the provisioning tool's own closing output
+as wrong, rather than relying on being correct somewhere further down the page.
+A runbook does not compete on equal terms with a tool that prints conflicting
+instructions in the operator's terminal at the moment of use.
+
+**What the tool prints.** `make provision` ends by telling the operator to put
+`DATABASE_URL=postgres://konku:<password>@postgres:5432/konku` — the **owner** —
+into the app's `.env`, and then to run `make migrate`. Both are wrong for Konku,
+in different ways. The owner belongs in `MIGRATION_DATABASE_URL`; `DATABASE_URL`
+must be `konku_app`. And Konku has no `make migrate` target at all — it has
+`migrate-up`, and does not need it on the box, because the binary migrates at
+startup.
+
+**Why this is worse than a stale comment.** The `make migrate` half fails
+loudly: there is no such target, the operator reads the runbook, and the
+contradiction resolves itself in ten seconds. The `DATABASE_URL` half fails
+silently and permanently. Connecting as the owner produces an application that
+starts, migrates, serves, and passes every test — and a table owner bypasses its
+own RLS policies, so the row-level security behind the whole tenancy story is
+inert. That is D-059 exactly, reached by trusting a tool rather than by
+disagreeing with the design. Nothing downstream catches it. There is no error,
+no failing check, and no symptom short of one account seeing another's data.
+
+**And the runbook was already correct.** This is the part worth internalising.
+`deploy.md` said the right thing before this deploy started — `DATABASE_URL` is
+marked "**`konku_app`** — never the owner, never `postgres`" in its variables
+table. Correctness was not the problem. Ordering and adjacency were: the wrong
+instruction appears in the terminal, in the same minute, as output of the
+command the operator has just been told to run, and it arrives formatted as the
+next step. The right instruction is in a document they read earlier. Written
+guidance loses that contest often enough that the runbook has to spend words
+saying the tool is wrong, not merely saying what is right.
+
+**The fix belongs in `Katzelabs/platform`.** The script should either print
+nothing about `DATABASE_URL` or print the tenant's actual convention. Konku does
+not write to that repo (D-088), so this is handed back to the platform's
+operator and recorded here in the meantime. Konku's side of it is done: the
+table, and the explicit note that `make provision` creates the owner only.
+
+**Rejected: fixing it only in the platform script.** Even repaired, the
+generic tool cannot know a given tenant's role convention, and the runbook would
+be relying on it to stay repaired. `deploy.md` has to stand on its own against a
+tool it does not control.
+
+**Rejected: treating this as a documentation nit.** The two-role split had been
+written down since D-059 and was still misread during this deploy's own recon,
+from this same script. A rule that is recorded, correct, and reliably misread
+under operating conditions is not adequately recorded.
 
 ---
 
