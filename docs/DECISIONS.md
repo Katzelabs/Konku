@@ -1,6 +1,6 @@
 # DECISIONS.md — Decision Log
 
-**Last updated:** 2026-08-09
+**Last updated:** 2026-08-20
 
 Why this file exists: `PRD.md` and `TECH.md` say *what* was decided. This says *why*, and what was **rejected**. Without it, every future session re-litigates the same trade-offs and quietly reintroduces the things that were deliberately cut.
 
@@ -1902,6 +1902,199 @@ edge's admin API, and delete the file rather than let it drift. It described
 `reverse_proxy app:8080` on a network that did not exist, which is precisely the
 failure it warned about in its own header.
 
+### D-089 — `provision-db.sh` prints instructions that contradict this repo, and the screen wins *(amends D-088, protects D-059)*
+
+**Decision:** `deploy.md` states the two-role split as a table at the top of
+`### Roles and database`, and names the provisioning tool's own closing output
+as wrong, rather than relying on being correct somewhere further down the page.
+A runbook does not compete on equal terms with a tool that prints conflicting
+instructions in the operator's terminal at the moment of use.
+
+**What the tool prints.** `make provision` ends by telling the operator to put
+`DATABASE_URL=postgres://konku:<password>@postgres:5432/konku` — the **owner** —
+into the app's `.env`, and then to run `make migrate`. Both are wrong for Konku,
+in different ways. The owner belongs in `MIGRATION_DATABASE_URL`; `DATABASE_URL`
+must be `konku_app`. And Konku has no `make migrate` target at all — it has
+`migrate-up`, and does not need it on the box, because the binary migrates at
+startup.
+
+**Why this is worse than a stale comment.** The `make migrate` half fails
+loudly: there is no such target, the operator reads the runbook, and the
+contradiction resolves itself in ten seconds. The `DATABASE_URL` half fails
+silently and permanently. Connecting as the owner produces an application that
+starts, migrates, serves, and passes every test — and a table owner bypasses its
+own RLS policies, so the row-level security behind the whole tenancy story is
+inert. That is D-059 exactly, reached by trusting a tool rather than by
+disagreeing with the design. Nothing downstream catches it. There is no error,
+no failing check, and no symptom short of one account seeing another's data.
+
+**And the runbook was already correct.** This is the part worth internalising.
+`deploy.md` said the right thing before this deploy started — `DATABASE_URL` is
+marked "**`konku_app`** — never the owner, never `postgres`" in its variables
+table. Correctness was not the problem. Ordering and adjacency were: the wrong
+instruction appears in the terminal, in the same minute, as output of the
+command the operator has just been told to run, and it arrives formatted as the
+next step. The right instruction is in a document they read earlier. Written
+guidance loses that contest often enough that the runbook has to spend words
+saying the tool is wrong, not merely saying what is right.
+
+**The fix belongs in `Katzelabs/platform`.** The script should either print
+nothing about `DATABASE_URL` or print the tenant's actual convention. Konku does
+not write to that repo (D-088), so this is handed back to the platform's
+operator and recorded here in the meantime. Konku's side of it is done: the
+table, and the explicit note that `make provision` creates the owner only.
+
+**Rejected: fixing it only in the platform script.** Even repaired, the
+generic tool cannot know a given tenant's role convention, and the runbook would
+be relying on it to stay repaired. `deploy.md` has to stand on its own against a
+tool it does not control.
+
+**Rejected: treating this as a documentation nit.** The two-role split had been
+written down since D-059 and was still misread during this deploy's own recon,
+from this same script. A rule that is recorded, correct, and reliably misread
+under operating conditions is not adequately recorded.
+
+### D-090 — A two-role tenant needs a grant that neither repository owns *(amends D-088, completes D-059)*
+
+**Decision:** `GRANT CONNECT ON DATABASE konku TO konku_app` belongs in
+`deploy.md`'s role block, in the same `psql` invocation as the `CREATE ROLE`.
+A least-privilege split is not finished when the second role is created. It is
+finished when the grants that make that role usable exist — and on this platform
+those grants fall between two repositories, with neither file wrong on its own.
+
+**What broke.** The first production boot restart-looped eleven times on
+`FATAL: permission denied for database "konku" (SQLSTATE 42501)`. Everything the
+runbook prescribed had been done: `konku_app` existed before the first `up`,
+with `LOGIN`, with a password, `rolsuper=f`, `rolbypassrls=f`. It authenticated
+successfully and was refused at the database door. Migrations never ran; the
+`public` schema had no tables.
+
+**Where the seam is.** `provision-db.sh` hardens every tenant database by
+revoking `CONNECT` from `PUBLIC` and granting it to the owner alone. That is
+correct and should stay. Konku then adds a *second* role afterwards, by hand,
+from its own runbook — and the platform's default correctly excludes a role that
+did not exist when the default was applied. The provisioner cannot know about a
+role a tenant will create later. The runbook did not know the provisioner had
+closed the door. Neither document is incorrect in isolation, and their union is
+a service that cannot start.
+
+**Tuan Tanah could never have surfaced this.** It runs a single role where the
+role name, the database name and the owner are all `tuantanah_prod`, and a
+single-role tenant is granted `CONNECT` by the provisioner as a matter of
+course. **Konku is the first two-role tenant on this box**, and the two-role
+split exists because D-059 requires it: a table owner bypasses its own RLS
+policies, so the app must not connect as the owner. The gap therefore opens
+precisely for the tenant that implements tenancy properly, and stays invisible
+to the one that does not need to.
+
+**This is D-089's shape at a different seam.** Two artifacts, each correct,
+producing a broken outcome because nothing owns the join between them. D-089
+bites through an instruction printed at the wrong moment and fails silently
+forever; this one bites at first boot and fails loudly. Loud is better, and it
+is still worth a record, because the loudness is misleading — see below.
+
+**The symptom collides with the trap already documented.**
+`store: connecting to database` was already this page's named warning sign for
+the `00006` `NOLOGIN` ordering trap. It is now the log line for two different
+causes with two different fixes, and an operator applying the documented remedy
+to the new failure changes nothing. `deploy.md` now carries the discriminator:
+`password authentication failed` is the old trap; `permission denied for
+database … 42501` means authentication *succeeded* and `CONNECT` is missing.
+
+**The knowledge was already in the file, on the wrong shelf.** `deploy.md`'s
+Backups section states that "provisioning revokes `CONNECT` from `PUBLIC`" — as
+part of reasoning about whether `pg_dumpall` can still see the database. The
+fact was written down, in the right document, and never carried across to the
+role that has to log in.
+
+It was not filed carelessly, and that is what makes this hard rather than
+embarrassing. The sentence carries its own reasoning — the revoke "does not
+affect the superuser" — which is a correct and complete answer to the question
+being asked there. There was no error to catch when it was written, and no
+reviewer of that paragraph would have found one. The cost appeared only when a
+different question needed the same fact. Facts filed correctly under the
+question that raised them do not migrate to the question that later needs them,
+and nothing signals the omission at either end.
+
+**Rejected: granting `CONNECT` to `PUBLIC`.** The one-word fix, and it would
+undo the provisioner's hardening for **every** database on the shared instance —
+handing every tenant role a connection to every other tenant's database. The
+revoke is the platform doing its job. The tenant that added a role is the party
+that has to account for it.
+
+**Rejected: moving the grant into migration `00006`.** The natural second guess,
+and it cannot work: it is circular. Migrations run over
+`MIGRATION_DATABASE_URL` as the owner, but `cmd/konku` opens the pool as
+`konku_app` and **pings it before it migrates** (D-088's ordering trap). So the
+grant would sit behind a connection that the absence of the grant prevents. The
+`GRANT` has to happen outside the application, before it starts, which is
+exactly where the `CREATE ROLE` already was.
+
+**Rejected: loosening the provisioner to take a second role.** That is a change
+to `Katzelabs/platform`, which Konku does not write to (D-088), and it would put
+Konku's role convention inside a generic tool that serves every tenant. The
+runbook is the right owner: it is the document that knows this tenant has two
+roles.
+
+### D-091 — A backup check that asserts a name is not a backup check *(amends D-088's backup section)*
+
+**Decision:** `## Backups`'s coverage check gains a second assertion, on
+`CREATE TABLE public.users`, and both are kept. Asserting that a database is
+**named** in a dump does not establish that its **data** is in the dump. Those
+are different claims, `pg_dumpall` emits the first for a database holding
+nothing, and the runbook was treating one as evidence of the other.
+
+**How it was caught.** The prescribed check —
+`gunzip -c … | grep -c 'CREATE DATABASE konku'   # must be 1` — was run against
+the first nightly after the deploy and returned `1`. It passed. The same dump
+measured differently: two `CREATE DATABASE` statements, four `CREATE TABLE`
+statements, and all four of them Tuan Tanah's. Konku has 20 tables live and
+none of them were there. The file contains `CREATE DATABASE konku`,
+`\connect konku`, and then nothing at all. Restoring it produces an empty
+`konku` beside a complete `tuantanah_prod`.
+
+**The cause is a thirty-minute window and it is nobody's mistake.** The `konku`
+database was created at 10:40:42 UTC, the nightly `pg_dumpall` ran at 10:56:19,
+and Konku's migrations ran at 11:10:23. The dump landed after the database
+existed and before its schema did. Every component behaved correctly. The
+window exists because provisioning and first boot are separate operator steps
+with a gap between them, and the nightly does not know or care where in that
+sequence it falls.
+
+**Why it earns a record rather than a line in the runbook.** The failure
+returns **green**. A check that fails loudly gets fixed; a check that passes
+wrongly ends the investigation, and this one would have signed the deploy off on
+backup coverage that did not exist. It is also the third distinct instance this
+deploy has produced of the same underlying error — after the `https://` probe of
+a plaintext listener and the `/metrics` status-code check — of an assertion that
+cannot distinguish the healthy case from the broken one.
+
+**The generalisation is the transferable half: this is a presence check
+standing in for a content check.** The substitution is available anywhere a
+backup, an export, a sync or a migration is verified by asking "is the name
+there" — the name is cheap to emit, survives every interesting failure, and
+reads as proof. Ask instead for something only the working case can produce.
+
+**No fix was required and nothing was at risk.** Worth stating plainly, because
+a finding this size invites emergency action that would be wrong here. The
+sidecar has run six dumps with six `ok` results and zero restarts. Tuan Tanah is
+captured completely **in the very same dump**, which is precisely what makes the
+result trustworthy rather than a broken pipeline. Konku's coverage self-heals at
+roughly 10:56 UTC the following day, now that migrations have run. Every Konku
+table currently holds zero rows.
+
+**Rejected: treating the passing check as coverage.** It is the whole finding.
+The check was green, the coverage was absent, and the gap between those two
+facts is the thing being recorded.
+
+**Rejected: running `make backup-now` to force coverage.** Two independent
+grounds. It writes into `Katzelabs/platform`, which Konku does not touch
+(D-088). And it would actively make matters worse: `ship-backups.sh` ships
+`ls -t backups/pg_dumpall_*.sql.gz | head -1`, a glob that matches
+`pg_dumpall_manual_*`, so a manual dump taken after the nightly **displaces** it
+and that day's real nightly is never shipped off-box at all. The remedy would
+have cost the off-site copy of the day it was trying to protect.
+
 ---
 
 ## Open questions
@@ -1926,3 +2119,52 @@ Opened by the production shift (D-057 – D-066):
 - **What bounds the cost of an open signup** (D-066). Quotas cap storage; they do not cap the number of accounts. Invite codes, a waitlist, and "open and watch" are all defensible; the answer depends on how the launch actually goes.
 - **The rate limiter is per-process** (`internal/api/ratelimit.go`). Correct for one container, wrong the moment there are two, and D-023 rejected Redis for a problem that did not exist yet. It exists once a second instance does — not before, and running two instances is not currently planned.
 - **How much of `GOALS.md` survives having other users.** It is written in the first person about one person's constraints, and D-057 promotes its rules to product constraints without rewriting it. Whether it becomes a product-principles document or stays a personal one that the principles cite is unresolved.
+
+Opened by the first deploy (2026-08-20):
+
+- **Is the `platform` network meant to be flat?** The external audit found that
+  it is, and that Konku's ports are reachable across it by other tenants'
+  containers. Verified directly from another container on the shared subnet:
+  `konku-app-1:9090/metrics` returned all 92 metric lines and
+  `konku-app-1:8080/readyz` returned `200`, both bypassing the edge and every
+  security header it applies. `tuantanah-web-1` and `tuantanah-backend-1` sit on
+  the same subnet and can reach both.
+
+  This is **not** internet exposure. No port is published, `docker port
+  konku-app-1` is empty, and the public surface audited clean. It is a lateral
+  surface *between tenants*, and metrics endpoints routinely carry route names,
+  hostnames and traffic volumes.
+
+  It bears on D-081 specifically. That decision chose `0.0.0.0:9090` inside the
+  container deliberately, reasoning that "an unpublished port is unroutable from
+  the internet whatever it binds, while a container on `platform` can still
+  reach it" — sibling reachability was the entire point, and it was correct
+  about the internet. What it did not weigh is that `platform` carries other
+  **tenants**, not only Konku's own containers. The choice is not disturbed by
+  this; its blast radius is simply larger than the record accounts for.
+
+  **Unresolved, and not Konku's call to make.** Whether a flat shared network is
+  the intended tenant model belongs to `Katzelabs/platform` and its
+  `PLATFORM.md`. If it is deliberate — one operator, no untrusted tenants, which
+  is the reasoning D-024 already accepts for sharing Postgres — then nothing is
+  wrong and this closes as answered rather than fixed. If it is not, the remedy
+  is segmentation on the platform side and no change to Konku. It is recorded
+  here as an observation with evidence, and not as a decision, because nobody
+  has taken one. Structurally it *would* resemble D-089 and D-090 — a seam
+  between two repositories that neither owns — but only under the second answer.
+  Under the first there is no seam, only a property of the contract that was
+  never written down.
+
+  **The same property has a second consequence: app-to-Postgres traffic is
+  plaintext.** `ssl=off` in `pg_settings`, and `pg_stat_ssl` reports `ssl=f` for
+  Konku's live connection. This is the surviving half of the
+  `tls error: server refused TLS connection` line that appears at boot — the
+  error is structurally true and simply stopped mattering the moment the
+  plaintext fallback succeeded (see `deploy.md`, where it is flagged as benign
+  noise for a *different* reason). On a Postgres instance shared with another
+  live tenant, query traffic crosses the bridge in the clear.
+  `password_encryption` is `scram-sha-256`, so authentication is not
+  plaintext-equivalent; the query stream is. It belongs here rather than as its
+  own item because it is the same underlying question: on this box "internal"
+  means "shared with another tenant", not "Konku only", and how much that
+  matters depends on the same unanswered call.

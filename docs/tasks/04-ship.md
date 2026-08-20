@@ -38,7 +38,11 @@ actually depends on (S6).
 | `make provision … EXT=vector` exists | yes — the platform Makefile names Konku in its own usage line |
 | the three `8080`s agree | `PORT`, `{{upstreams 8080}}`, healthcheck URL — `PORT` is now stated explicitly rather than inherited from the binary's default |
 
-Two known deviations from PLATFORM.md, both deliberate: the shared
+**Two deviations from PLATFORM.md's rules, and three parameter differences from
+its template.** Those are not the same kind of thing, and counting only the
+first pair is what sends the next reader hunting.
+
+The two rule deviations, both deliberate: the shared
 `security_headers`/`csp_spa`/`no_uploads` snippets are **not** imported
 (`internal/api/security.go` is stricter and Caddy's `header` replaces rather
 than merges — see the comment in `docker-compose.prod.yml`), and the app serves
@@ -46,6 +50,15 @@ than merges — see the comment in `docker-compose.prod.yml`), and the app serve
 Nothing on the platform calls `/health` — the edge does not health-check, and
 the Docker healthcheck is Konku's own — so this is a wording mismatch, not a
 functional one. Worth reconciling in one of the two documents.
+
+The three parameter differences, each justified where it sits and none of them
+drifting: `mem_limit: 512m` rather than the template's
+`deploy.resources.limits.memory: 256M` — the *value* is justified twice in the
+compose file, the *form* nowhere — plus `start_period: 30s` rather than `20s`
+and `wget -q -T 3 --spider` rather than `wget -qO-`. They are listed because
+diffing the compose file against the template turns up **five** differences: a
+reader told there are two has to re-derive which of the other three are safe,
+and re-deriving that is the work this table exists to have already done.
 
 **HSTS is `max-age=300` on purpose** and should be raised to `31536000` once
 certificate renewal is observed working on the box. HSTS cannot be withdrawn
@@ -103,7 +116,9 @@ problem. Exact statement in `deploy.md`.
 - `PUBLIC_BASE_URL` must equal `https://$KONKU_HOST`. Every link in every
   message is built against it, and a wrong value is only discovered after the
   mail has been delivered (S4)
-- `ALLOW_SIGNUP=false`, `DEV=false`
+- `ALLOW_SIGNUP` and `DEV` are **not** `.env` variables — both are literals in
+  `docker-compose.prod.yml`, already `"false"`, deliberately (`.env.prod.example`
+  says why). Nothing to set here; opening signup at `07` L10 is a compose edit
 - Create your account with `konku seed-user`
 - Migrations run themselves at startup
 
