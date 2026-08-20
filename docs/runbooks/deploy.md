@@ -48,6 +48,23 @@ make provision NAME=konku PASS="$(openssl rand -base64 24 | tr -d '/+=')" EXT=ve
 `pg_trgm` is *trusted* in PG13+, so migration `00001` creates it itself as the
 owner and it does not need listing in `EXT`. Adding it there anyway is harmless.
 
+**`EXT=vector` is not optional, and `PLATFORM.md` leaves it out.** The contract
+document writes this operation as `make provision NAME=myapp_prod PASS="…"`,
+with no `EXT` argument at all. The argument is real — the platform Makefile
+passes it through, and that Makefile's own usage line names Konku as the reason
+it exists — so an operator who follows `PLATFORM.md` as written provisions Konku
+**without pgvector**, and discovers it later and somewhere less obvious.
+
+This page is the correct one and stays as it is. The gap is in the contract
+document, which lives in a repo Konku does not write to, so it is handed back to
+the platform's operator rather than fixed here. Do not "reconcile" this by
+dropping `EXT=vector` to match the contract; the contract is the incomplete half.
+
+The same two lines also teach different naming: `PLATFORM.md` models
+`NAME=myapp_prod`, this page uses `NAME=konku`. Neither is wrong on its own, but
+whichever you pick has to match `DATABASE_URL` exactly, and the two documents
+model different conventions for one operation.
+
 **Then create the app role by hand, and do it before the container ever
 starts.** This is the one ordering trap in the whole deploy, and it is not
 something `make provision` can do for you:
