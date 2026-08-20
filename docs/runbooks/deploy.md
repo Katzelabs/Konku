@@ -231,6 +231,20 @@ and pulled here.
 
 ### Verify, in this order
 
+**Export the hostname first.** Four of the checks below interpolate
+`$KONKU_HOST` and nothing has put it in your shell. Compose reads `.env` for its
+own interpolation; it does not export anything to you, and `.env` is not a file
+you have sourced.
+
+```bash
+export KONKU_HOST=konkuapp.katzeapps.com
+```
+
+Skipping this does not produce a missing-variable error. The first check becomes
+`curl -s https:///readyz`, which fails with a URL error — and a failing `/readyz`
+curl reads exactly like the outage these checks exist to detect. You would be
+looking at the application.
+
 ```bash
 # The process is alive, and the schema is the one this binary expects.
 curl -s https://$KONKU_HOST/readyz          # {"status":"ok","schema_version":N}
