@@ -377,6 +377,28 @@ curl -sI https://$KONKU_HOST | grep -i strict-transport-security
 # along with it. Seeing the full set AND HSTS in one response is the proof.
 curl -sI https://$KONKU_HOST | grep -iE 'content-security-policy|cross-origin-|x-frame-options|permissions-policy|referrer-policy|x-content-type-options'
 
+# And where HSTS comes from, which closes the loop on the check above: knowing
+# the header is emitted is not the same as knowing what emits it. The edge's
+# generated config carries it as its own handler ahead of the proxy —
+#   {"handler":"headers","response":{"set":{
+#      "Strict-Transport-Security":["max-age=300"]}}},
+#   {"handler":"reverse_proxy","upstreams":[{"dial":"…:8080"}]}
+# — while the app's own responses on :8080 carry every other security header
+# and NO Strict-Transport-Security. So the header provably originates at the
+# edge label rather than the application, which is correct: only the component
+# terminating TLS knows the connection was secure (D-088).
+#
+# Two things in that config look like findings and are not. The upstream is a
+# literal IP:8080 rather than a DNS name — caddy-docker-proxy re-resolves it
+# when the container changes, so it self-heals, but it is IP-pinned at any
+# given instant. And this route sets no header but HSTS, which looks like a gap
+# beside the neighbouring tuantanah.fun route that sets its whole set at the
+# edge. It is not: Konku emits its own from the application (D-088 deviation
+# #1). Two tenants dividing the same labour differently, not a Konku
+# deficiency — chase it once and you will chase it again.
+docker exec edge-caddy-1 wget -qO- http://127.0.0.1:2019/config/ \
+  | grep -o 'Strict-Transport-Security'
+
 # The edge actually generated a route for this host. Checking the app answers
 # is not the same as checking the edge knows about it.
 docker exec edge-caddy-1 wget -qO- http://127.0.0.1:2019/config/ \
