@@ -64,8 +64,23 @@ here rather than by Konku's own migrations (D-025):
 
 ```bash
 cd ~/projects/platform
-make provision NAME=konku PASS="$(openssl rand -base64 24 | tr -d '/+=')" EXT=vector
+make provision NAME=konku PASS='<owner password>' EXT=vector
 ```
+
+**Choose that password before you run the command, and have it saved.** You need
+it again, character for character, as `MIGRATION_DATABASE_URL` in the next
+section — a variable this page marks **Not optional**. If you want a generated
+one, generate it into your password manager first and paste it in; what must not
+happen is generating it *inside* the command.
+
+Until the first real run this page said
+`PASS="$(openssl rand -base64 24 | tr -d '/+=')"`, and that is a hard stop half
+way through the deploy. `provision-db.sh` does not echo the password back — its
+closing block prints a literal `<password>` placeholder — so a value produced by
+command substitution exists in Postgres and nowhere else the instant the command
+returns. Nothing later on this page can recover it, and the deploy cannot be
+completed without it. The command looks careful, which is why it survived being
+written down and never run.
 
 `pg_trgm` is *trusted* in PG13+, so migration `00001` creates it itself as the
 owner and it does not need listing in `EXT`. Adding it there anyway is harmless.
