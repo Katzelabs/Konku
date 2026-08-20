@@ -218,6 +218,16 @@ symptom:
 make release-verify REF=ghcr.io/katzelabs/konku@sha256:<digest>
 
 # 2. Back up first. Every deploy runs migrations.
+#
+#    The heaviest command on this page, and not Konku-scoped. `make backup-now`
+#    writes a dump into ~/projects/platform/backups/ containing EVERY database
+#    on the shared instance, Tuan Tanah included — pg_dumpall takes no
+#    per-database scope. `ship-backups.sh` then rclone-copies that multi-tenant
+#    dump off the box to Cloudflare R2 and enforces remote retention by
+#    DELETING (--min-age 7d for daily, --min-age 28d for weekly). Other
+#    tenants' data leaves the machine, and objects are removed irreversibly at
+#    the far end. This is an operator step — see the boundary note under
+#    "Before the first deploy" — and it has a known defect, under "Backups".
 cd ~/projects/platform && make backup-now && bash scripts/ship-backups.sh
 
 # 3. Point the compose file at that exact digest. Record it somewhere the
@@ -389,6 +399,17 @@ What is worth checking rather than assuming, the first time:
   platform's actual configuration before quoting the four days to anyone;
   treating them as established because they are written down here is the shape
   of the failure, not a check against it.
+
+- **A pre-deploy `make backup-now` lands in the nightly series, and neither
+  document says so.** `backup-now` writes `pg_dumpall_manual_*`; `ship-backups.sh`
+  globs `pg_dumpall_*.sql.gz`. The glob matches the manual file, so the ad-hoc
+  dump taken in **Deploy** step 2 is copied into `daily/` beside the scheduled
+  ones. The retention window above is counted over that series, so an
+  unscheduled dump changes what "7 daily" actually spans — and it does it
+  quietly, in the direction of a shorter real window, against a margin that is
+  four days to begin with. This is a defect in the platform's scripts. The fix
+  belongs there and nothing in this repo can make it; what this page can do is
+  stop the margin being quoted as though deploys did not affect it.
 
 - **`/privacy` says the backups are encrypted.** R2 encrypts objects at rest,
   so that is defensible for the off-box copy; the nightly dumps sitting in
