@@ -212,6 +212,17 @@ after S6.
 **By digest, never by tag.** A tag can be moved after it was tested, and then
 "what is running in production" is a question nobody can answer (D-061).
 
+`<digest>` below is a placeholder, and this page deliberately does not contain
+the value. **The digest to deploy is pinned in `04-ship.md` §S1** — take it from
+there. It is not repeated here because a literal written in two files is a
+literal that drifts, and one of the two then answers "what are we running" with
+a stale value while looking authoritative, which is the D-061 failure wearing a
+different hat.
+
+While you are in that file: **`v0.1.0` must never be deployed.** It published a
+correct image that its own release workflow could not verify, so nothing
+attests to what is in it. `v0.1.1` is the first verified release.
+
 ```bash
 # 1. ON YOUR LAPTOP, in your Konku checkout — not on the box. This is the only
 #    step here that is not run on the VPS. It verifies the digest you intend to
