@@ -2005,8 +2005,16 @@ database … 42501` means authentication *succeeded* and `CONNECT` is missing.
 Backups section states that "provisioning revokes `CONNECT` from `PUBLIC`" — as
 part of reasoning about whether `pg_dumpall` can still see the database. The
 fact was written down, in the right document, and never carried across to the
-role that has to log in. Facts filed under the question that first raised them
-do not migrate to the question that needs them.
+role that has to log in.
+
+It was not filed carelessly, and that is what makes this hard rather than
+embarrassing. The sentence carries its own reasoning — the revoke "does not
+affect the superuser" — which is a correct and complete answer to the question
+being asked there. There was no error to catch when it was written, and no
+reviewer of that paragraph would have found one. The cost appeared only when a
+different question needed the same fact. Facts filed correctly under the
+question that raised them do not migrate to the question that later needs them,
+and nothing signals the omission at either end.
 
 **Rejected: granting `CONNECT` to `PUBLIC`.** The one-word fix, and it would
 undo the provisioner's hardening for **every** database on the shared instance —
