@@ -1954,6 +1954,80 @@ written down since D-059 and was still misread during this deploy's own recon,
 from this same script. A rule that is recorded, correct, and reliably misread
 under operating conditions is not adequately recorded.
 
+### D-090 — A two-role tenant needs a grant that neither repository owns *(amends D-088, completes D-059)*
+
+**Decision:** `GRANT CONNECT ON DATABASE konku TO konku_app` belongs in
+`deploy.md`'s role block, in the same `psql` invocation as the `CREATE ROLE`.
+A least-privilege split is not finished when the second role is created. It is
+finished when the grants that make that role usable exist — and on this platform
+those grants fall between two repositories, with neither file wrong on its own.
+
+**What broke.** The first production boot restart-looped eleven times on
+`FATAL: permission denied for database "konku" (SQLSTATE 42501)`. Everything the
+runbook prescribed had been done: `konku_app` existed before the first `up`,
+with `LOGIN`, with a password, `rolsuper=f`, `rolbypassrls=f`. It authenticated
+successfully and was refused at the database door. Migrations never ran; the
+`public` schema had no tables.
+
+**Where the seam is.** `provision-db.sh` hardens every tenant database by
+revoking `CONNECT` from `PUBLIC` and granting it to the owner alone. That is
+correct and should stay. Konku then adds a *second* role afterwards, by hand,
+from its own runbook — and the platform's default correctly excludes a role that
+did not exist when the default was applied. The provisioner cannot know about a
+role a tenant will create later. The runbook did not know the provisioner had
+closed the door. Neither document is incorrect in isolation, and their union is
+a service that cannot start.
+
+**Tuan Tanah could never have surfaced this.** It runs a single role where the
+role name, the database name and the owner are all `tuantanah_prod`, and a
+single-role tenant is granted `CONNECT` by the provisioner as a matter of
+course. **Konku is the first two-role tenant on this box**, and the two-role
+split exists because D-059 requires it: a table owner bypasses its own RLS
+policies, so the app must not connect as the owner. The gap therefore opens
+precisely for the tenant that implements tenancy properly, and stays invisible
+to the one that does not need to.
+
+**This is D-089's shape at a different seam.** Two artifacts, each correct,
+producing a broken outcome because nothing owns the join between them. D-089
+bites through an instruction printed at the wrong moment and fails silently
+forever; this one bites at first boot and fails loudly. Loud is better, and it
+is still worth a record, because the loudness is misleading — see below.
+
+**The symptom collides with the trap already documented.**
+`store: connecting to database` was already this page's named warning sign for
+the `00006` `NOLOGIN` ordering trap. It is now the log line for two different
+causes with two different fixes, and an operator applying the documented remedy
+to the new failure changes nothing. `deploy.md` now carries the discriminator:
+`password authentication failed` is the old trap; `permission denied for
+database … 42501` means authentication *succeeded* and `CONNECT` is missing.
+
+**The knowledge was already in the file, on the wrong shelf.** `deploy.md`'s
+Backups section states that "provisioning revokes `CONNECT` from `PUBLIC`" — as
+part of reasoning about whether `pg_dumpall` can still see the database. The
+fact was written down, in the right document, and never carried across to the
+role that has to log in. Facts filed under the question that first raised them
+do not migrate to the question that needs them.
+
+**Rejected: granting `CONNECT` to `PUBLIC`.** The one-word fix, and it would
+undo the provisioner's hardening for **every** database on the shared instance —
+handing every tenant role a connection to every other tenant's database. The
+revoke is the platform doing its job. The tenant that added a role is the party
+that has to account for it.
+
+**Rejected: moving the grant into migration `00006`.** The natural second guess,
+and it cannot work: it is circular. Migrations run over
+`MIGRATION_DATABASE_URL` as the owner, but `cmd/konku` opens the pool as
+`konku_app` and **pings it before it migrates** (D-088's ordering trap). So the
+grant would sit behind a connection that the absence of the grant prevents. The
+`GRANT` has to happen outside the application, before it starts, which is
+exactly where the `CREATE ROLE` already was.
+
+**Rejected: loosening the provisioner to take a second role.** That is a change
+to `Katzelabs/platform`, which Konku does not write to (D-088), and it would put
+Konku's role convention inside a generic tool that serves every tenant. The
+runbook is the right owner: it is the document that knows this tenant has two
+roles.
+
 ---
 
 ## Open questions
