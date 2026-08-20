@@ -519,17 +519,36 @@ This replaces the restic plan in `04-ship.md` S3 and the per-project
 
 What is worth checking rather than assuming, the first time:
 
-- **Konku's database is actually in the dump.** `pg_dumpall` covers everything
-  the *superuser* can see, and provisioning revokes `CONNECT` from `PUBLIC` —
-  that does not affect the superuser, but "two healthy-looking 1.2 KB dumps
-  taken before the tenant existed" is on PLATFORM.md's list of silent failures
-  found on this box. Check the effect:
+- **Konku's database is in the dump — and so is its data.** Those are two
+  different claims and only the second one matters. `pg_dumpall` covers
+  everything the *superuser* can see, and provisioning revokes `CONNECT` from
+  `PUBLIC` — that does not affect the superuser, but "two healthy-looking 1.2 KB
+  dumps taken before the tenant existed" is on PLATFORM.md's list of silent
+  failures found on this box.
+
+  **Run both checks. The first one alone returns green on an empty database**
+  (D-091):
 
   ```bash
   cd ~/projects/platform
-  gunzip -c "$(ls -t backups/pg_dumpall_*.sql.gz | head -1)" \
-    | grep -c 'CREATE DATABASE konku'      # must be 1
+  DUMP="$(ls -t backups/pg_dumpall_*.sql.gz | head -1)"
+
+  # 1. The tenant is in the dump at all. 0 means it is missing entirely.
+  gunzip -c "$DUMP" | grep -c 'CREATE DATABASE konku'        # must be 1
+
+  # 2. The tenant's SCHEMA is in the dump. `CREATE DATABASE` is emitted for an
+  #    empty database exactly as it is for a full one, so check 1 passing says
+  #    nothing whatsoever about content. 0 here means konku was captured empty.
+  gunzip -c "$DUMP" | grep -c 'CREATE TABLE public.users'    # must be 1
   ```
+
+  Keep both: they diagnose different failures. No `CREATE DATABASE` means the
+  tenant is missing; `CREATE DATABASE` without tables means it was captured
+  empty. On 2026-08-20 the first returned `1` and the second returned `0` —
+  the nightly ran inside the 30-minute window between the database being created
+  and its migrations running. That needed no fix and coverage self-heals on the
+  next nightly, but check 1 by itself would have signed the deploy off on
+  coverage that did not exist.
 
 - **Restoring Konku must not disturb the other tenants.** A `pg_dumpall` is one
   file containing every database, so replaying the whole thing is not a
