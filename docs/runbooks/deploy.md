@@ -92,6 +92,7 @@ starts.** This is the one ordering trap in the whole deploy, and it is not
 something `make provision` can do for you:
 
 ```bash
+cd ~/projects/platform      # both paths below resolve only from here
 docker compose --env-file .env -f compose/postgres.yml exec -T postgres \
   psql -v ON_ERROR_STOP=1 -U postgres -d konku -c \
   "DO \$\$ BEGIN
@@ -102,6 +103,19 @@ docker compose --env-file .env -f compose/postgres.yml exec -T postgres \
      END IF;
    END \$\$;"
 ```
+
+**The `.env` in that command is the platform's, not Konku's.** Both of its
+relative paths — `compose/postgres.yml` and `--env-file .env` — exist only under
+`~/projects/platform`; Konku has no `compose/` directory at all. The `cd` is
+written out rather than inherited from the `make provision` block above, because
+this step sits under its own heading and reads as self-contained, and anyone who
+opens a fresh terminal for it starts in the wrong directory.
+
+The ambiguity is the real bug and the missing `cd` was only how it bit: the same
+literal `--env-file .env` appears again under **Deploy**, where it means *Konku's*
+`.env` because that block cd's to `~/projects/konku`. One string, two files, told
+apart by nothing but the working directory. Keep every block's `cd` explicit
+here for that reason, even where it looks redundant.
 
 Why it cannot be skipped or reordered:
 
