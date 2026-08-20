@@ -267,10 +267,19 @@ docker run --rm --network platform alpine:3.21 \
   wget -qO- http://konku-app-1:9090/metrics | head -3
 
 # And NOT published on the host. These two are the authoritative checks: they
-# read the port table rather than asking the port a question. Cockpit also uses
-# 9090 on this box (VPS Infra P1.1), so a listener here is not by itself a
-# Konku leak — confirm which process owns it before concluding it is.
-ss -ltnp | grep 9090 || echo "nothing on 9090 — correct"
+# read the port table rather than asking the port a question.
+#
+# Expect 9090 to be listening. Cockpit holds it permanently on this box (VPS
+# Infra P1.1), so "nothing on 9090" is NOT the passing result — seeing no
+# output at all would itself be surprising. The two are told apart by shape:
+# Cockpit is a single dual-stack socket and renders as a lone `*:9090`, while a
+# Docker-published port shows a `0.0.0.0:9090` line AND a `[::]` one, or is
+# attributed to docker-proxy. A lone `*:9090` is Cockpit. A `0.0.0.0:9090` line
+# is Konku leaking.
+#
+# sudo is required, not decorative: without it `ss -ltnp` prints the socket but
+# no process name, and identifying the owner is the whole point of the check.
+sudo ss -ltnp | grep 9090
 docker port konku-app-1 || echo "no published ports — correct"
 
 # A curl adds little to those two, and if you run one it must be http://.
