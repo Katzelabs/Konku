@@ -599,6 +599,50 @@ What is worth checking rather than assuming, the first time:
   `~/projects/platform/backups` on the VPS are plaintext gzip. Either narrow
   the wording or encrypt the local copy — do not leave it as it is.
 
+### Handed back to the platform's operator
+
+Found by the first deploy's backup audit. All of these live in
+`Katzelabs/platform` and **none is fixable from this repo**. Recorded so they
+are not rediscovered from scratch, and so nobody assumes the pipeline is sound
+in the places it has not been checked:
+
+- **`make restore` cannot restore one tenant, and rolls back another.** Dumps
+  are taken `pg_dumpall --clean --if-exists`, so they carry
+  `DROP DATABASE`/`CREATE DATABASE` for *every* database, and the Makefile
+  target pipes the whole file into the live instance. Restoring Konku that way
+  **drops and recreates `tuantanah_prod`**, rewinding a live tenant to dump
+  time. `restore.md` already prescribes the scratch-instance route and the
+  Makefile does not implement it, so the runbook and the tooling disagree about
+  the operation most likely to be run under pressure. The most consequential
+  item on this list.
+- **Neither restore test verifies Konku.** `restore-test.sh` and
+  `r2-restore-test.sh` assert exclusively on `tuantanah_prod` — row counts,
+  canary row, ownership. A green restore test proves nothing about this tenant.
+- **The watchdog cannot see this class of failure.** `check-backups.sh` checks
+  freshness, a 500-byte size floor, sidecar liveness and R2 freshness — never
+  content. Both the historical 1227-byte empty dump and the konku-shell dump of
+  2026-08-20 clear that floor comfortably. "Present but empty" (D-091) is
+  invisible to it by construction.
+- **The manual-dump glob is worse than described above.** `ship-backups.sh:44`
+  ships `ls -t backups/pg_dumpall_*.sql.gz | head -1` — the newest single
+  matching file. The glob matches `pg_dumpall_manual_*`, so a manual dump taken
+  after the nightly does not merely join the series, it **displaces** it: that
+  day's real nightly is never shipped off-box at all. The same overlapping glob
+  appears in `backup.sh:29`'s local pruner.
+- **`restore-test.sh:12` globs `backups/*.gz`**, which also matches the 33 MB
+  `hermes_*.tar.gz` files sitting in that directory. It works today only because
+  the two run at different hours; if a nightly ever fails, it feeds a tarball to
+  `psql`.
+- **Bucket-name drift.** `r2-restore-test.sh` and `setup-r2.sh` hardcode
+  `katzelabs-bucket`, while `ship-backups.sh:10`'s comment documents
+  `katzelabs-backups`. One of them is stale and it could not be settled
+  read-only.
+
+**Not verified: what is actually in R2.** Confirming the off-box copy needs
+`rclone`, which was outside the audit's permitted set. Everything above concerns
+the local pipeline and the scripts. The state of the remote copy is unconfirmed
+by us — treat it as unchecked rather than as working.
+
 ---
 
 ## Alerts
