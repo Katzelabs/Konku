@@ -365,9 +365,16 @@ curl -sI https://$KONKU_HOST | grep -iE 'content-security-policy|cross-origin-|x
 docker exec edge-caddy-1 wget -qO- http://127.0.0.1:2019/config/ \
   | grep -o "$KONKU_HOST"
 
-# Metrics are reachable on the platform network.
+# Metrics ARE reachable on the platform network. Run this FIRST, and read it as
+# the positive control for the external check further down rather than as a
+# standalone "do metrics work" probe.
+#
+# Without it, the external `grep -c … # must be 0` proves nothing: a pattern
+# that matches nothing anywhere passes every time, including when the pattern
+# itself is wrong. The negative only carries meaning once the same pattern has
+# been shown to match something. Expect ~92 lines.
 docker run --rm --network platform alpine:3.21 \
-  wget -qO- http://konku-app-1:9090/metrics | head -3
+  wget -qO- http://konku-app-1:9090/metrics | grep -cE '^# (HELP|TYPE)'   # must be >0
 
 # And NOT published on the host. These two are the authoritative checks: they
 # read the port table rather than asking the port a question.
@@ -400,13 +407,35 @@ curl -s --max-time 5 http://$KONKU_HOST:9090/metrics   # must fail
 # this page did not think to check until 2026-08-20.
 #
 # ASSERT THE BODY, NEVER THE STATUS CODE. This returns 200 and is NOT a leak:
-# the SPA serves index.html for any unmatched path, so /metrics, /admin and
-# /definitely-not-a-route all answer 200 with `content-type: text/html` and an
+# the SPA serves index.html for any unmatched path, so /metrics, /admin, /.env
+# and /debug/pprof/ all answer 200 with `content-type: text/html` and an
 # `id="root"` div. A status-only check here reports a breach that does not
 # exist, at whatever hour you happen to run it. Metric output is what actually
-# distinguishes the two, so count it:
+# distinguishes the two, so count it.
+#
+# Read this together with the internal probe above, in that order. If that one
+# ever returns 0, this 0 stops being reassuring and starts being meaningless.
+#
+# /api/* is deliberately excluded from the catch-all and is the one namespace
+# whose 404s you can trust: /api/zzznope returns a real 404 with a JSON error
+# body. Everywhere else, a 404 is not available as evidence.
 curl -s --max-time 10 https://$KONKU_HOST/metrics | grep -cE '^# (HELP|TYPE)'   # must be 0
 ```
+
+Two more results from the first external audit, both benign, both worth knowing
+before they are misread as findings:
+
+- **An unmatched vhost returns `200`, not `404`.**
+  `curl -H 'Host: nope.katzeapps.com'` against the box answers `200` with
+  `content-length: 0` and no security headers. That is Caddy's default empty
+  response for a host it has no route for — not vhost confusion, and not a
+  wildcard. By status code alone it reads as "the edge serves anything", which
+  is the same trap as the paragraph below.
+- **`alt-svc: h3=":443"` is advertised and HTTP/3 is not served.** There is no
+  UDP 443 listener on the edge, so clients that honour the header attempt QUIC,
+  fail, and fall back to TCP. No security impact and nothing to fix during a
+  deploy, but it will cost someone an afternoon if they meet it while debugging
+  latency.
 
 A check that cannot distinguish the safe world from the broken one is not
 evidence, however reliably it fails. That is PLATFORM.md's rule 6 — verify the
