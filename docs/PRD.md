@@ -337,6 +337,12 @@ The one that matters most is the restore drill. Everything else degrades noisily
 
 **RTO is now a measured number rather than a guess** (`06` P10). The first drill ran 2026-08-09 against dev compose: dump → restore into an empty database → policies and grants verified → the app served the restored database → login succeeded, in **6 seconds** for a 64 KB dump.
 
+**Re-measured against production on 2026-08-20**, as this section required. Konku-only dump and restore into an isolated scratch instance: **1.3 seconds** for an 80 KB dump — 0.62 s out, 0.63 s back — with 20 tables, 19 policies, RLS enabled and forced on all 19 user tables, all three extensions and schema 12 verified on the far side. The procedure transferred to production; the commands did not, and `restore.md` now carries a production section because none of the dev-stack commands accept the platform's `pg_dumpall` format.
+
 Six seconds is a floor, not the target. What the drill establishes is that the *procedure* has no unknown steps in it, which is the part that costs an hour when it is missing. The 2 h target adds what the drill cannot rehearse on a laptop: noticing, fetching the dump from off-site, provisioning a database if the host is gone, and DNS or proxy work. It replaces 4 h because the procedure turned out to be written down and mechanical; it is not 30 min because **detection is currently "the operator notices"** — no alerts are routed until `04-ship.md` S5, and that is the dominant term.
 
-Re-measure against production once it exists, and revise this number rather than defending it.
+**The 2 h target stands, and the production drill did not move it.** The restore itself is seconds; the target is dominated by the terms the drill still cannot rehearse, and detection remains the largest — no alerts are routed until `04-ship.md` S5. A faster restore does not shorten the time it takes to notice.
+
+Two findings from the production drill bear on this number and are not yet closed. `make restore` on the platform side cannot restore one tenant — it replays every database into the live instance — so a Konku-only recovery currently runs the hand-written path in `restore.md` rather than a tested target. And a single-database dump does not carry its roles, so a restore onto a fresh instance is gated on recreating `konku` and `konku_app` first (D-090). Neither is slow; both are steps that are easy to discover at the worst possible moment.
+
+Re-measure again once there is real data, and revise this number rather than defending it.
