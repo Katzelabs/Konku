@@ -555,22 +555,32 @@ What is worth checking rather than assuming, the first time:
   Konku-only restore. `restore.md` is the drill; the extraction is
   `pg_restore`-into-a-scratch-instance, not `psql < dump` against production.
 
-- **Retention is a promise, not a preference.** `/privacy` tells users their
-  data is gone from backups within 30 days of deleting their account. The
-  platform keeps 14 days locally and 7 daily + 4 weekly (~28 days) in R2, so
-  the promise holds — but it holds by four days, and it is enforced in a
-  different repo from the one that makes the promise. Changing
-  `BACKUP_RETENTION_DAYS`, or the `--min-age` values in `ship-backups.sh`,
-  makes `/privacy` false without anything failing.
+- **Retention is a promise, not a preference — and a *shorter* window keeps
+  it.** `/privacy` tells users their data is **gone** from backups within 30
+  days of deleting their account. That is a deletion promise, so retention
+  below 30 days *satisfies* it and retention above 30 days *breaks* it.
 
-  **Those two numbers are asserted here and confirmed nowhere.** `PLATFORM.md`'s
-  Backups section states no retention figures at all, and
-  `BACKUP_RETENTION_DAYS` lives in a third place again. So this paragraph is
-  currently the only written statement of the margin a public privacy promise
-  depends on, and it is a statement no document backs. Check both against the
-  platform's actual configuration before quoting the four days to anyone;
-  treating them as established because they are written down here is the shape
-  of the failure, not a check against it.
+  **Never respond to a tight margin here by raising retention.** The instinct
+  that more retention is safer is correct almost everywhere else and is exactly
+  backwards on this line. Raising `BACKUP_RETENTION_DAYS`, or the `--min-age`
+  values in `ship-backups.sh`, is the single most likely well-meaning edit to
+  falsify `/privacy`, and nothing would fail when it happened.
+
+  **Verified 2026-08-20, and the margin is thinner than this page claimed.**
+  14 days locally (`backup.sh:7`, `BACKUP_RETENTION_DAYS:=14`, corroborated by
+  the sidecar's own `retention=14d` log line); `--min-age 7d` on `daily/` and
+  `--min-age 28d` on `weekly/` (`ship-backups.sh:66-67`). The longest-lived copy
+  is a weekly at **28 days**, so the margin against the 30-day promise is **two
+  days — not the four previously stated here**. And the delete pass runs once a
+  day, so an object can reach roughly 29 days before it is collected, which
+  leaves closer to one.
+
+  These figures were read off the scripts rather than inherited, which is new —
+  they had been asserted here and confirmed nowhere. `PLATFORM.md`'s Backups
+  section still states no retention figures at all and `BACKUP_RETENTION_DAYS`
+  lives in a third place, so this paragraph remains the only written statement
+  of a margin a public promise depends on. Re-read it from `backup.sh` and
+  `ship-backups.sh` whenever either changes; do not re-quote it from here.
 
 - **A pre-deploy `make backup-now` lands in the nightly series, and neither
   document says so.** `backup-now` writes `pg_dumpall_manual_*`; `ship-backups.sh`
@@ -578,8 +588,9 @@ What is worth checking rather than assuming, the first time:
   dump taken in **Deploy** step 2 is copied into `daily/` beside the scheduled
   ones. The retention window above is counted over that series, so an
   unscheduled dump changes what "7 daily" actually spans — and it does it
-  quietly, in the direction of a shorter real window, against a margin that is
-  four days to begin with. This is a defect in the platform's scripts. The fix
+  quietly, against a margin that is two days to begin with. This is a defect in
+  the platform's scripts, and a worse one than described here; see the hand-back
+  list below. The fix
   belongs there and nothing in this repo can make it; what this page can do is
   stop the margin being quoted as though deploys did not affect it.
 
