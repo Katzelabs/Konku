@@ -2036,6 +2036,65 @@ Konku's role convention inside a generic tool that serves every tenant. The
 runbook is the right owner: it is the document that knows this tenant has two
 roles.
 
+### D-091 — A backup check that asserts a name is not a backup check *(amends D-088's backup section)*
+
+**Decision:** `## Backups`'s coverage check gains a second assertion, on
+`CREATE TABLE public.users`, and both are kept. Asserting that a database is
+**named** in a dump does not establish that its **data** is in the dump. Those
+are different claims, `pg_dumpall` emits the first for a database holding
+nothing, and the runbook was treating one as evidence of the other.
+
+**How it was caught.** The prescribed check —
+`gunzip -c … | grep -c 'CREATE DATABASE konku'   # must be 1` — was run against
+the first nightly after the deploy and returned `1`. It passed. The same dump
+measured differently: two `CREATE DATABASE` statements, four `CREATE TABLE`
+statements, and all four of them Tuan Tanah's. Konku has 20 tables live and
+none of them were there. The file contains `CREATE DATABASE konku`,
+`\connect konku`, and then nothing at all. Restoring it produces an empty
+`konku` beside a complete `tuantanah_prod`.
+
+**The cause is a thirty-minute window and it is nobody's mistake.** The `konku`
+database was created at 10:40:42 UTC, the nightly `pg_dumpall` ran at 10:56:19,
+and Konku's migrations ran at 11:10:23. The dump landed after the database
+existed and before its schema did. Every component behaved correctly. The
+window exists because provisioning and first boot are separate operator steps
+with a gap between them, and the nightly does not know or care where in that
+sequence it falls.
+
+**Why it earns a record rather than a line in the runbook.** The failure
+returns **green**. A check that fails loudly gets fixed; a check that passes
+wrongly ends the investigation, and this one would have signed the deploy off on
+backup coverage that did not exist. It is also the third distinct instance this
+deploy has produced of the same underlying error — after the `https://` probe of
+a plaintext listener and the `/metrics` status-code check — of an assertion that
+cannot distinguish the healthy case from the broken one.
+
+**The generalisation is the transferable half: this is a presence check
+standing in for a content check.** The substitution is available anywhere a
+backup, an export, a sync or a migration is verified by asking "is the name
+there" — the name is cheap to emit, survives every interesting failure, and
+reads as proof. Ask instead for something only the working case can produce.
+
+**No fix was required and nothing was at risk.** Worth stating plainly, because
+a finding this size invites emergency action that would be wrong here. The
+sidecar has run six dumps with six `ok` results and zero restarts. Tuan Tanah is
+captured completely **in the very same dump**, which is precisely what makes the
+result trustworthy rather than a broken pipeline. Konku's coverage self-heals at
+roughly 10:56 UTC the following day, now that migrations have run. Every Konku
+table currently holds zero rows.
+
+**Rejected: treating the passing check as coverage.** It is the whole finding.
+The check was green, the coverage was absent, and the gap between those two
+facts is the thing being recorded.
+
+**Rejected: running `make backup-now` to force coverage.** Two independent
+grounds. It writes into `Katzelabs/platform`, which Konku does not touch
+(D-088). And it would actively make matters worse: `ship-backups.sh` ships
+`ls -t backups/pg_dumpall_*.sql.gz | head -1`, a glob that matches
+`pg_dumpall_manual_*`, so a manual dump taken after the nightly **displaces** it
+and that day's real nightly is never shipped off-box at all. The remedy would
+have cost the off-site copy of the day it was trying to protect.
+
 ---
 
 ## Open questions
