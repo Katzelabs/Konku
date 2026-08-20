@@ -460,7 +460,17 @@ Then sign in from your phone. That is the check the others stand in for.
 It ships at `max-age=300`. **Leave it there until you have watched a
 certificate renew.** HSTS cannot be withdrawn inside its own window — if
 renewal is broken and the policy is a year, the site is unreachable for a year
-in every browser that saw it once. Once renewal has demonstrably worked:
+in every browser that saw it once.
+
+**As of 2026-08-20 the certificate has never renewed, and the gate is therefore
+not met.** Recorded rather than assumed, so nobody has to re-derive it: the
+certificate was *issued* that morning at 10:04 UTC by Let's Encrypt,
+`notAfter Nov 18 2026`, subject and sole SAN both exactly
+`konkuapp.katzeapps.com`, chain verifies. A first issuance is not a renewal.
+The earliest a renewal can be observed is roughly late October 2026, so this
+value stays at `max-age=300` until then at the very earliest.
+
+Once renewal has demonstrably worked:
 
 ```
 caddy.header.Strict-Transport-Security: "max-age=31536000; includeSubDomains"
