@@ -336,6 +336,23 @@ curl -s https://$KONKU_HOST/readyz          # {"status":"ok","schema_version":N}
 # Docker agrees, which is what the restart policy acts on.
 docker inspect --format '{{.State.Health.Status}}' konku-app-1   # healthy
 
+# But do NOT verify a first boot with RestartCount. Docker resets it to 0 on a
+# manual `docker start`, so a deploy that crash-looped and was then fixed by
+# hand reports RestartCount=0 — indistinguishable from one that never failed.
+# That is exactly what happened here on 2026-08-20: eleven failed boots, a
+# six-minute stop while the CONNECT grant (D-090) was applied, a manual start,
+# and a counter reading zero afterwards. The counter is zeroed by the very act
+# of recovering, which is the one moment you most want it to speak up.
+#
+# These two are the honest form. `docker logs` survives a restart, so the log
+# is the record the counter is not:
+docker inspect --format '{{.State.StartedAt}} {{.State.FinishedAt}}' konku-app-1
+#   StartedAt must be LATER than FinishedAt — that is the current run being clean
+
+docker logs konku-app-1 2>&1 | awk '/goose: OK   00001_init.sql/{f=1} f' | grep -c ERROR
+#   must be 0. Note THREE spaces after `OK` in that marker, which matters if
+#   you retype it rather than copy it.
+
 # HSTS is actually emitted. VERIFIED 2026-08-20 against the running edge — the
 # first time this label has ever been exercised against a live Caddy. At the
 # CURRENT value, plain YAML double-quoting is sufficient and the label survives
