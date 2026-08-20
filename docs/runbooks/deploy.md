@@ -395,12 +395,34 @@ docker port konku-app-1 || echo "no published ports — correct"
 # https:// looks more correct than http:// in a security check. It is not.
 # Do not change it back.
 curl -s --max-time 5 http://$KONKU_HOST:9090/metrics   # must fail
+
+# And on the public vhost — the path an attacker actually tries first, and one
+# this page did not think to check until 2026-08-20.
+#
+# ASSERT THE BODY, NEVER THE STATUS CODE. This returns 200 and is NOT a leak:
+# the SPA serves index.html for any unmatched path, so /metrics, /admin and
+# /definitely-not-a-route all answer 200 with `content-type: text/html` and an
+# `id="root"` div. A status-only check here reports a breach that does not
+# exist, at whatever hour you happen to run it. Metric output is what actually
+# distinguishes the two, so count it:
+curl -s --max-time 10 https://$KONKU_HOST/metrics | grep -cE '^# (HELP|TYPE)'   # must be 0
 ```
 
 A check that cannot distinguish the safe world from the broken one is not
 evidence, however reliably it fails. That is PLATFORM.md's rule 6 — verify the
-effect, not the exit code — and until this was corrected it was that rule being
-broken inside our own runbook.
+effect, not the exit code — and this one section broke it three separate ways
+before the first deploy corrected them: an `https://` probe of a plaintext
+listener that failed identically whether or not the port leaked, an `ss`
+fallback whose stated success condition cannot occur on this box, and a public
+`/metrics` probe read by status code against an app that answers `200` to
+everything. Three independent instances in one section is a pattern, not a run
+of bad luck.
+
+The third generalises furthest and is worth carrying off this page. **A
+single-page app's catch-all makes every negative path check meaningless by
+status code.** Anything you test by asking "does this 404" — a debug endpoint,
+an admin route, a file you believe you removed — answers `200` from
+`index.html` and reads as present. Assert on the body, always.
 
 Then sign in from your phone. That is the check the others stand in for.
 
