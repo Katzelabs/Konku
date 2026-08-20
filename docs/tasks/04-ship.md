@@ -116,7 +116,9 @@ problem. Exact statement in `deploy.md`.
 - `PUBLIC_BASE_URL` must equal `https://$KONKU_HOST`. Every link in every
   message is built against it, and a wrong value is only discovered after the
   mail has been delivered (S4)
-- `ALLOW_SIGNUP=false`, `DEV=false`
+- `ALLOW_SIGNUP` and `DEV` are **not** `.env` variables — both are literals in
+  `docker-compose.prod.yml`, already `"false"`, deliberately (`.env.prod.example`
+  says why). Nothing to set here; opening signup at `07` L10 is a compose edit
 - Create your account with `konku seed-user`
 - Migrations run themselves at startup
 

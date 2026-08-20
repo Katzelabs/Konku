@@ -192,8 +192,18 @@ symptom:
   D-061 failure exactly — running something other than the artifact that was
   verified — and it would be silent.
 
-`ALLOW_SIGNUP=false` and `DEV=false` for the first deploy. Opening signup is
-`07` L10 and comes after S6.
+**`ALLOW_SIGNUP` and `DEV` are not `.env` variables**, and writing them there
+does nothing whatsoever. Both are literals in `docker-compose.prod.yml`
+(`ALLOW_SIGNUP: "false"`, `DEV: "false"`), which is deliberate and explained in
+`.env.prod.example` under "Not set here, and that is deliberate": they are
+decisions rather than deployment details, and an `.env` on the box is the wrong
+place to be able to open public signup or turn off Secure cookies by typo.
+
+Both are already `false` in the compose file, so the first deploy needs nothing
+done here. Where it bites is later: opening signup at `07` L10 is a **compose
+edit, reviewed like any other change**, not an `.env` edit. Anyone who reaches
+for `.env` gets a flag that has no effect and no error to explain why. That is
+after S6.
 
 ---
 
