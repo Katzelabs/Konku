@@ -180,17 +180,33 @@ curl -sI https://$KONKU_HOST | grep -i strict-transport-security
 docker exec edge-caddy-1 wget -qO- http://127.0.0.1:2019/config/ \
   | grep -o "$KONKU_HOST"
 
-# Metrics are reachable on the platform network and NOT from the internet.
+# Metrics are reachable on the platform network.
 docker run --rm --network platform alpine:3.21 \
   wget -qO- http://konku-app-1:9090/metrics | head -3
-curl -s --max-time 5 https://$KONKU_HOST:9090/metrics   # must fail
 
-# And 9090 is not published on the host. Cockpit also uses 9090 on this box
-# (VPS Infra P1.1) — if something is listening, confirm which it is before
-# concluding this container leaked it.
+# And NOT published on the host. These two are the authoritative checks: they
+# read the port table rather than asking the port a question. Cockpit also uses
+# 9090 on this box (VPS Infra P1.1), so a listener here is not by itself a
+# Konku leak — confirm which process owns it before concluding it is.
 ss -ltnp | grep 9090 || echo "nothing on 9090 — correct"
 docker port konku-app-1 || echo "no published ports — correct"
+
+# A curl adds little to those two, and if you run one it must be http://.
+# The metrics listener speaks plain HTTP (METRICS_ADDR: 0.0.0.0:9090), so an
+# https:// request dies in the TLS handshake whether or not the port is
+# published — it fails identically in the safe world and the leaked world,
+# which is a false pass on the check you would most want to trust. Worse: if
+# Cockpit is bound publicly, https:// can complete a handshake against
+# *Cockpit* and return content, reporting a Konku leak that does not exist.
+# https:// looks more correct than http:// in a security check. It is not.
+# Do not change it back.
+curl -s --max-time 5 http://$KONKU_HOST:9090/metrics   # must fail
 ```
+
+A check that cannot distinguish the safe world from the broken one is not
+evidence, however reliably it fails. That is PLATFORM.md's rule 6 — verify the
+effect, not the exit code — and until this was corrected it was that rule being
+broken inside our own runbook.
 
 Then sign in from your phone. That is the check the others stand in for.
 
