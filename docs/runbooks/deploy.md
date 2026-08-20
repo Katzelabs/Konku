@@ -203,8 +203,18 @@ symptom:
 "what is running in production" is a question nobody can answer (D-061).
 
 ```bash
-# 1. Verify the digest you intend to run, before it touches the box.
-#    Locally, against the dev database.
+# 1. ON YOUR LAPTOP, in your Konku checkout — not on the box. This is the only
+#    step here that is not run on the VPS. It verifies the digest you intend to
+#    run before it touches the box, by pulling the image and running it against
+#    the *dev* database on host port 5433 with dev credentials. Nothing listens
+#    on 5433 on the VPS, so run there it simply fails after ~30s.
+#
+#    NEVER run it bare. With REF omitted, `make release-verify` takes a
+#    different branch entirely: it starts a local registry:2 and runs
+#    `docker buildx build --platform linux/amd64,linux/arm64 --push .` — a build
+#    on whatever machine you are sitting on, which is the thing this section
+#    prohibits three paragraphs below. A forgotten `REF=` does not error; it
+#    quietly does that instead.
 make release-verify REF=ghcr.io/katzelabs/konku@sha256:<digest>
 
 # 2. Back up first. Every deploy runs migrations.
