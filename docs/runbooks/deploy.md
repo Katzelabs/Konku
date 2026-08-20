@@ -719,6 +719,23 @@ sidecar this page used to assume: either the silent-cron-watchdog pattern the
 platform already uses, or accept that `konku_http_5xx` is scraped by nothing and
 the metrics bind (D-081) buys observability by `docker exec` only.
 
+**The route labels are the prior problem, and they change the shape of that
+decision.** As of 2026-08-20 all page traffic in `konku_http_requests_total` is
+labelled `route="unmatched"` — 20 GET and 4 HEAD. Only `/healthz`, `/readyz` and
+`/api/*` carry real route labels. So per-route latency and error alerting on
+real user traffic is **not currently possible regardless of what scrapes the
+endpoint**, and building a scraper first would buy alerting that still cannot
+tell one page from another. Recorded as an observation, not a prescription: the
+fix belongs to S5, which is out of scope for this deploy.
+
+The metrics themselves are populated, verified the same day. All eight
+`konku_`-prefixed series exist — `konku_http_requests_total`,
+`konku_http_request_duration_seconds` across 12 buckets, and six
+`konku_pgx_pool_*` gauges including the `acquired`/`max_conns` pair D-028 names
+as the saturation signal. The internal probe returned 46 `# HELP` and 46
+`# TYPE` lines, which is precisely what makes the external zero mean something
+(D-091).
+
 **The status page must not live on this box.** An app that is down cannot serve
 the page saying it is down. GitHub Pages from `Katzelabs/Konku` is enough.
 Until it exists, email to the affected accounts is the whole channel, which is
