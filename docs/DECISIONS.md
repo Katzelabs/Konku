@@ -2060,3 +2060,38 @@ Opened by the production shift (D-057 – D-066):
 - **What bounds the cost of an open signup** (D-066). Quotas cap storage; they do not cap the number of accounts. Invite codes, a waitlist, and "open and watch" are all defensible; the answer depends on how the launch actually goes.
 - **The rate limiter is per-process** (`internal/api/ratelimit.go`). Correct for one container, wrong the moment there are two, and D-023 rejected Redis for a problem that did not exist yet. It exists once a second instance does — not before, and running two instances is not currently planned.
 - **How much of `GOALS.md` survives having other users.** It is written in the first person about one person's constraints, and D-057 promotes its rules to product constraints without rewriting it. Whether it becomes a product-principles document or stays a personal one that the principles cite is unresolved.
+
+Opened by the first deploy (2026-08-20):
+
+- **Is the `platform` network meant to be flat?** The external audit found that
+  it is, and that Konku's ports are reachable across it by other tenants'
+  containers. Verified directly from another container on the shared subnet:
+  `konku-app-1:9090/metrics` returned all 92 metric lines and
+  `konku-app-1:8080/readyz` returned `200`, both bypassing the edge and every
+  security header it applies. `tuantanah-web-1` and `tuantanah-backend-1` sit on
+  the same subnet and can reach both.
+
+  This is **not** internet exposure. No port is published, `docker port
+  konku-app-1` is empty, and the public surface audited clean. It is a lateral
+  surface *between tenants*, and metrics endpoints routinely carry route names,
+  hostnames and traffic volumes.
+
+  It bears on D-081 specifically. That decision chose `0.0.0.0:9090` inside the
+  container deliberately, reasoning that "an unpublished port is unroutable from
+  the internet whatever it binds, while a container on `platform` can still
+  reach it" — sibling reachability was the entire point, and it was correct
+  about the internet. What it did not weigh is that `platform` carries other
+  **tenants**, not only Konku's own containers. The choice is not disturbed by
+  this; its blast radius is simply larger than the record accounts for.
+
+  **Unresolved, and not Konku's call to make.** Whether a flat shared network is
+  the intended tenant model belongs to `Katzelabs/platform` and its
+  `PLATFORM.md`. If it is deliberate — one operator, no untrusted tenants, which
+  is the reasoning D-024 already accepts for sharing Postgres — then nothing is
+  wrong and this closes as answered rather than fixed. If it is not, the remedy
+  is segmentation on the platform side and no change to Konku. It is recorded
+  here as an observation with evidence, and not as a decision, because nobody
+  has taken one. Structurally it *would* resemble D-089 and D-090 — a seam
+  between two repositories that neither owns — but only under the second answer.
+  Under the first there is no seam, only a property of the contract that was
+  never written down.
