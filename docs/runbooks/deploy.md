@@ -116,20 +116,23 @@ whichever you pick has to match `DATABASE_URL` exactly, and the two documents
 model different conventions for one operation.
 
 **Then create the app role by hand, and do it before the container ever
-starts.** This is the one ordering trap in the whole deploy, and it is not
-something `make provision` can do for you:
+starts.** This is the ordering trap this page has always documented, and it is
+not something `make provision` can do for you. **Run the whole block** — the
+`GRANT` is not optional and not a follow-up; a role created without it
+authenticates and is then refused at the database door (D-090):
 
 ```bash
 cd ~/projects/platform      # both paths below resolve only from here
 docker compose --env-file .env -f compose/postgres.yml exec -T postgres \
-  psql -v ON_ERROR_STOP=1 -U postgres -d konku -c \
-  "DO \$\$ BEGIN
+  psql -v ON_ERROR_STOP=1 -U postgres -d konku \
+  -c "DO \$\$ BEGIN
      IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'konku_app') THEN
        CREATE ROLE konku_app LOGIN PASSWORD '<app password>';
      ELSE
        ALTER ROLE konku_app WITH LOGIN PASSWORD '<app password>';
      END IF;
-   END \$\$;"
+   END \$\$;" \
+  -c "GRANT CONNECT ON DATABASE konku TO konku_app;"
 ```
 
 **The `.env` in that command is the platform's, not Konku's.** Both of its
@@ -154,22 +157,49 @@ Why it cannot be skipped or reordered:
   because a password in a migration is a secret in git.
 - So on a fresh database the first boot tries to authenticate as a role that
   does not exist yet, dies, and `restart: unless-stopped` turns that into a
-  loop. The log line is `store: connecting to database`, which reads like a
-  network problem and is not one.
+  loop.
+- **`LOGIN` and a password are necessary but not sufficient.** `provision-db.sh`
+  revokes `CONNECT` on the database from `PUBLIC` and grants it to the **owner
+  alone**, so a hand-created second role starts with no route into the database
+  at all. Nothing in `migrations/` supplies it either: `00006` grants `USAGE ON
+  SCHEMA public` and table privileges, all of which live *inside* the database
+  and are unreachable until `CONNECT` exists. That is why the `GRANT` sits in
+  the block above and cannot be deferred to a migration (D-090).
 
 The `IF NOT EXISTS` guard in `00006` means creating the role early is safe:
 the migration finds it and only applies its grants. This is the same thing CI
 does before running the image, and the same thing `make db-app-role` does
 locally.
 
-**Check the app role cannot bypass RLS before going further.** This is the one
-that silently invalidates everything else, and it is the bug that was found in
-local dev:
+**`store: connecting to database` has two causes and one symptom.** Both end in
+the same restart loop behind the same log line, and they take different fixes,
+so read the rest of the line before acting on it:
+
+| The line continues | What happened | Fix |
+|---|---|---|
+| `FATAL: password authentication failed`, or the role cannot log in | the `00006` `NOLOGIN` trap — the role does not exist yet, or exists without `LOGIN` | the `CREATE ROLE` above |
+| `FATAL: permission denied for database "konku" (SQLSTATE 42501)` | authentication **succeeded**. The role is fine and has no `CONNECT` | the `GRANT` above |
+
+Both read like a network problem and neither is one. A
+`tls error: server refused TLS connection` line alongside either of them is
+**benign noise, not the cause** — pgx defaults to `sslmode=prefer`, tries TLS,
+and falls back to plaintext over the internal Docker network. It appears on
+healthy boots too. Chasing it is this section's own warning happening one level
+further down.
+
+**Check both of these before going further.** The first is the one that silently
+invalidates everything else, and was found in local dev. The second is what the
+first boot of this deploy actually died on:
 
 ```sql
 SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'konku_app';
 -- both flags must be f
+
+SELECT has_database_privilege('konku_app','konku','CONNECT');   -- must be t
 ```
+
+They fail in opposite directions and both are cheap. Too much privilege makes
+RLS decorative and nothing complains; too little and the container never boots.
 
 ### Environment
 
