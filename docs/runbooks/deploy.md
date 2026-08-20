@@ -221,6 +221,20 @@ in every browser that saw it once. Once renewal has demonstrably worked:
 caddy.header.Strict-Transport-Security: "max-age=31536000; includeSubDomains"
 ```
 
+**That value needs quoting the current one does not, and the line above may not
+be enough on its own.** `max-age=300` is a single token, so nothing about the
+current label depends on how it is quoted. `max-age=31536000; includeSubDomains`
+contains a space, and a caddy-docker-proxy label value with a space in it needs
+inner quoting inside the YAML string. `docker-compose.prod.yml` carries that
+warning in a comment beside the label — which is precisely the file you will not
+have open at the moment you follow this section, which is why it is repeated
+here.
+
+So treat the raise as a change to verify, not a value to paste: re-run the
+`curl -sI` from "Verify, in this order" afterwards. A label that fails to parse
+does not announce itself. It simply stops shipping the header, and HSTS
+disappearing is invisible from the browser side.
+
 `includeSubDomains` only if **every** host under `katzeapps.com` can serve TLS.
 The apex is shared across projects, so this commits them too.
 
