@@ -376,6 +376,19 @@ docker exec edge-caddy-1 wget -qO- http://127.0.0.1:2019/config/ \
 docker run --rm --network platform alpine:3.21 \
   wget -qO- http://konku-app-1:9090/metrics | grep -cE '^# (HELP|TYPE)'   # must be >0
 
+# Do NOT probe :9090 by status code either. That listener is a CATCH-ALL
+# handler, not a mux serving /metrics alone: /debug/pprof/, /debug/vars and an
+# invented /zzz-nonsense all return 200 — every one of them with the Prometheus
+# registry as the body. There is no pprof here and no expvar. Read by status,
+# it looks like an exposed profiling endpoint, which is an alarming thing to
+# report and is not true.
+#
+# That is a SECOND catch-all, on a different port and for a different reason
+# than the SPA's further down. The rule is wider than either of them: ANY
+# catch-all handler destroys status codes as evidence. Assert on bodies on both
+# ports, and do not assume the internal one is safe to probe by status just
+# because the public one has been explained.
+
 # And NOT published on the host. These two are the authoritative checks: they
 # read the port table rather than asking the port a question.
 #
