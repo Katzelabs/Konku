@@ -54,9 +54,22 @@ cd ~/projects/platform && make net      # idempotent; `make up` also does it
 
 ### Roles and database
 
-Two principals, and the difference is load-bearing (D-059). A table owner
-bypasses its own RLS policies, so an app connecting as the owner has RLS in
-name only.
+**Two roles, and both must exist. They are not alternatives.**
+
+| Role | Created by | Used as |
+|---|---|---|
+| `konku` | `make provision` below; owns the database | `MIGRATION_DATABASE_URL` |
+| `konku_app` | the hand-written block below — **not** `make provision` | `DATABASE_URL` |
+
+The difference is load-bearing (D-059). A table owner bypasses its own RLS
+policies, so an app connecting as the owner has RLS in name only: everything
+works, every test passes, and the tenancy guarantee is decorative.
+
+`make provision NAME=konku` creates the database and the owner role, both named
+`konku`, and stops there. Reading that script can leave the impression that
+`konku` and `konku_app` are two names for the same principal, or a choice
+between conventions. They are two roles with different privileges, created by
+two different steps, and the deploy needs both.
 
 `make provision` creates the **owner** and the database, and installs the
 extensions — pgvector is untrusted and needs superuser, which is why it is done
