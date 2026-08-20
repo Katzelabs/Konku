@@ -1,9 +1,19 @@
 # Deploy to the VPS
 
-**Not rehearsed. The app has never been deployed.** This is written before it
-is needed, like the rest of `docs/runbooks/`, and the first run through it is
-`04-ship.md` S1–S3 and S5 — expect to correct it as you go, and correct it *in
-this file* rather than in your memory.
+**Executed once, on 2026-08-20**, against this box, deploying `v0.1.1` by
+digest. That is the entirety of its history: one run, not a rehearsed
+procedure. It was written before it was needed, like the rest of
+`docs/runbooks/`, and that single execution — `04-ship.md` S1–S3 — produced 28
+documentation corrections, three decision records (D-089 – D-091) and one open
+question, including a first boot that failed outright and a backup check that
+passed on a dump containing none of this app's data.
+
+So read it as a page that has survived exactly one deploy, which is a much
+weaker claim than a rehearsed one. Everything beyond that run remains untested:
+S5's alerts are undecided, and the HSTS quoting at the raised value is
+unverified **by design**, because no certificate has renewed yet. Keep
+correcting it *in this file* rather than in your memory — that instruction
+earned its place on the first run and has not expired.
 
 Covers the first deploy, subsequent deploys, backups and alerts. Rolling back
 has its own page: `rollback.md`.
