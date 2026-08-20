@@ -297,6 +297,15 @@ What is worth checking rather than assuming, the first time:
   `BACKUP_RETENTION_DAYS`, or the `--min-age` values in `ship-backups.sh`,
   makes `/privacy` false without anything failing.
 
+  **Those two numbers are asserted here and confirmed nowhere.** `PLATFORM.md`'s
+  Backups section states no retention figures at all, and
+  `BACKUP_RETENTION_DAYS` lives in a third place again. So this paragraph is
+  currently the only written statement of the margin a public privacy promise
+  depends on, and it is a statement no document backs. Check both against the
+  platform's actual configuration before quoting the four days to anyone;
+  treating them as established because they are written down here is the shape
+  of the failure, not a check against it.
+
 - **`/privacy` says the backups are encrypted.** R2 encrypts objects at rest,
   so that is defensible for the off-box copy; the nightly dumps sitting in
   `~/projects/platform/backups` on the VPS are plaintext gzip. Either narrow
