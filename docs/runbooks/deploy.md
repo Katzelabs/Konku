@@ -22,6 +22,28 @@ contract this page obeys** — read that first. What it means here:
 - One shared Postgres 18 serves every app, each with its own database and role.
 - Nothing in the platform repo changes when Konku is deployed.
 
+That last bullet is about **repo content**, and the precision matters: deploying
+Konku edits no file in `Katzelabs/platform`. It does reach into the platform's
+**state on the box**, which is a different thing and a heavier one. Four steps on
+this page do:
+
+- `make net`, below — creates a docker network. Idempotent, and the lightest of
+  the four.
+- `make provision`, next section — creates a database, a role and extensions
+  inside the **shared** Postgres cluster.
+- the `konku_app` role block, next section — runs `psql` as the `postgres`
+  superuser in that same shared cluster.
+- `make backup-now` and `ship-backups.sh`, **Deploy** step 2 — dumps *every*
+  database on the instance, other tenants included, and copies it off the box to
+  remote storage, deleting old objects there as it goes.
+
+Those four act on a cluster holding other tenants' live data, and the last one
+also sends that data off the machine. They belong to whoever operates the
+platform. If that is you, carry straight on. If it is not — if you hold
+Konku-scoped access rather than the box — treat the four as hand-backs to the
+operator and run the rest of this page yourself; nothing else here reaches
+outside Konku.
+
 The network was called `shared` in this repo until 2026-08-17 and never existed
 under that name on the box. It is `platform`, created once by the platform
 stack:
