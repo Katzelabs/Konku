@@ -2154,3 +2154,17 @@ Opened by the first deploy (2026-08-20):
   between two repositories that neither owns — but only under the second answer.
   Under the first there is no seam, only a property of the contract that was
   never written down.
+
+  **The same property has a second consequence: app-to-Postgres traffic is
+  plaintext.** `ssl=off` in `pg_settings`, and `pg_stat_ssl` reports `ssl=f` for
+  Konku's live connection. This is the surviving half of the
+  `tls error: server refused TLS connection` line that appears at boot — the
+  error is structurally true and simply stopped mattering the moment the
+  plaintext fallback succeeded (see `deploy.md`, where it is flagged as benign
+  noise for a *different* reason). On a Postgres instance shared with another
+  live tenant, query traffic crosses the bridge in the clear.
+  `password_encryption` is `scram-sha-256`, so authentication is not
+  plaintext-equivalent; the query stream is. It belongs here rather than as its
+  own item because it is the same underlying question: on this box "internal"
+  means "shared with another tenant", not "Konku only", and how much that
+  matters depends on the same unanswered call.

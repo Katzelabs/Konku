@@ -234,6 +234,13 @@ symptom:
 - **`KONKU_IMAGE` unset refuses to start**, on purpose. A default would be the
   D-061 failure exactly — running something other than the artifact that was
   verified — and it would be silent.
+- **`SENTRY_DSN` empty means production errors are seen by nobody.** It is not
+  guarded, so the app starts happily without it. On the 2026-08-20 deploy it
+  was present-but-empty while `SENTRY_ENVIRONMENT=production` was set — the
+  intent was there and only the DSN was missing, which is the configuration
+  most likely to be read as "Sentry is wired up". There is no crash telemetry
+  on that release. A defensible choice for a first deploy with one user; not a
+  defensible one to forget about. It closes with `06` P3.
 
 **`ALLOW_SIGNUP` and `DEV` are not `.env` variables**, and writing them there
 does nothing whatsoever. Both are literals in `docker-compose.prod.yml`
