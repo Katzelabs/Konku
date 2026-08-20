@@ -336,10 +336,29 @@ curl -s https://$KONKU_HOST/readyz          # {"status":"ok","schema_version":N}
 # Docker agrees, which is what the restart policy acts on.
 docker inspect --format '{{.State.Health.Status}}' konku-app-1   # healthy
 
-# HSTS is actually emitted. NOT yet verified anywhere — the header comes from
-# the caddy-docker-proxy label, and the label quoting has never been exercised
-# against a running Caddy.
+# HSTS is actually emitted. VERIFIED 2026-08-20 against the running edge — the
+# first time this label has ever been exercised against a live Caddy. At the
+# CURRENT value, plain YAML double-quoting is sufficient and the label survives
+# caddy-docker-proxy intact:
+#
+#     docker-compose.prod.yml:221 (six leading spaces, key unquoted)
+#       caddy.header.Strict-Transport-Security: "max-age=300"
+#     produces
+#       strict-transport-security: max-age=300
+#
+# That result does NOT extend to the raised value. `max-age=31536000;
+# includeSubDomains` contains a space, its quoting is still unexercised, and
+# nothing here has tested it. See "HSTS: raise it deliberately" — and re-run
+# this exact line immediately after any raise.
 curl -sI https://$KONKU_HOST | grep -i strict-transport-security
+
+# The rest of the security header set, in production. This is D-088's first
+# deviation vindicated rather than merely argued: internal/api/security.go sets
+# all of these, the edge adds only HSTS, and Caddy's `header` directive REPLACES
+# rather than merges — so importing the shared `security_headers` snippet would
+# have swapped this set for a weaker one and silently dropped the HSTS label
+# along with it. Seeing the full set AND HSTS in one response is the proof.
+curl -sI https://$KONKU_HOST | grep -iE 'content-security-policy|cross-origin-|x-frame-options|permissions-policy|referrer-policy|x-content-type-options'
 
 # The edge actually generated a route for this host. Checking the app answers
 # is not the same as checking the edge knows about it.
@@ -396,14 +415,23 @@ in every browser that saw it once. Once renewal has demonstrably worked:
 caddy.header.Strict-Transport-Security: "max-age=31536000; includeSubDomains"
 ```
 
-**That value needs quoting the current one does not, and the line above may not
-be enough on its own.** `max-age=300` is a single token, so nothing about the
-current label depends on how it is quoted. `max-age=31536000; includeSubDomains`
-contains a space, and a caddy-docker-proxy label value with a space in it needs
-inner quoting inside the YAML string. `docker-compose.prod.yml` carries that
-warning in a comment beside the label — which is precisely the file you will not
-have open at the moment you follow this section, which is why it is repeated
-here.
+**That value needs quoting the current one does not, and the line above is not
+known to be enough.** Be precise about what has and has not been established:
+
+- **Verified 2026-08-20.** The *current* label,
+  `caddy.header.Strict-Transport-Security: "max-age=300"`, emits
+  `strict-transport-security: max-age=300` through the running edge. Plain YAML
+  double quotes, nothing more.
+- **Still unverified.** `max-age=31536000; includeSubDomains` contains a space,
+  and a caddy-docker-proxy label value with a space in it needs *inner* quoting
+  inside the YAML string — something the current value never exercises, because
+  it is a single token that works under any quoting. `docker-compose.prod.yml`
+  carries this warning in a comment beside the label, which is the file you will
+  not have open at the moment you follow this section.
+
+So the verified result above is **not** clearance to paste the raised value. It
+establishes that the label mechanism works; it says nothing about the form the
+spaced value needs.
 
 So treat the raise as a change to verify, not a value to paste: re-run the
 `curl -sI` from "Verify, in this order" afterwards. A label that fails to parse
