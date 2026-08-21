@@ -50,7 +50,11 @@ export function SettingsRow({
   action,
   className,
 }: {
-  title: string
+  /**
+   * A node rather than a string: the delete-account row draws a warning icon
+   * beside its label, and everywhere else still passes plain text.
+   */
+  title: ReactNode
   description?: ReactNode
   action: ReactNode
   className?: string

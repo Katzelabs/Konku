@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Download, Trash2 } from 'lucide-react'
+import { AlertTriangle, Download, Trash2 } from 'lucide-react'
 import { Button } from '../../components/ui/button'
 import { Card } from '../../components/ui/card'
 import {
@@ -54,12 +54,43 @@ export function DeleteAccount() {
 
   return (
     <>
-      <Card className="p-5">
+      {/*
+        The panel is the warning, not just the button.
+
+        This shipped as an ordinary card with a `secondary` button — the same
+        drawing as "Unduh datamu" directly above it, which is the one thing on
+        this screen that is completely safe. The red was all inside the dialog,
+        which is to say it appeared only after the irreversible control had
+        already been pressed. The tint, the border and the icon are what make
+        the difference visible before that.
+
+        The button is `destructive` here rather than at the outline weight the
+        signout row uses: this is the case the filled red was reserved for
+        (D-054). It still opens a dialog, and the dialog still asks for the
+        password — the colour is a warning, never the confirmation itself.
+      */}
+      <Card tone="danger" className="p-5">
         <SettingsRow
-          title="Hapus akun"
-          description="Semua catatan, kartu, dan riwayat review ikut terhapus. Tidak bisa dikembalikan."
+          title={
+            <span className="flex items-center gap-2 text-destructive-ink">
+              <AlertTriangle className="size-4 shrink-0" aria-hidden />
+              Hapus akun ini secara permanen
+            </span>
+          }
+          description={
+            /*
+              `secondary-fg` rather than the row's default `muted-fg`: the quiet
+              grey is solved against `card`, and on the red tint it measures
+              4.43:1 at 12px — just under AA, and this is the one line on the
+              screen that says the thing cannot be undone.
+            */
+            <span className="text-secondary-fg">
+              Semua catatan, kartu, dan riwayat review ikut terhapus. Tidak bisa
+              dikembalikan.
+            </span>
+          }
           action={
-            <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
+            <Button variant="destructive" size="sm" onClick={() => setOpen(true)}>
               <Trash2 />
               Hapus akun
             </Button>

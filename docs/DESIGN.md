@@ -95,6 +95,7 @@ re-solve rather than a translation.
 | `border` / `input` / `ring` | Lines and focus. |
 | `focus` / `focus-fg` / `focus-muted-fg` | The focus-session surface. |
 | `destructive` / `destructive-fg` / `destructive-muted` | **Deleting data only.** |
+| `destructive-ink` | The same red drawn *on* a surface: red text, red icons, the outline button. Splits from `destructive` for the reason `primary-ink` splits from `primary` — a fill solved under a white label is 3.2:1 as text on `destructive-muted` in the dark theme. |
 
 **Why `primary` splits in two.** On a white page one indigo does both jobs —
 `#4f46e5` is 6.3:1 under a white label *and* 6.3:1 as link text. On a dark page
@@ -218,6 +219,13 @@ Where it is encoded:
 - **`destructive` is for deleting data.** Deleting a note, deleting a domain.
   Never a review outcome, never a missed day, never an exam result, never an
   empty state. `Button`'s variant comment says so at the call site.
+- **The red has two weights, and the gap is load-bearing.** A *filled*
+  `destructive` button and the `Card tone="danger"` panel mean the data is
+  gone: deleting an account, deleting a note. `destructive-outline` means the
+  action is loud but recoverable, and signing out is the only thing it is used
+  for — ending a session and destroying an account must not read as the same
+  decision (D-054), so they are two weights of one colour rather than a red one
+  and a grey one.
 - **The two SRS answers are `secondary` and `primary`.** "Belum ingat" carries
   no red and no warning tone. Forgetting is the case the entire scheduler is
   built around — see `ReviewPage.tsx` and D-054.

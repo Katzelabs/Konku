@@ -70,20 +70,29 @@ export default function AccountSettings() {
       */}
       <ChangePassword />
 
-      <Card className="p-5">
-        {/*
-          Secondary, not destructive, and deliberately unlike the account
-          menu's red item. Red belongs to the one irreversible thing in
-          Pengaturan, and that now lives on its own screen — but the rule that
-          put it there holds either way: ending a session and destroying an
-          account must not look like the same weight of decision.
-        */}
+      {/*
+        Red as an outline, and only as an outline.
+
+        This row used to be plain `secondary`, which made ending a session look
+        exactly like "Ubah kata sandi" two cards above it — the one control on
+        the screen that throws away what you are in the middle of, drawn like
+        the ones that do not. The account menu had already settled this: its
+        Keluar item is the only red thing in a list of grey ones, for the same
+        reason.
+
+        What has not changed is the ceiling. The filled red and the tinted
+        panel belong to /settings/data, where the thing being ended is the
+        account rather than the session. Ending a session and destroying an
+        account must not look like the same weight of decision (D-054) — so
+        they are now two weights of the same colour instead of two colours.
+      */}
+      <Card className="border-destructive/25 p-5">
         <SettingsRow
-          title="Keluar"
-          description="Sesi di perangkat ini diakhiri. Perangkat lain tetap masuk."
+          title="Keluar dari perangkat ini"
+          description="Sesi di perangkat ini diakhiri. Perangkat lain tetap masuk, dan kamu bisa masuk lagi kapan saja."
           action={
             <Button
-              variant="secondary"
+              variant="destructive-outline"
               size="sm"
               onClick={() => logout.mutate()}
               disabled={logout.isPending}

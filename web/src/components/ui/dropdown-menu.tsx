@@ -53,7 +53,7 @@ const item = cva(
          * because a red label with a grey icon reads as a rendering mistake.
          */
         destructive:
-          'text-destructive data-highlighted:bg-destructive-muted data-highlighted:text-destructive [&_svg]:text-destructive',
+          'text-destructive-ink data-highlighted:bg-destructive-muted data-highlighted:text-destructive-ink [&_svg]:text-destructive-ink',
       },
     },
     defaultVariants: { variant: 'default' },

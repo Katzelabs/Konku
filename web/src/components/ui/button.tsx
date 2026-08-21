@@ -27,6 +27,23 @@ const button = cva(
          * error to flag in red (hard rule 6, D-054).
          */
         destructive: 'bg-destructive text-destructive-fg hover:bg-destructive/90',
+        /**
+         * The same warning at outline weight: red text on a red-tinted border,
+         * no fill.
+         *
+         * For the action you did not mean to click but *can* take back —
+         * signing out is the case it exists for. Hard rule 6 rules out red for
+         * anything punitive and leaving is not a punishment, but ending a
+         * session throws away what you are in the middle of, and a control
+         * that looks exactly like "Ekspor" one card above it says nothing
+         * about that. The account menu already draws the same distinction the
+         * same way (`DropdownMenuItem` variant `destructive`).
+         *
+         * The fill stays reserved for deletes. That gap is the point: a filled
+         * red button means the data is gone, an outlined one means it is not.
+         */
+        'destructive-outline':
+          'border border-destructive/40 bg-transparent text-destructive-ink hover:bg-destructive-muted',
       },
       size: {
         sm: 'h-8 gap-1.5 px-3 text-sm [&_svg]:size-4',

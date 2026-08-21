@@ -12,7 +12,9 @@ const notice = cva('rounded-md px-3 py-2 text-sm', {
        */
       neutral: 'bg-muted text-secondary-fg',
       /** Something the user is about to lose. Delete confirmations only. */
-      destructive: 'bg-destructive-muted text-destructive',
+      /* `destructive-ink`, not `destructive`: the fill value is solved under a
+         white label and measures 3.2:1 as text on this tint in `.dark`. */
+      destructive: 'bg-destructive-muted text-destructive-ink',
     },
   },
   defaultVariants: { variant: 'neutral' },

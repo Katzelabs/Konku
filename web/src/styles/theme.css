@@ -89,6 +89,13 @@
   --destructive: oklch(0.577 0.215 27.3);
   --destructive-fg: oklch(1 0 0);
   --destructive-muted: oklch(0.971 0.013 17.4);
+  /* The same red drawn *on* a surface instead of *as* one — the split
+     `--primary` already has to make, and for the same arithmetic. `destructive`
+     is solved as a fill under a white label; as text on `destructive-muted` it
+     measures 4.42:1 here and 3.22:1 in `.dark`, both under AA. One notch darker
+     is 4.57:1 on the tint and 5.0:1 on `card`. Text and icons use this;
+     `destructive` stays the fill. */
+  --destructive-ink: oklch(0.569 0.215 27.3);
 
   /* ---- elevation ------------------------------------------------------ */
   /* The system is border-first: a panel is a border, not a shadow. These are
@@ -189,6 +196,11 @@
   --destructive: oklch(0.569 0.15 22);
   --destructive-fg: oklch(1 0 0);
   --destructive-muted: oklch(0.263 0.03 22); /* was indistinguishable from card */
+  /* Lighter than the fill, not darker — on a dark page red-as-text has to move
+     the opposite way, exactly as `--primary-ink` does. 4.6:1 on
+     `destructive-muted` and 5.2:1 on `card`; the fill's own value is 3.2:1 and
+     3.7:1 against those two. */
+  --destructive-ink: oklch(0.655 0.15 22);
 
   /* A drop shadow cast onto a near-black page moves nothing. Here elevation is
      carried by the lighter fill (`popover` above `card` above `surface`) plus
@@ -235,6 +247,7 @@
   --color-destructive: var(--destructive);
   --color-destructive-fg: var(--destructive-fg);
   --color-destructive-muted: var(--destructive-muted);
+  --color-destructive-ink: var(--destructive-ink);
 
   --shadow-float: var(--elevation-float);
   --shadow-dialog: var(--elevation-dialog);

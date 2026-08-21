@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react'
 import type { Domain } from '../api/types'
-import { Folder, LogOut, Moon, Plus, Settings, Sun, Trash2 } from 'lucide-react'
+import {
+  AlertTriangle,
+  Folder,
+  LogOut,
+  Moon,
+  Plus,
+  Settings,
+  Sun,
+  Trash2,
+} from 'lucide-react'
 import { Avatar } from '../components/ui/avatar'
 import { Badge, DomainBadge, DomainDot } from '../components/ui/badge'
 import { CategoryChip } from '../components/ui/category'
@@ -161,6 +170,10 @@ export default function StyleGuide() {
                 <Trash2 />
                 Hapus
               </Button>
+              <Button variant="destructive-outline">
+                <LogOut />
+                Keluar
+              </Button>
               <Button variant="link" size="inline">
                 Lihat catatan asal
               </Button>
@@ -279,6 +292,24 @@ export default function StyleGuide() {
                 <DomainBadge color="#4F7CAC" label="Matematika" />
                 <span className="text-xs text-subtle-fg">4 kartu</span>
               </CardFooter>
+            </Card>
+            <Card tone="danger">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-destructive-ink">
+                  <AlertTriangle className="size-4 shrink-0" aria-hidden />
+                  Area yang tidak bisa dibatalkan
+                </CardTitle>
+                <CardDescription>
+                  Hanya untuk menghapus data — bukan hasil ulangan, bukan hari
+                  yang terlewat (D-054).
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button variant="destructive" size="sm">
+                  <Trash2 />
+                  Hapus akun
+                </Button>
+              </CardContent>
             </Card>
             <Card className="border-primary-ink bg-accent">
               <CardHeader>

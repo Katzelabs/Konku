@@ -1,3 +1,4 @@
+import { cva, type VariantProps } from 'class-variance-authority'
 import type { ComponentProps } from 'react'
 import { cn } from '../../lib/utils'
 
@@ -5,16 +6,32 @@ import { cn } from '../../lib/utils'
  * A panel. Border-first, no shadow — shadows in this system are reserved for
  * things that genuinely float (the focus pill, dialogs).
  */
-export function Card({ className, ...props }: ComponentProps<'div'>) {
-  return (
-    <div
-      className={cn(
-        'rounded-lg border border-border bg-card text-card-fg',
-        className,
-      )}
-      {...props}
-    />
-  )
+const card = cva('rounded-lg border', {
+  variants: {
+    tone: {
+      default: 'border-border bg-card text-card-fg',
+      /**
+       * The panel around an irreversible action, and nothing else.
+       *
+       * Same rule as the `destructive` button variant (D-054, hard rule 6):
+       * this is for deleting data, never for a review outcome, a missed day,
+       * or an error the user can simply undo. It exists because a red button
+       * inside an otherwise ordinary settings card carries the whole warning
+       * on the label — the panel should be the thing that reads as different
+       * before anything is pointed at.
+       */
+      danger: 'border-destructive/35 bg-destructive-muted text-card-fg',
+    },
+  },
+  defaultVariants: { tone: 'default' },
+})
+
+export function Card({
+  className,
+  tone,
+  ...props
+}: ComponentProps<'div'> & VariantProps<typeof card>) {
+  return <div className={cn(card({ tone, className }))} {...props} />
 }
 
 export function CardHeader({ className, ...props }: ComponentProps<'div'>) {

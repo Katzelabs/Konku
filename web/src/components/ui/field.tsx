@@ -74,7 +74,7 @@ export function Field({
          * specific line is wrong" marker the eye needs on a five-field form,
          * not a scolding — the copy carries the tone.
          */
-        <p id={errorId} role="alert" className="text-sm text-destructive">
+        <p id={errorId} role="alert" className="text-sm text-destructive-ink">
           {error}
         </p>
       ) : (
