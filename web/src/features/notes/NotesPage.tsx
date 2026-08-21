@@ -432,7 +432,18 @@ export default function NotesPage() {
                 // sequence you scan down.
                 view === 'grid'
                   ? 'gap-3 @xl:grid-cols-2 @4xl:grid-cols-3 @6xl:grid-cols-4'
-                  : 'gap-1.5',
+                  : // One column, and it has to be named. A `grid` with no
+                    // template gets one implicit `auto` track, and `auto` is
+                    // bounded below by min-content — which for a row whose
+                    // title is `truncate` (`white-space: nowrap`) is the
+                    // *untruncated* title. So the track was sized by the very
+                    // text truncation exists to clip: 541px inside a 448px
+                    // column, and every row ran 93px under the preview panel
+                    // beside it. `minmax(0,1fr)` lets the track shrink below
+                    // min-content, which is what makes `truncate` truncate.
+                    // CardsPage has the same markup and does not show it only
+                    // because its rows wrap instead of truncating.
+                    'gap-1.5 grid-cols-[minmax(0,1fr)]',
               )}
             >
               {notes.map((note) => (
