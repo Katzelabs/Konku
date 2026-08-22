@@ -16,13 +16,20 @@ import { LegalPage } from './LegalPage'
  *     boilerplate problem in reverse. Mail goes through Resend, error reports
  *     go to Sentry, and the database sits on a rented server. Those are named
  *     below with exactly what each one receives.
- *   - the 30-day figure is a promise about backup retention. It is only true
- *     if the restic policy on the box is set to match, which is why 04-ship S3
- *     now says so.
+ *   - the 30-day figure is a promise about backup retention, enforced in a
+ *     repo that does not contain the promise. The platform ships a nightly
+ *     `pg_dumpall` and keeps 14 days on the box, 7 daily and 4 weekly in R2
+ *     (`scripts/ship-backups.sh`). The weekly series at `--min-age 28d` is what
+ *     bounds it, so the promise holds with two days to spare. Restic is gone —
+ *     backups are the platform's pipeline now (D-088).
+ *   - this page used to say "backup terenkripsi". It is not: both copies are a
+ *     plaintext `gzip -9` of the dump, and R2's at-rest encryption is the
+ *     storage provider's doing rather than ours. Saying so plainly costs three
+ *     lines and is the difference between a policy and a claim nobody checked.
  */
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Kebijakan Privasi" updated="12 Agustus 2026">
+    <LegalPage title="Kebijakan Privasi" updated="22 Agustus 2026">
       <p>
         <strong>Singkatnya:</strong> Konku menyimpan apa yang kamu tulis, nama kamu,
         dan alamat email kamu. Datanya tidak dijual, tidak dipakai untuk iklan, dan tidak dipakai
@@ -114,8 +121,13 @@ export default function PrivacyPage() {
           emailnya bisa dipakai mendaftar lagi setelahnya.
         </li>
         <li>
-          Backup terenkripsi disimpan paling lama <strong>30 hari</strong>. Jadi paling
-          lambat 30 hari setelah kamu menghapus akun, datanya juga hilang dari backup.
+          Ada backup harian di server, dan salinannya dikirim ke penyimpanan di luar
+          server (Cloudflare R2). Pengirimannya lewat koneksi terenkripsi dan salinan di
+          R2 terenkripsi saat disimpan di sana, tapi file backup-nya sendiri{' '}
+          <strong>tidak kami enkripsi</strong> — yang menjaganya adalah akses ke server
+          dan ke penyimpanan itu yang dibatasi. Backup disimpan paling lama{' '}
+          <strong>30 hari</strong>, jadi paling lambat 30 hari setelah kamu menghapus
+          akun, datanya ikut hilang dari backup.
         </li>
         <li>
           Sesi login kedaluwarsa setelah 30 hari. Tautan verifikasi berlaku 24 jam,

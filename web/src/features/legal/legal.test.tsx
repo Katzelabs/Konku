@@ -77,6 +77,24 @@ describe('PrivacyPage', () => {
     expect(body).toContain('backup')
   })
 
+  it('does not claim the backups are encrypted, because they are not', () => {
+    // The coverage check above fails when a new feature stores something the
+    // policy does not mention. It cannot fail when a claim already on the page
+    // stops being true — or was never true. This page said "backup
+    // terenkripsi"; the platform's pipeline writes `pg_dumpall | gzip -9` and
+    // ships that same file to R2 (`scripts/ship-backups.sh`), so neither copy
+    // is encrypted by us. R2's at-rest encryption is the storage provider's.
+    //
+    // A published legal document making a factual claim about something we
+    // control is only ever examined after something has gone wrong, which is
+    // the worst moment to discover the wording was aspirational.
+    renderPage(<PrivacyPage />)
+    const body = text()
+
+    expect(body).not.toContain('backup terenkripsi')
+    expect(body).toContain('tidak kami enkripsi')
+  })
+
   it('states the rights the app actually implements', () => {
     // Export and deletion are built (L6, L7), so the policy can promise them
     // without qualification — and must, since a policy that omits a right the

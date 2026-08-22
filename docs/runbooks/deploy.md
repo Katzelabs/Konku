@@ -663,10 +663,14 @@ What is worth checking rather than assuming, the first time:
   belongs there and nothing in this repo can make it; what this page can do is
   stop the margin being quoted as though deploys did not affect it.
 
-- **`/privacy` says the backups are encrypted.** R2 encrypts objects at rest,
-  so that is defensible for the off-box copy; the nightly dumps sitting in
-  `~/projects/platform/backups` on the VPS are plaintext gzip. Either narrow
-  the wording or encrypt the local copy — do not leave it as it is.
+- **`/privacy` said the backups are encrypted. Closed 2026-08-22 (D-092).**
+  Reading the pipeline rather than trusting this note made it worse and simpler:
+  `backup.sh` writes `pg_dumpall | gzip -9` and `ship-backups.sh` `rclone
+  copy`s *that same file*, so the off-box copy is not encrypted by us either —
+  R2's at-rest encryption is the storage provider's doing. The page now says
+  so, and `legal.test.tsx` fails if the blanket claim returns. Encrypting the
+  dumps stays available and stays platform-side; the argument against is a key
+  that must outlive the oldest backup and must not be lost.
 
 ### Handed back to the platform's operator
 

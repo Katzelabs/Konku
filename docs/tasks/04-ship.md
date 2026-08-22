@@ -175,10 +175,11 @@ unnoticed.
   R2 satisfies it — by four days, enforced in a repo that does not contain the
   promise. Note the coupling somewhere the next person editing
   `ship-backups.sh` will see it
-- **`/privacy` also says the backups are encrypted.** True of R2, which encrypts
-  at rest; not true of the plaintext gzip in `~/projects/platform/backups` on
-  the VPS. Narrow the wording or encrypt the local copy — this is a published
-  legal document making a claim about a thing we control
+- **`/privacy` also said the backups are encrypted.** `done` — and it was
+  wronger than this line was: neither copy is encrypted by us, because
+  `ship-backups.sh` `rclone copy`s the same `gzip -9` the box wrote. The policy
+  narrowed to the truth rather than the pipeline widening to the policy, with a
+  test that fails if the claim comes back (D-092)
 - The watchdog already covers failure (S5). Do not build a second one
 
 **Done when:** you have restored last night's production dump into local dev

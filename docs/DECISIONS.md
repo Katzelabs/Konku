@@ -2168,3 +2168,53 @@ Opened by the first deploy (2026-08-20):
   own item because it is the same underlying question: on this box "internal"
   means "shared with another tenant", not "Konku only", and how much that
   matters depends on the same unanswered call.
+
+---
+
+### D-092 — The policy narrows to the truth rather than the pipeline widening to the policy *(closes an item in `04-ship.md` S3)*
+
+**Decision:** `/privacy` stops saying "backup terenkripsi". It now says what is
+actually true of both copies — daily dumps on the box, a copy shipped to
+Cloudflare R2, transfer over an encrypted connection, R2's at-rest encryption on
+the off-box copy, and **the dump files themselves not encrypted by us** — with
+the 30-day retention promise unchanged, because that one was always accurate.
+Encrypting the local copy was the other option on the table and was rejected.
+
+**What was wrong.** `PrivacyPage.tsx` claimed encrypted backups. The platform's
+`scripts/backup.sh` writes `pg_dumpall --clean --if-exists | gzip -9`, and
+`ship-backups.sh` `rclone copy`s that same file to R2. Neither step encrypts
+anything. `backup-hermes.sh` says so in its own header — *"The Postgres dumps
+ship to R2 in plaintext, which is a defensible call for application data"* — so
+this was not even an undocumented property of the pipeline; it was documented in
+the repo that owns it and contradicted in the repo that makes the promise.
+
+**Why not encrypt instead.** It is the stronger answer and it is still available.
+It is also `Katzelabs/platform` work, and it adds a key that must be kept for as
+long as the oldest backup and must not be lost — a key lost is every backup lost,
+which converts a confidentiality control into an availability risk against the
+one asset that exists to survive everything else. D-088 already put backups
+under the platform's pipeline; adding key management to Konku's promise while
+the pipeline stays elsewhere widens the seam D-089 and D-090 are both about. The
+cheap, honest fix is available today and does not.
+
+**The transferable half: the L9 coverage test cannot catch this class of bug.**
+That test fails when a feature stores something the policy does not mention —
+it walks the *code* and checks the *page*. This was the opposite direction: a
+claim on the page with nothing behind it, which no amount of coverage detects
+because there is no new data to cover. The two failure modes are "the policy is
+missing something" and "the policy invented something", and only the first has a
+mechanism. The second now has one for this claim specifically — a test asserting
+the page does *not* say `backup terenkripsi` and *does* say `tidak kami
+enkripsi` — and the general form is worth stating: **every factual claim in a
+published document about infrastructure we control needs to be checkable against
+the thing it describes, or it is a claim nobody will check until it matters.**
+Rule 9 with the mechanisms being the wording and a test, rather than the wording
+and someone remembering.
+
+**Consequence for the reader of `ship-backups.sh`.** The 30-day promise is bounded
+by the weekly series' `--min-age 28d`, not by the daily `7d` and not by the box's
+14-day `BACKUP_RETENTION_DAYS`. Manual dumps landing in `daily/` (`deploy.md`
+records that they do) shorten how far `daily/` reaches and cannot lengthen the
+outer bound, so the promise holds with two days of margin regardless of deploy
+activity. If the weekly window is ever widened past 30 days, the policy becomes
+untrue the same day and nothing in this repo will notice.
