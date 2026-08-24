@@ -399,6 +399,14 @@ on the top edge, with the shadow only darkening the ground beneath.
 
 ## 8. Copy
 
-Hard rule 8: **user-facing copy is Bahasa Indonesia**, code and comments are
-English. That includes `aria-label`s and placeholder text — they are read by
-users. The style guide's own section headings are English; it is a dev tool.
+Hard rule 8, **as amended by D-094**: user-facing copy ships in **Bahasa
+Indonesia *and* English**. Indonesian is authored first and is the fallback; a
+string is not shippable until English exists. Code and comments are English.
+That includes `aria-label`s and placeholder text — they are read by users, and
+`make check-i18n` fails on a literal in a feature folder. The style guide's own
+section headings are English; it is a dev tool.
+
+The non-punitive rules survive translation and that is not automatic: English
+has a far larger vocabulary of gentle blame. No *don't forget*, no *you missed*,
+no *keep your streak*. The style clause applies to both languages — plain,
+direct, active voice, sentence case, no filler.

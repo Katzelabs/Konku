@@ -1,7 +1,7 @@
 # PRD — Konku (Learning System)
 
-**Status:** v3 — production framing (D-057). Supersedes v2's solo-project scope.
-**Last updated:** 2026-08-09
+**Status:** v4 — free-product rescope (D-093 – D-100). Supersedes v3's production framing, which raised the engineering bar and left the product scoped for one person.
+**Last updated:** 2026-08-24
 **Companion docs:** `GOALS.md` (the design's origin — read first), `TECH.md` (architecture), `DECISIONS.md` (what was decided and why)
 **Owner:** solo maintainer, real users
 
@@ -15,9 +15,11 @@ You learn something, spend ~15 seconds capturing it, and the system takes over t
 
 Server-backed, self-hostable, and run as a real service. Web app (PWA), agent-accessible via MCP.
 
+**Free, open, and bilingual** (D-093). Signup is open to anyone, the app ships in Bahasa Indonesia and English, and free is a permanent property rather than a launch price: there is no billing code, no tier, and no feature gating, ever. If hosting cost outgrows the operator the answer is the single binary anyone can run, not a paywall over data already in the database (D-096).
+
 **Multi-tenant, not social.** Each account is an isolated private knowledge base. There is no sharing, no collaboration, no visibility between users — multi-user here means the data model is scoped by owner, nothing more (D-039).
 
-**Built and operated to a production standard** (D-057): CI as a merge gate, RLS behind the application's tenancy checks, observability, tested restores, real accounts with verification and recovery. What *does not* change is the design: every constraint from `GOALS.md` — never punitive, no gamification, no social, capture cost above everything — is a product constraint now, not a personal preference. They were never justified by the audience being one person.
+**Built and operated to a production standard** (D-057), and now **scoped as a product a stranger can succeed at** (D-093): CI as a merge gate, RLS behind the application's tenancy checks, observability, tested restores, real accounts with verification and recovery. What *does not* change is the design: every constraint from `GOALS.md` — never punitive, no gamification, no social, capture cost above everything — is a product constraint now, not a personal preference. They were never justified by the audience being one person.
 
 ### Core thesis
 
@@ -46,7 +48,9 @@ From `GOALS.md`. Sorted by how much software can actually touch them — this or
 - Heavy gamification: badges, XP, levels, losable streaks
 - Real-time collaboration
 - Bidirectional file sync with an external editor
-- **Growth mechanics** — referrals, engagement notifications, streak-recovery offers, ads. Production means the engineering bar, not a growth surface (D-057)
+- **Growth mechanics** — referrals, engagement notifications, streak-recovery offers, ads. Production means the engineering bar, not a growth surface (D-057). Note the line D-093 draws: *distribution* is allowed — a landing page, a README, telling people this exists. What is banned is a mechanism that works on the user rather than informing them
+- **Billing, tiers, and feature gating** — no paid plan, no supporter tier held open as an option, no usage-based upsell. Refusing the option matters more than refusing the feature: a tier kept alive quietly sizes every future decision against it (D-096)
+- **Operator-funded inference** — AI features spend the user's own Claude subscription over MCP, or the user's own API key. Never the operator's (D-097)
 - **Cross-account analytics** — how people study is the most useful data this product could collect and it is other people's learning history. Metrics are computed per account, for that account (D-066)
 
 ---
@@ -55,9 +59,11 @@ From `GOALS.md`. Sorted by how much software can actually touch them — this or
 
 The design target is one specific person: technical (comfortable with code, self-hosts), studies 1–2 hours/day imperfectly, speaks Indonesian. `GOALS.md` is their context, and every product decision is still made for them.
 
+**They are no longer the only person who will see it** (D-093). Signup is open, so the reader of every screen is now somebody who has not read `GOALS.md` and did not choose these opinions — which is why activation, not capture, is the headline risk (§5.13), and why the app cannot assume its user is fluent in the design's Indonesian (§5.14).
+
 The audience is now **people who learn like them** — not a broader market reached by softening the opinions. The opinions are the product; widening the audience by removing them produces the mediocre SRS app that already exists in quantity (D-057). A second account is an isolated copy of the same experience, never a reason to add sharing, comparison, or social mechanics.
 
-**Language rule:** all user-facing copy in **Bahasa Indonesia**. Code, comments, commits, docs in English.
+**Language rule (amended by D-094):** all user-facing copy ships in **both Bahasa Indonesia and English**. Indonesian is the source language and the fallback; a string is not shippable until English exists. Code, comments, commits and docs stay English, unchanged. This covers server-side copy too — `writeError` messages and every transactional mail — not only React (§5.14).
 
 ### The operator is a role too
 
@@ -92,7 +98,7 @@ Why it matters:
 | `cloze` | `text with {{a blank}}` | self |
 | `feynman` | an explain-it prompt | LLM-graded (M2), self before that |
 
-Only `basic` ships; cloze and feynman stay deferred to v1.2 (D-031, restated in D-055). Editing a card never resets its schedule — see `TECH.md` §4.
+Only `basic` ships. Cloze and feynman are **Later** under the v4 milestones (D-031, restated in D-055) — cloze is the largest remaining gap against Anki for the audience this targets, and it moves up the moment activation is answered. Editing a card never resets its schedule — see `TECH.md` §4.
 
 ---
 
@@ -104,7 +110,7 @@ Only `basic` ships; cloze and feynman stay deferred to v1.2 (D-031, restated in 
 - Editor: plain textarea + preview, shipped; CodeMirror 6 later (see `DECISIONS.md` D-018).
 - Soft delete with a **Terhapus** view and bulk restore — recoverable means a screen, not a toast (D-056).
 - `[[wikilinks]]` between notes, backlinks panel — Later.
-- Full-text search (Postgres FTS) — v1.2; semantic search — v1.3.
+- Full-text search (Postgres FTS) — **Later** under the v4 milestones; semantic search later still, and behind the user's own key (D-097). Title search already runs in SQL against `notes_title_trgm_idx` (D-084).
 
 ### 5.2 Ulangan (P0 — the product)
 
@@ -174,7 +180,9 @@ The headline number, replacing a stats dashboard:
 
 Computed from `review_logs`: reviews at long intervals (30d+) rated *ingat* vs *lupa*. Effort metrics ("12 jam bulan ini") decay in motivating power; proof of retained knowledge compounds. This is also the only number that maps directly to the success criterion in `GOALS.md`.
 
-### 5.8 AI features (v1.3)
+### 5.8 AI features (Later — and the user pays)
+
+**Nothing here is operator-funded** (D-097). MCP (§5.9) spends the user's existing Claude subscription and costs nothing; everything below requires the account's own API key, encrypted at rest, revocable, visible in the account screen, never exported, and never used for anything the user did not explicitly trigger.
 
 Ranked by value — build in this order:
 
@@ -183,9 +191,11 @@ Ranked by value — build in this order:
 3. **Semantic search** across notes (pgvector).
 4. **Chat over notes** — lowest value, most commonly built. Comes free via MCP; do not build a bespoke one.
 
-### 5.9 MCP server (v1.3)
+### 5.9 MCP server and API tokens (v1.5 — the first AI work that ships)
 
-Exposes the same operations as the HTTP API so an existing Claude subscription can read and write the knowledge base directly. Built **before** in-app LLM features: zero API cost, zero key management, zero prompt engineering, and immediately useful.
+Exposes the same operations as the HTTP API so an existing Claude subscription can read and write the knowledge base directly. Built **before** in-app LLM features: zero API cost, zero key management, zero prompt engineering, and immediately useful. Under D-096 that ordering stops being a preference and becomes the only one the economics permit (D-097).
+
+API tokens get **their own table**, not `auth_tokens`. That one is single-use and expiring by construction — `used_at IS NULL AND expires_at > now()` inside the claiming UPDATE — and its `kind` CHECK admits only `verify` and `reset`. An API token is long-lived and multi-use, the opposite invariant.
 
 ### 5.10 Activity log (P2)
 
@@ -208,6 +218,45 @@ The account surface that a real service owes its users (D-058, D-066). None of i
 - **Per-user settings** finally get somewhere to live: default timer duration, progressive-focus N, rota preference. They were constants under one user.
 
 Copy stays in Indonesian and stays non-punitive. A verification screen that scolds you for not clicking the link is still a guilt mechanic.
+
+### 5.13 The first ten minutes (P0 — the new headline risk)
+
+D-098. The risk this product manages used to be capture cost — would notes and cards actually get written (D-030). Daily use answered that. With signup open the risk is **activation**: whether somebody who has not read `GOALS.md` gets from a signup form to their first review.
+
+What exists today is the honest measure of the gap: on the **app** origin `/` is a login form and the catch-all route is the login screen, a verified account lands in an empty app, and there is no import. The marketing site is not the gap — it exists, it is bilingual, and every claim on it is traceable to the app.
+
+- **What `/` does for a signed-out visitor.** The marketing site already exists and is already bilingual — `Katzelabs/konku-landing`, Astro, at `konku.katzeapps.com`, English at `/en`. The gap is between it and the app origin: `konkuapp.katzeapps.com/` is a login form, so somebody handed the app's URL gets a password field and no explanation. A redirect or a thin in-app entry, and the two must not drift.
+- **First run ends with a card, not a dashboard.** Choose or rename domains — five are seeded — then write the first card *inside* the flow. An account whose first review happens on day one is a different account from one that lands on an empty list.
+- **Import: Anki, CSV, and a markdown folder.** The single largest switching cost for this audience, all of whom already keep a knowledge base somewhere. Asking them to retype it is asking them to leave.
+- **Empty states that teach** — never apologise, never guilt (UX principle 2).
+- **A feedback path.** There is no support surface at all today; `POST /api/client-error` reports crashes to Sentry and nothing carries a sentence a human wrote.
+
+Rejected: product tours, demo mode without an account, onboarding checklists with progress bars (D-098).
+
+### 5.14 Two languages (P0)
+
+D-094. Indonesian is the source and the fallback, English is first-class, and a string is not shippable until both exist. Typed message catalogs keyed by id; locale resolved **account setting → `Accept-Language` → `id`**, with the setting living in `user_settings` beside the timer defaults.
+
+**The server speaks to users too**, and that is the half that gets missed: `writeError` messages are user-facing Indonesian literals today, and every transactional mail is a template. Both need the same catalog and the same resolution order.
+
+Two mechanisms (rule 9): `make check-i18n` fails on a user-facing literal in a feature folder or a handler, and a test fails when a key exists in one catalog and not the other. `/privacy` and `/terms` become two documents that must say the same thing, and L9's coverage test runs against both.
+
+### 5.15 Reminders (P1, opt-in, off by default)
+
+D-100. One optional daily email at an hour the user picks, stating how many cards are due — a fact, not a nudge.
+
+`GOALS.md` rules out notifications that create anxiety or guilt. It does not rule out being told a number, and the alternative is worse than it looks: a spaced-repetition queue nobody is reminded of rots silently for everyone except the person who built it. The copy rules are the safeguard — it states a count, never says *missed*, *behind*, *streak*, *terlewat* or *jangan sampai*, does not send at all on a day with nothing due, and never reports what was not done yesterday.
+
+Rejected: default-on, web push before the PWA work, weekly statistics summaries, anything about consecutive days.
+
+### 5.16 Operator surface (P0 for open signup)
+
+D-095. Not a feature anybody will thank you for; all of it is required before strangers can register.
+
+- **Suspend an account** — `users.suspended_at` plus `cmd/konku suspend-user`, in the shape `seed-user` already established. A CLI on the box, not an admin UI: an admin UI is a second authorisation model over every table and is the wrong first answer to a problem that has not happened.
+- **A daily signup ceiling that alerts rather than blocks.** A spike is either good news or an attack and the operator should learn which within the hour.
+- **A capacity rule.** One container, `mem_limit: 512m`, a pgx pool capped at 10 against a shared Postgres. When signups outpace that, `ALLOW_SIGNUP` goes back to `false` rather than the service degrading for the accounts already in it.
+- **Self-hosting is a supported configuration** (D-096), not an accident of `ALLOW_SIGNUP=false`. What it lacks is a document.
 
 ---
 
@@ -245,7 +294,7 @@ Constraints, not preferences. Derived from `GOALS.md`.
 
 ## 8. Milestones
 
-Execution detail in `docs/tasks/`. Technical breakdown in `TECH.md` §12.
+Execution detail in `docs/tasks/` for `01`–`09`, and in ClickUp for everything from `10` onward (Development & Engineering → Konku). Technical breakdown in `TECH.md` §12.
 
 **The ordering rule that outranks the ambition** (D-057, amended by D-067): daily use starts *now*, locally, and continues throughout. Everything that can be built without a server gets built before the server is touched. The risk D-030 exists to manage — months building a learning tool and none learning — is not solved by deferring work; it is solved by using the app while doing it.
 
@@ -261,6 +310,16 @@ The deploy comes late because it is a short list of genuinely server-bound tasks
 | Later / M3 | Later — polish |
 
 A shorter-lived rename also happened inside this document: an earlier draft of §8 had **v0.9 as a private launch preceding the hardening work**. D-067 folded it into v1.1 once it became clear the deploy was not a prerequisite for any of it.
+
+**The v4 rescope renumbered again** (D-093). v1.0 and v1.1 keep their contents; everything above them was re-filled, because the ordering changed rather than the ambition:
+
+| v3 said | v4 says |
+|---|---|
+| v1.2 — product depth | split: language and activation take v1.2 and v1.3; **honest progress** (retention metric, quota, strip, week streak, progressive focus, mark-mastered) becomes v1.4; cloze, feynman and full-text search drop to **Later** |
+| v1.3 — differentiators | MCP and API tokens become **v1.5** — they are now the *first* AI work, and the only kind with no marginal cost (D-097). LLM features drop to **Later**, behind the user's own key |
+| Later — polish | PWA and offline reads come **forward** into v1.6 with reminders, because reviewing on a phone is the behaviour the product depends on |
+
+One line in the v3 list was already stale when it was written: the **home screen** is built.
 
 ### MVP — "catat & ingat" — **built**
 
@@ -286,25 +345,47 @@ Everything that has to be true before a stranger's data is in the database, and 
 
 Throughout: **the app is in daily use on `make dev-web`.** That is the gate, not a formality.
 
-### v1.1 — Ship and open (`04-ship.md`, then `07` L10)
+### v1.1 — Ship and open (`04-ship.md`, then [ticket 10](https://app.clickup.com/t/86eyqky74))
 
 The genuinely server-bound residue: VPS deploy over HTTPS · deploy-by-digest and one rehearsed rollback · nightly off-site backups with a production restore · **the real sending domain (SPF/DKIM/DMARC)** · monitoring and alert routing · **two weeks of use from your phone**.
 
-Then `ALLOW_SIGNUP` flips to `true`.
+Then `ALLOW_SIGNUP` flips to `true` — **fully open, no invite code and no waitlist** (D-095). Three things gate the flip and none of them is a new control: mail deliverability (S4), alert routing (S5), and the operator surface in §5.16. Everything else the flip depends on was built for it already — per-IP and per-address rate limits (D-058), mandatory verification (`07` L3/L4), and per-account quotas (`07` L8).
 
 Two of these carry real risk and cannot be de-risked earlier: mail deliverability, because verification mail landing in spam is an outage that looks like a signup bug; and whether review actually happens in dead time, which a laptop-only instance never tested.
 
-### v1.2 — Product depth
+### v1.2 — Bilingual ([ticket 11](https://app.clickup.com/t/86eyqky8c))
 
-Cloze and feynman card types · full-text search · mark-mastered · home screen · retention metric · progressive focus · weekly quota and strip.
+The catalog shape is not invented here: `Katzelabs/konku-landing/src/i18n` already runs it — `id.ts` original, `en.ts` translated from it, a `Copy` type making a missing key a compile error. Adopt it.
 
-### v1.3 — Differentiators
+D-094. Catalogs, locale resolution on both sides, the Go-side error messages and mail templates, `/privacy` and `/terms` in two languages, and the two mechanisms that keep them from drifting.
 
-MCP server · LLM card generation · LLM-graded Feynman · semantic search.
+**It runs before the activation work and that ordering is the whole point.** Everything v1.3 adds is new copy. Writing it in Indonesian and translating afterwards means writing it twice, and the second pass is the one that gets skipped.
 
-### Later — Polish
+### v1.3 — The first ten minutes ([ticket 12](https://app.clickup.com/t/86eyqky9x))
 
-PWA (installable, offline reads) · CodeMirror editor · wikilinks and backlinks · git vault export · activity log.
+D-098, authored bilingual from the first line. Landing page · first-run that ends with a card · **import from Anki, CSV and a markdown folder** · empty states that teach · a feedback path.
+
+This is where the headline risk now lives. Everything before it made the service trustworthy; none of it made the product learnable.
+
+### v1.4 — Honest progress ([ticket 13](https://app.clickup.com/t/86eyqkyag))
+
+The promise the PRD has been making since D-004 and has never shipped: the **retention metric**. Plus weekly quota, the 7-day strip, the week streak (D-007), progressive focus (D-012) and mark-mastered.
+
+Second in line rather than first because a number computed over an empty account is not evidence of anything — it needs accounts with a month of history behind it, which v1.3 is what produces.
+
+### v1.5 — Agent access ([ticket 14](https://app.clickup.com/t/86eyn10be))
+
+API tokens and the MCP server (D-017, D-097). The first AI work, the only kind with zero marginal cost, and the most useful thing this product can offer the technical half of its audience.
+
+### v1.6 — Phone ([ticket 15](https://app.clickup.com/t/86eyqkyc3))
+
+PWA, installable, offline reads · opt-in daily reminders (D-100).
+
+Reviewing during dead time is the behaviour the whole retention loop assumes, and it is the one a laptop-only instance never tested.
+
+### Later
+
+Cloze and feynman card types · full-text search · review over **notes** · BYO-key card generation and Feynman grading · semantic search · CodeMirror editor · wikilinks and backlinks · git vault export · activity log.
 
 ---
 
@@ -318,6 +399,16 @@ PWA (installable, offline reads) · CodeMirror editor · wikilinks and backlinks
 - Progress is visible as real data, not a feeling
 
 Measured per account, for that account, never aggregated across users (D-066).
+
+### Activation — the operator's only aggregate numbers
+
+D-099 draws the line, because a free product needs to know whether people get started and rule 11 forbids aggregating other people's learning history. Both are right; the boundary has to be exact or one of them loses quietly.
+
+**Allowed** — account-lifecycle counters, aggregate, no content, no per-user breakdown: signups · verifications completed · accounts that created a card within 7 days · accounts active in the last 28 days · imports run and failed · errors.
+
+**Forbidden, unchanged:** what anybody studies, per-account retention rates, note or card content, any per-user dashboard, any cohort table keyed to an identity.
+
+**The mechanism is the boundary.** These are Prometheus counters incremented in handlers, beside `konku_quota_rejections_total` — *a counter cannot be broken down by user because it never held one.* No analytics SDK, no third party in the page, no nightly cohort job (D-099).
 
 ### Operational — the production bar (D-057)
 

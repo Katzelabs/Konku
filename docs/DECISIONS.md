@@ -1,6 +1,6 @@
 # DECISIONS.md — Decision Log
 
-**Last updated:** 2026-08-20
+**Last updated:** 2026-08-24
 
 Why this file exists: `PRD.md` and `TECH.md` say *what* was decided. This says *why*, and what was **rejected**. Without it, every future session re-litigates the same trade-offs and quietly reintroduces the things that were deliberately cut.
 
@@ -2218,3 +2218,327 @@ records that they do) shorten how far `daily/` reaches and cannot lengthen the
 outer bound, so the promise holds with two days of margin regardless of deploy
 activity. If the weekly window is ever widened past 30 days, the policy becomes
 untrue the same day and nothing in this repo will notice.
+
+---
+
+## The free-product rescope (D-093 – D-100)
+
+D-057 retired "it is just for me" as an *engineering* argument and left the
+*product* scoped for one person. These eight close that gap. Read D-093 first;
+the other seven are its consequences.
+
+**The execution plan for these lives in ClickUp**, not in `docs/tasks/` —
+Development & Engineering → Konku, tickets `10` – `15`. Task-file references in
+the text below (`10` O4, `11` I5, `12` F3 and so on) are ticket and sub-item
+ids, not paths. `docs/tasks/01`–`09` stay as the record of what was already
+built.
+
+---
+
+### D-093 — Konku is a free, open product; the last of the personal framing goes
+
+**Decision:** signup opens to anyone, the app is bilingual, and the first ten
+minutes are designed for somebody who has never read `GOALS.md`. Konku is free,
+and free is a permanent property rather than a launch price (D-096).
+
+**What was actually still personal.** D-057 raised the operational bar and every
+item on its list landed — RLS, CI, observability, restore drills, accounts,
+export, deletion, quotas, a deploy. What it never touched was the product
+surface, and the audit is short and damning: `/` is a login form, a new account
+lands in an empty app with no explanation, there is no import, no landing page,
+no feedback path, no way for the operator to suspend anybody, and the headline
+number the whole PRD is built around — retention (D-004) — **is not built**. The
+app is production-grade infrastructure wrapped around a product that assumes the
+user wrote its design document.
+
+**So the headline risk moves.** It was capture cost: would notes and cards
+actually get written (D-030). That question has been answered by daily use. The
+risk now is **activation** — whether a stranger gets from a signup form to their
+first review without being handed an empty Indonesian nav bar and wished luck.
+D-098 is the work; D-099 is how it gets measured without violating D-066.
+
+**What does not change, and is not up for renegotiation because there is now an
+audience:** every constraint in `GOALS.md`. Never punitive, no gamification, no
+social, no losable streaks, capture cost above everything, no cross-account
+analytics. A public audience makes softening these tempting for exactly the
+reason D-057 already rejected — it produces the mediocre SRS app that exists in
+quantity. The opinions are the product.
+
+**Growth is not growth mechanics.** D-057's non-goal list bans referrals,
+engagement notifications, streak-recovery offers and ads, and that ban stands
+verbatim. It never banned *distribution*: a landing page that says plainly what
+this is, a README, and telling people it exists are not engagement mechanics.
+The line is whether the mechanism works on the user or informs them.
+
+**Rejected:** staying closed and calling it a product (a private instance with
+open registration is not the same thing as something a stranger can succeed at);
+widening the audience by removing the opinions (D-057, restated because a public
+audience makes it tempting again); treating free as a lower bar for obligations
+— a free account's data creates the same duties as a paid one, and D-066's list
+is unchanged.
+
+---
+
+### D-094 — Bilingual from launch: Indonesian is the source, English is first-class
+
+**Decision:** all user-facing copy ships in **both** Bahasa Indonesia and
+English. Indonesian is the source language and the fallback; a string is not
+shippable until English exists. This **amends hard rule 8**, which said
+Indonesian only. Code, comments, commits and docs stay English, unchanged.
+
+**Why now rather than later.** Not for reach — for sequencing. Everything D-098
+adds is new copy: a landing page, an onboarding flow, empty states that teach,
+import screens, a feedback path. Writing all of it in Indonesian and translating
+afterwards means writing it twice, and the second pass is the one that gets
+skipped. The plumbing therefore lands **before** the copy that would double.
+
+**Shape.** Typed message catalogs keyed by id, one file per locale, resolved
+account setting → `Accept-Language` → `id`. The locale is a `user_settings`
+column, which is where per-account preferences already live (00007).
+
+**This shape is not being invented here.** `Katzelabs/konku-landing/src/i18n`
+already does it — `id.ts` is the original, `en.ts` is *translated from it rather
+than rewritten against it*, and a `Copy` type in `types.ts` makes a missing key
+a compile error rather than a runtime fallback. Adopt it, including the rule its
+header states: the same claims in the same order, nothing added because an
+English sentence wanted one more selling point.
+
+**And it creates an obligation in that repo.** `en.ts` currently tells its
+reader *"The app's interface is in Indonesian"* and glosses the screen names —
+Ulangan, Latihan, Terhapus — so somebody who signs up recognises what they land
+on. **That sentence goes stale the day this ships**, and it lives in a
+repository this one cannot test, in the half of the funnel that runs before an
+account exists. It is the same seam D-089 and D-090 are about: a claim in one
+repo about the behaviour of another, with no mechanism between them.
+
+**The half everyone forgets: the server speaks to users too.** `writeError`
+messages are user-facing and are currently Indonesian string literals
+(`{"error":{"code","message"}}`), and every transactional mail is a template. So
+the Go side needs the same catalog and the same resolution order, driven off the
+request's account or `Accept-Language`. An i18n layer that covers only React
+leaves every validation failure and every email in one language.
+
+**Two mechanisms, per rule 9:** `make check-i18n` fails on a user-facing string
+literal in `web/src/features/` or in a handler's `writeError`, and a test fails
+when a key exists in one catalog and not the other. Discipline alone would leak
+untranslated strings within a week.
+
+**Consequences worth pricing in.** `/privacy` and `/terms` become two documents
+that must say the same thing, and L9's coverage test has to run against both —
+D-092's lesson applies with double the surface. `<html lang>` follows the
+locale. Dates and numbers go through `Intl`, not hand-formatting.
+
+**Rejected:** English only (throws away the design's origin and the operator's
+own daily use); Indonesian with English "later" (that is the double-write above);
+runtime machine translation (a product whose copy is deliberately plain and
+non-punitive cannot outsource its tone); an i18n framework — `i18next` and
+`react-intl` are large dependencies against an obligation that `Intl.PluralRules`
+plus a typed record already discharges, and D-065 requires the obligation to be
+named. The catalog shape is kept deliberately framework-compatible so that if
+interpolation and plural rules genuinely outgrow it, the migration is mechanical.
+
+---
+
+### D-095 — Signup opens fully, and the controls that make that survivable
+
+**Decision:** `ALLOW_SIGNUP=true` on the public instance. Not an invite code, not
+a waitlist, not an approval queue.
+
+**What is already load-bearing** and was built for exactly this: per-IP *and*
+per-address rate limits on every unauthenticated write path (D-058), mandatory
+verification before any data route (`07` L3/L4), and per-account quotas with
+`konku_quota_rejections_total` (`07` L8). Opening signup is not adding a control;
+it is spending the ones already paid for.
+
+**What is missing, and gates the flip:**
+
+1. **A suspend switch.** There is no admin surface of any kind, so the operator's
+   entire response to one abusive account is currently a deploy or a manual
+   `UPDATE`. `users.suspended_at` plus `cmd/konku suspend-user`, in the shape
+   `seed-user` already established — a CLI on the box, not an admin UI. An admin
+   UI is a second authorisation model over every table and is the wrong first
+   answer to a problem that has not happened yet.
+2. **A daily signup ceiling that alerts rather than blocks.** A spike is either
+   good news or an attack, and the operator should learn which within the hour.
+3. **Mail deliverability** (`04` S4). Verification mail in spam is an outage that
+   presents as a signup bug, and it is the one failure a closed instance could
+   never surface.
+4. **Alert routing** (`04` S5). Strangers now depend on this. "The operator
+   notices" was an acceptable detection story for one user and is the dominant
+   term in the 2 h RTO target.
+
+**Capacity is a number, not a vibe.** One container, `mem_limit: 512m`, a pgx
+pool capped at 10 against a Postgres shared with another tenant (D-028, D-088).
+Pool saturation is already the metric that matters (D-062). The rule: when
+signups outpace what that holds, **close the tap** — `ALLOW_SIGNUP` back to
+`false` — rather than let the service degrade for the accounts already in it.
+Closing is a one-line compose edit and `up -d` on the box, which is fast enough
+that keeping the flag a reviewed literal (rather than an `.env` entry) stays
+correct.
+
+**Rejected:** invite codes and a waitlist — a controlled curve is worth less than
+real strangers hitting the first ten minutes early, which is the only way D-098
+gets tested honestly; **Turnstile or any captcha at launch** — it costs a CSP
+exception on a header set deliberately kept strict enough that even crash reports
+route through our own origin (D-085), and rate limiting plus mandatory
+verification already make a spam signup expensive and useless. It is the
+escalation, held in reserve, not the default; disposable-email blocklists — a
+maintenance treadmill that verification already does the work of.
+
+---
+
+### D-096 — Free forever, and self-hosting is the pressure valve
+
+**Decision:** no billing code, no tiers, no feature gating, no usage-based
+upsell. Not now and not as a kept-open option. If hosting cost outgrows the
+operator, the answer is the single binary anyone can run — not a paywall over
+data that is already in the database.
+
+**Why refusing the option matters more than refusing the feature.** Keeping "a
+supporter tier, later" alive is not free: it changes design decisions
+continuously, because every feature quietly gets sized against which side of the
+line it would fall on, and every quota becomes a negotiation with a future price
+list. Closing the question is what keeps quotas an honest capacity control
+(D-095) instead of a lever.
+
+**This makes self-hosting a supported configuration rather than an accident.**
+It already works — `ALLOW_SIGNUP=false` plus `seed-user` is exactly a private
+deployment, which is how this instance ran until now. What it lacks is a
+document. The export (`07` L6) is what makes "no lock-in" true rather than
+claimed, and the terms should say plainly that the hosted instance is free,
+best-effort, and leaveable.
+
+**Rejected:** a supporter tier held open (above); donations as a *plan* — a
+funding link is not forbidden, but nothing in the roadmap may depend on one;
+recovering cost per account through any feature, which is what forces D-097.
+
+---
+
+### D-097 — The user's AI is the user's cost: MCP first, BYO key after
+
+**Decision:** no operator-funded inference at any volume. The AI roadmap is
+reordered so that the item with **zero marginal cost** goes first: the MCP server
+plus API tokens, which spends the user's existing Claude subscription. Every
+in-app LLM feature after it requires the account's own API key.
+
+This ranks up D-017, which already argued MCP before in-app LLM on grounds of
+zero cost, zero key management and immediate usefulness. Under D-096 that stops
+being a preference and becomes the only ordering the economics permit. D-016's
+ranking survives inside the BYO-key half: card generation first (it attacks
+capture cost, the biggest product risk), then Feynman grading, then semantic
+search.
+
+**API tokens need their own table, not `auth_tokens`.** That table is
+single-use and expiring *by construction* — `used_at IS NULL AND expires_at >
+now()` in the claiming UPDATE — and its `kind` CHECK admits only `verify` and
+`reset`. An API token is long-lived and multi-use, which is the opposite
+invariant. Widening the CHECK would put two contradictory lifetimes in one table
+and make the claim query wrong for one of them.
+
+**BYO keys are a new credential surface and that is the real price.** A user's
+key cannot be hashed — it has to be usable — so it is encrypted at rest with a
+server-held key, which is the first secret in this system that is neither a
+password hash nor a session id. It must be revocable, visible in the account
+screen, excluded from the export (credentials are never exported, `07` L6), and
+never used for anything the user did not explicitly trigger.
+
+**Semantic search has a cost trap under BYO.** Embedding an existing knowledge
+base is a bill the user did not ask for. It must be explicit, incremental, and
+show what it will cost before it runs.
+
+**Rejected:** a free token allowance per account (cost scales with signups, the
+one thing D-096 cannot absorb); proxying through the operator's key with caps
+(same cost, plus abuse liability and a key paying for strangers' prompts);
+dropping AI entirely (card generation is the highest-value attack on capture
+cost there is — D-016 — and BYO makes it free to run).
+
+---
+
+### D-098 — Activation is a feature: the first ten minutes get built
+
+**Decision:** the signed-out and first-run surfaces become real product work
+rather than a side effect of the login screen.
+
+- **Decide what `/` does for a signed-out visitor.** A marketing site already
+  exists — `Katzelabs/konku-landing`, Astro, served at `konku.katzeapps.com`,
+  bilingual with English at `/en`, and it already says what this is and what it
+  refuses to do. What does *not* exist is any relationship between it and the
+  app origin: `konkuapp.katzeapps.com/` is a login form and the catch-all route
+  is `LoginPage`, so somebody handed the app's URL directly gets a password
+  field and no explanation. The choice is a redirect or a thin in-app entry, and
+  it is a smaller decision than "build a landing page" — which is what this
+  bullet said before anyone checked the sibling repo.
+- **A first run that ends with a card, not a dashboard.** Choose or rename
+  domains (five are seeded already), then write the first card *inside* the
+  flow. An account whose first review happens on day one is a different account
+  from one that lands on an empty list.
+- **Import — Anki, CSV, and a markdown folder.** This is the single largest
+  switching cost for the audience the design targets, all of whom already have a
+  knowledge base somewhere. Asking them to retype it is asking them to leave.
+- **Empty states that teach**, and never apologise or guilt (rule 6).
+- **A feedback path.** There is no support surface at all;
+  `POST /api/client-error` reports crashes to Sentry and nothing carries a
+  sentence a human wrote.
+
+**Rejected:** a product tour overlay (it teaches the UI, and the habit is the
+thing that needs teaching); a demo mode without an account (the value is in
+*your* cards — `seed-demo` already covers the screenshot case); onboarding
+checklists with progress bars, which are gamification wearing a helpful hat
+(rule 6).
+
+---
+
+### D-099 — Activation is measured as lifecycle counters; learning history stays untouchable
+
+**The tension, stated honestly:** a free product needs to know whether people get
+started, and rule 11 / D-066 forbid aggregating other people's learning history.
+Both are right. The line between them has to be drawn precisely or one of them
+will quietly lose.
+
+**Allowed — aggregate account-lifecycle counters, no content, no per-user
+breakdown:** signups, verifications completed, accounts that created at least one
+card within 7 days, accounts active in the last 28 days, imports run, import
+failures, errors.
+
+**Forbidden and unchanged:** what anybody studies, per-account retention rates,
+note or card content, any per-user dashboard, any cohort table keyed to an
+identity, and anything joining the above to a user id.
+
+**The mechanism is the enforcement, not the policy.** These are Prometheus
+counters incremented in handlers — the same place `konku_quota_rejections_total`
+already lives. **A counter cannot be broken down by user because it never held
+one.** That is what makes this a boundary rather than a promise, per rule 9.
+
+**Rejected:** product analytics SDKs — PostHog, Plausible, GA — every one of them
+is a third party in the page plus a CSP exception, which is the fight D-085
+already had and won by routing crash reports through our own origin; a nightly
+SQL job computing activation cohorts, which is a per-user breakdown by
+construction and is precisely what D-066 forbids; counting rows in `users` and
+calling it activation, which cannot tell a registration from a start.
+
+---
+
+### D-100 — Reminders exist, are opt-in, and say a number and nothing else
+
+**Decision:** one optional daily email at an hour the user picks, stating how
+many cards are due. Off by default. Unsubscribe in one click, and the setting
+lives in `user_settings` beside the timer defaults.
+
+**Why this is not a violation of `GOALS.md`.** The file rules out *"notifikasi
+yang bikin cemas atau merasa bersalah"* — notifications that create anxiety or
+guilt. It does not rule out being told a fact. And the alternative is worse than
+it looks: a spaced-repetition queue nobody is reminded of rots silently for
+everyone except the person who built it and opens the tab from habit. Silent
+disappearance of what you learned is the exact failure this product exists to
+prevent, so a reminder is closer to the thesis than to the mechanics it bans.
+
+**The copy rules are the whole safeguard.** It states a count. It never says
+*missed*, *behind*, *streak*, *don't break*, *terlewat*, or *jangan sampai*. It
+does not appear at all on a day with nothing due. It never reports what was not
+done yesterday.
+
+**Rejected:** default-on (an opt-out reminder is the engagement mechanic D-057
+bans, whatever the copy says); web push at launch (it needs a service worker and
+VAPID keys — it belongs with the PWA work, and email reaches a phone today); a
+weekly summary of your statistics (that is an engagement surface pretending to be
+a report); anything at all about consecutive days.

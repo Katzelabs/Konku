@@ -9,6 +9,13 @@ it is required before anyone else can (D-058, D-066). The copy is still
 Indonesian and still non-punitive — a verification screen that scolds you for
 not clicking the link is a guilt mechanic like any other.
 
+> **Two amendments from the 2026-08-24 rescope (D-093).** **L1–L9 are done.**
+> **L10 is superseded by [ticket 10](https://app.clickup.com/t/86eyqky74)** in ClickUp — it was one line reading
+> "flip `ALLOW_SIGNUP`", written before anyone asked what the operator does on
+> the day an account misbehaves. And the copy is no longer Indonesian only:
+> D-094 makes every screen this file shipped bilingual, which is ticket 11's
+> I5 sweep. Everything else here stands as written.
+
 **L1–L9 are local** and run before the deploy (D-067) — built and tested
 against `docker-compose.yml` with a local SMTP catcher. **L10 runs after
 `04-ship.md`**, because opening signup on an app that is not deployed is not a

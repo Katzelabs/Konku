@@ -330,12 +330,12 @@ Browser  → session cookie  ┐
 MCP/CLI  → Bearer token    ┘
 ```
 
-Handlers only ever see a `userID` and never know which credential produced it. MCP support in v1.3 is then a new *resolver*, not a new API surface.
+Handlers only ever see a `userID` and never know which credential produced it. MCP support — **v1.5 now, and the first AI work rather than the last** (D-097) — is then a new *resolver*, not a new API surface. Its tokens get their own table, not `auth_tokens`: that one is single-use and expiring by construction, which is the opposite invariant to a long-lived key.
 
 ### Contract
 
 - Hand-written `web/src/api/types.ts` mirroring the Go structs, plus one `client.ts` wrapping `fetch`. OpenAPI codegen is deliberately skipped — real setup cost to solve a drift problem that does not exist at ~8 endpoints.
-- **One error shape from every endpoint:** `{"error": {"code": "...", "message": "..."}}`. The client gets a single error path instead of per-endpoint special cases. `message` is user-facing and therefore in Bahasa Indonesia; `code` is stable and for the client to branch on.
+- **One error shape from every endpoint:** `{"error": {"code": "...", "message": "..."}}`. The client gets a single error path instead of per-endpoint special cases. `message` is user-facing and therefore **localised** — Indonesian or English, resolved from the request's account or `Accept-Language` (D-094). `code` is stable, language-independent, and the thing the client branches on. That split is what makes localising `message` safe: no client logic reads it.
 
 ---
 

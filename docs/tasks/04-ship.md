@@ -3,7 +3,7 @@
 The work that genuinely requires the VPS, and nothing else.
 
 **~8 h** · needs `06-production-hardening.md` and `07-public-launch.md` L1–L9 ·
-followed by `07` L10
+followed by [ticket 10](https://app.clickup.com/t/86eyqky74) in ClickUp (which replaces `07` L10)
 
 **This file runs late on purpose** (D-067). It used to come before the
 hardening work, on the reasoning that shipping beats polishing. That reasoning
@@ -104,7 +104,7 @@ problem. Exact statement in `deploy.md`.
   **digest**), `KONKU_HOST`, `DATABASE_URL` (as **`konku_app`**),
   **`MIGRATION_DATABASE_URL`** (as the owner `konku`),
   `SESSION_SECRET` (`openssl rand -base64 32`), `PUBLIC_BASE_URL`. `SENTRY_DSN`,
-  `SMTP_URL` and `MAIL_FROM` are unguarded because signup is closed until L10
+  `SMTP_URL` and `MAIL_FROM` are unguarded because signup is closed until `10` O5
 - The host in both URLs is `postgres` — the platform service name over the
   `platform` network. Never `localhost`, and never the `127.0.0.1:5432`
   mapping, which exists for `psql` from the box's shell and is unreachable from
@@ -118,7 +118,7 @@ problem. Exact statement in `deploy.md`.
   mail has been delivered (S4)
 - `ALLOW_SIGNUP` and `DEV` are **not** `.env` variables — both are literals in
   `docker-compose.prod.yml`, already `"false"`, deliberately (`.env.prod.example`
-  says why). Nothing to set here; opening signup at `07` L10 is a compose edit
+  says why). Nothing to set here; opening signup at `10` O5 is a compose edit
 - Create your account with `konku seed-user`
 - Migrations run themselves at startup
 
@@ -211,7 +211,7 @@ The domain is `katzeapps.com`, already registered and verified with Resend
 
 **Verification mail landing in spam is an outage that looks like a signup
 bug** — new accounts appear stuck, nothing errors, and nothing in the logs is
-wrong. Do not discover this after L10.
+wrong. Do not discover this after `10` O5.
 
 **Done when:** both mails land in a Gmail inbox from the production sender, and
 `mail-tester` or equivalent scores the domain cleanly.
@@ -262,7 +262,7 @@ Watch for:
 - Whether you open it at all when you are not at your desk. If not, the
   mobile experience is the gap, and no v1.2 feature closes it
 
-**If capture is not happening, fix that before `07` L10.** Opening signup on a
+**If capture is not happening, fix that before `10` O5.** Opening signup on a
 product whose core loop does not hold for its designer is the wrong order in a
 way no amount of hardening compensates for (D-030).
 

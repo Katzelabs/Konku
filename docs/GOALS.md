@@ -17,6 +17,34 @@
 > disengaja — desainnya memang untuk orang itu dan orang yang belajar dengan
 > cara serupa, bukan untuk pasar yang lebih luas.
 
+> **Catatan kedua (D-093, 2026-08-24).** D-057 menaikkan standar *teknis* dan
+> membiarkan *produknya* tetap dirancang untuk satu orang. Itu sudah ditutup:
+> pendaftaran dibuka untuk siapa saja, appnya dwibahasa (Indonesia dan Inggris,
+> D-094), dan gratis secara permanen — tidak ada kode billing, tidak ada tier,
+> tidak ada fitur yang dikunci, selamanya (D-096).
+>
+> **Yang tidak berubah, dan tidak dibuka untuk dinegosiasi ulang hanya karena
+> sekarang ada penonton: seluruh isi file ini.** Tidak menghukum, tanpa
+> gamifikasi, tanpa fitur sosial, tanpa streak yang bisa hilang, capture cost di
+> atas segalanya. Adanya audiens publik justru membuat pelonggaran itu terasa
+> menggoda — persis alasan yang sudah ditolak D-057. Pendiriannya *adalah*
+> produknya.
+>
+> Satu hal memang berubah dari file ini: bahasa. Copy sekarang ditulis dalam
+> dua bahasa, Indonesia dulu sebagai sumber dan cadangan, Inggris wajib ada
+> sebelum sebuah string boleh dirilis (D-094). Alasannya bukan jangkauan pasar
+> melainkan urutan kerja — semua layar baru di tiket 12 (ClickUp) adalah copy
+> baru, dan menulisnya dalam satu bahasa lalu menerjemahkan belakangan berarti
+> menulisnya dua kali.
+>
+> Yang juga baru: **risiko terbesarnya pindah.** Dulu capture cost — apakah
+> catatan dan kartu benar-benar ditulis (D-030). Pemakaian harian sudah
+> menjawab itu. Sekarang risikonya **aktivasi**: apakah orang yang belum pernah
+> membaca file ini bisa sampai ke ulangan pertamanya (D-098).
+>
+> Mulai dari `10`, rencana kerjanya tidak lagi di `docs/tasks/` melainkan di
+> ClickUp (Development & Engineering → Konku).
+
 ---
 
 ## Siapa saya
