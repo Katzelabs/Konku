@@ -13,6 +13,7 @@ import { EmptyState } from '../../components/ui/empty-state'
 import { Notice } from '../../components/ui/notice'
 import { PageHeader } from '../../components/ui/page-header'
 import { Loading } from '../../components/ui/spinner'
+import { useCopy } from '../../i18n'
 import { useDateFormat } from '../../lib/useDateFormat'
 import { useDomains } from '../domains/queries'
 import { useCreateNote, useRecentNotes } from '../notes/queries'
@@ -30,12 +31,11 @@ import { useDueCards } from '../review/queries'
  * what you were last working on.
  */
 export default function HomePage() {
+  const c = useCopy().home
+
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        title="Beranda"
-        description="Mulai dari sini. Tidak ada target harian — cukup lanjutkan yang kemarin."
-      />
+      <PageHeader title={c.title} description={c.description} />
 
       <div className="grid gap-4 lg:grid-cols-3">
         <DueToday />
@@ -52,6 +52,7 @@ export default function HomePage() {
 }
 
 function DueToday() {
+  const c = useCopy().home.due
   const { data, isPending, error } = useDueCards()
   const count = data?.cards.length ?? 0
   const deferred = Math.max(0, (data?.total ?? 0) - count)
@@ -59,7 +60,7 @@ function DueToday() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Ulangan hari ini</CardTitle>
+        <CardTitle>{c.title}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {isPending && <Loading />}
@@ -69,7 +70,7 @@ function DueToday() {
             <p className="text-3xl font-semibold text-card-fg tabular-nums">
               {count}
               <span className="ml-1.5 text-sm font-normal text-subtle-fg">
-                kartu
+                {c.cardsUnit(count)}
               </span>
             </p>
             {/*
@@ -78,18 +79,14 @@ function DueToday() {
               (D-009).
             */}
             <p className="text-sm text-muted-fg">
-              {count === 0
-                ? 'Tidak ada yang perlu diulang hari ini.'
-                : deferred > 0
-                  ? 'Sisanya besok.'
-                  : 'Semuanya muat hari ini.'}
+              {count === 0 ? c.none : deferred > 0 ? c.deferred : c.allToday}
             </p>
             {count > 0 && (
               <Button asChild variant="primary" size="sm" className="self-start">
                 {/* Straight into the queue, not the Ulangan index: this tile
                     already is the index's summary. */}
                 <Link to="/review/due">
-                  Mulai ulangan
+                  {c.action}
                   <ArrowRight />
                 </Link>
               </Button>
@@ -102,19 +99,19 @@ function DueToday() {
 }
 
 function StartSession() {
+  const c = useCopy().home.focus
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Sesi fokus</CardTitle>
-        <CardDescription>
-          Mulai pendek. Selesai sesi, kamu ditanya apa yang barusan dipelajari.
-        </CardDescription>
+        <CardTitle>{c.title}</CardTitle>
+        <CardDescription>{c.description}</CardDescription>
       </CardHeader>
       <CardContent>
         <Button asChild variant="secondary" size="sm">
           <Link to="/timer">
             <Play />
-            Buka timer
+            {c.action}
           </Link>
         </Button>
       </CardContent>
@@ -123,14 +120,16 @@ function StartSession() {
 }
 
 function QuickCapture() {
+  const copy = useCopy()
+  const c = copy.home.capture
   const create = useCreateNote()
   const navigate = useNavigate()
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Catatan baru</CardTitle>
-        <CardDescription>Satu baris sudah cukup untuk mulai.</CardDescription>
+        <CardTitle>{c.title}</CardTitle>
+        <CardDescription>{c.description}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
         <Button
@@ -143,7 +142,7 @@ function QuickCapture() {
           className="self-start"
         >
           <Plus />
-          {create.isPending ? 'Sebentar…' : 'Tulis catatan'}
+          {create.isPending ? copy.common.working : c.action}
         </Button>
         {create.isError && <Notice>{create.error.message}</Notice>}
       </CardContent>
@@ -152,6 +151,7 @@ function QuickCapture() {
 }
 
 function RecentNotes() {
+  const c = useCopy().home.recent
   // Six, asked for as six. Slicing an infinite list down to six would page
   // the whole collection into memory to render a corner of the home screen.
   const { data: recent = [], isPending, error } = useRecentNotes(6)
@@ -161,9 +161,9 @@ function RecentNotes() {
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between">
-        <CardTitle>Catatan terakhir</CardTitle>
+        <CardTitle>{c.title}</CardTitle>
         <Button asChild variant="link" size="inline">
-          <Link to="/notes">Semua catatan</Link>
+          <Link to="/notes">{c.all}</Link>
         </Button>
       </CardHeader>
       <CardContent className="p-0">
@@ -179,10 +179,7 @@ function RecentNotes() {
         )}
         {!isPending && !error && recent.length === 0 && (
           <div className="px-5 pb-5">
-            <EmptyState
-              title="Belum ada catatan."
-              description="Mulai dari satu baris saja."
-            />
+            <EmptyState title={c.empty.title} description={c.empty.description} />
           </div>
         )}
         {recent.length > 0 && (
@@ -197,7 +194,7 @@ function RecentNotes() {
                   >
                     {domain && <DomainDot color={domain.color} />}
                     <span className="min-w-0 flex-1 truncate text-sm text-card-fg">
-                      {n.title || 'Tanpa judul'}
+                      {n.title || c.untitled}
                     </span>
                     <span className="shrink-0 text-xs text-subtle-fg">
                       {d.humanDay(n.updatedAt)}
@@ -214,20 +211,21 @@ function RecentNotes() {
 }
 
 function DomainList() {
+  const c = useCopy().home.domains
   const { data: domains, isPending } = useDomains()
 
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between">
-        <CardTitle>Domain</CardTitle>
+        <CardTitle>{c.title}</CardTitle>
         <Button asChild variant="link" size="inline">
-          <Link to="/settings">Atur</Link>
+          <Link to="/settings">{c.manage}</Link>
         </Button>
       </CardHeader>
       <CardContent className="flex flex-col gap-2.5">
         {isPending && <Loading />}
         {domains?.length === 0 && (
-          <p className="text-sm text-muted-fg">Belum ada domain.</p>
+          <p className="text-sm text-muted-fg">{c.empty}</p>
         )}
         {domains?.map((d) => (
           <div key={d.id} className="flex items-center gap-2.5">
@@ -242,7 +240,7 @@ function DomainList() {
               into a target.
             */}
             <span className="shrink-0 text-xs text-subtle-fg">
-              {d.weeklyQuota > 0 ? `${d.weeklyQuota}×/minggu` : 'di luar rotasi'}
+              {d.weeklyQuota > 0 ? c.weekly(d.weeklyQuota) : c.outOfRotation}
             </span>
           </div>
         ))}

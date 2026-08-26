@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/ca
 import { EmptyState } from '../../components/ui/empty-state'
 import { Notice } from '../../components/ui/notice'
 import { Loading } from '../../components/ui/spinner'
+import { useCopy } from '../../i18n'
 import { useDateFormat } from '../../lib/useDateFormat'
 import type { FocusSession } from '../../api/types'
 import { useAllDomains } from '../domains/queries'
@@ -27,6 +28,7 @@ import { useSessions } from './queries'
  * deferred — which is why this states the count and offers no "load more".
  */
 export function SessionLog() {
+  const c = useCopy().timer
   const d = useDateFormat()
   const { sessions, total, truncated, isPending, error } = useSessions()
   // The display path needs archived domains too — a session keeps its tag when
@@ -41,10 +43,10 @@ export function SessionLog() {
       {/* flex-row explicitly: CardHeader is a column by default, and
           tailwind-merge only drops a class that a later one contradicts. */}
       <CardHeader className="flex-row items-baseline justify-between gap-3">
-        <CardTitle>Sesi terakhir</CardTitle>
+        <CardTitle>{c.log.title}</CardTitle>
         {total > 0 && (
           <span className="text-xs text-subtle-fg tabular-nums">
-            {total} sesi
+            {c.log.sessions(total)}
           </span>
         )}
       </CardHeader>
@@ -63,10 +65,7 @@ export function SessionLog() {
 
       {sessions && days.length === 0 && (
         <CardContent>
-          <EmptyState
-            title="Belum ada sesi tercatat."
-            description="Sesi yang selesai muncul di sini."
-          />
+          <EmptyState title={c.log.empty.title} description={c.log.empty.description} />
         </CardContent>
       )}
 
@@ -79,7 +78,7 @@ export function SessionLog() {
                   {d.humanDate(day.date)}
                 </h4>
                 <span className="text-xs text-subtle-fg tabular-nums">
-                  {day.totalMinutes} menit
+                  {c.minutes(day.totalMinutes)}
                 </span>
               </header>
 
@@ -103,11 +102,11 @@ export function SessionLog() {
                         </>
                       ) : (
                         <span className="min-w-0 flex-1 truncate text-muted-fg">
-                          Tanpa domain
+                          {c.noDomain}
                         </span>
                       )}
                       <span className="shrink-0 text-xs text-subtle-fg tabular-nums">
-                        {s.durationMinutes} menit
+                        {c.minutes(s.durationMinutes)}
                       </span>
                     </li>
                   )
@@ -123,7 +122,7 @@ export function SessionLog() {
           */}
           {truncated && (
             <p className="border-t border-border px-5 py-2.5 text-xs text-subtle-fg">
-              Menampilkan {shown} sesi terakhir dari {total}.
+              {c.log.showing(shown, total)}
             </p>
           )}
         </div>

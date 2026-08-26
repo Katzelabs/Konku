@@ -6,22 +6,17 @@ import { DomainDot } from '../../components/ui/badge'
 import { Notice } from '../../components/ui/notice'
 import { PageHeader } from '../../components/ui/page-header'
 import { ToggleGroup, ToggleGroupItem } from '../../components/ui/toggle-group'
+import { useCopy } from '../../i18n'
 import { clock } from '../../lib/date'
 import { useDateFormat } from '../../lib/useDateFormat'
 import { cn } from '../../lib/utils'
 import { useDomains } from '../domains/queries'
 import { SessionLog } from './SessionLog'
 import { useFocusTimer } from './TimerProvider'
-import { DURATIONS, type TimerStatus } from './useTimer'
-
-const STATUS_LABEL: Record<TimerStatus, string> = {
-  idle: 'Siap',
-  running: 'Berjalan',
-  paused: 'Dijeda',
-  done: 'Selesai',
-}
+import { DURATIONS } from './useTimer'
 
 export default function TimerPage() {
+  const c = useCopy().timer
   const timer = useFocusTimer()
   const { data: domains } = useDomains()
   const { status, durationMinutes, domainId } = timer
@@ -32,17 +27,14 @@ export default function TimerPage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <PageHeader
-        title="Timer"
-        description="Sesi dengan awal dan akhir yang jelas. Selesai sesi, kamu ditanya apa yang barusan dipelajari."
-      />
+      <PageHeader title={c.title} description={c.description} />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
         <Card className="flex flex-col items-center gap-8 px-6 py-12">
           <TimerRing
             progress={elapsed}
             label={clock(timer.remainingMs)}
-            status={STATUS_LABEL[status]}
+            status={c.status[status]}
             dimmed={status === 'paused'}
           />
 
@@ -50,18 +42,18 @@ export default function TimerPage() {
             {status === 'idle' && (
               <Button variant="primary" size="lg" onClick={timer.start}>
                 <Play />
-                Mulai
+                {c.controls.start}
               </Button>
             )}
             {status === 'running' && (
               <>
                 <Button variant="secondary" size="lg" onClick={timer.pause}>
                   <Pause />
-                  Jeda
+                  {c.controls.pause}
                 </Button>
                 <Button variant="ghost" size="lg" onClick={timer.reset}>
                   <RotateCcw />
-                  Ulangi
+                  {c.controls.reset}
                 </Button>
               </>
             )}
@@ -69,11 +61,11 @@ export default function TimerPage() {
               <>
                 <Button variant="primary" size="lg" onClick={timer.resume}>
                   <Play />
-                  Lanjut
+                  {c.controls.resume}
                 </Button>
                 <Button variant="ghost" size="lg" onClick={timer.reset}>
                   <RotateCcw />
-                  Ulangi
+                  {c.controls.reset}
                 </Button>
               </>
             )}
@@ -83,10 +75,7 @@ export default function TimerPage() {
         <div className="flex flex-col gap-6">
           {status === 'idle' && (
             <>
-              <Choice
-                label="Durasi"
-                hint="Mulai pendek. Durasi naik sendiri kalau sesi pendek sudah kebiasaan."
-              >
+              <Choice label={c.duration} hint={c.durationHint}>
                 <ToggleGroup>
                   {DURATIONS.map((minutes) => (
                     <ToggleGroupItem
@@ -94,7 +83,7 @@ export default function TimerPage() {
                       selected={minutes === durationMinutes}
                       onClick={() => timer.setDuration(minutes)}
                     >
-                      {minutes} menit
+                      {c.minutes(minutes)}
                     </ToggleGroupItem>
                   ))}
                 </ToggleGroup>
@@ -105,13 +94,13 @@ export default function TimerPage() {
                 arrives already tagged (D-011) — not as a category the user is
                 obliged to maintain.
               */}
-              <Choice label="Domain">
+              <Choice label={c.domain}>
                 <ToggleGroup>
                   <ToggleGroupItem
                     selected={domainId === null}
                     onClick={() => timer.setDomain(null)}
                   >
-                    Tanpa domain
+                    {c.noDomain}
                   </ToggleGroupItem>
                   {domains?.map((domain) => (
                     <ToggleGroupItem
@@ -135,9 +124,9 @@ export default function TimerPage() {
 
       {timer.logFailed && (
         <Notice>
-          Sesi belum tercatat.{' '}
+          {c.logFailed}{' '}
           <button onClick={timer.retryLog} className="underline underline-offset-4">
-            Coba lagi
+            {c.retry}
           </button>
         </Notice>
       )}
@@ -157,6 +146,7 @@ export default function TimerPage() {
  * distraction the timer exists to close off.
  */
 function RunningSummary() {
+  const c = useCopy().timer
   const timer = useFocusTimer()
   const d = useDateFormat()
   const { data: domains } = useDomains()
@@ -165,12 +155,12 @@ function RunningSummary() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Sesi ini</CardTitle>
+        <CardTitle>{c.summary.title}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-2.5 text-sm">
-        <Row label="Durasi" value={`${timer.durationMinutes} menit`} />
+        <Row label={c.duration} value={c.minutes(timer.durationMinutes)} />
         <Row
-          label="Domain"
+          label={c.domain}
           value={
             domain ? (
               <span className="inline-flex items-center gap-1.5">
@@ -178,7 +168,7 @@ function RunningSummary() {
                 {domain.label}
               </span>
             ) : (
-              'Tanpa domain'
+              c.noDomain
             )
           }
         />
@@ -188,7 +178,7 @@ function RunningSummary() {
         */}
         {timer.status === 'running' && (
           <Row
-            label="Selesai sekitar"
+            label={c.summary.endsAround}
             value={d.timeOfDay(new Date(Date.now() + timer.remainingMs).toISOString())}
           />
         )}
