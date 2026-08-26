@@ -9,10 +9,11 @@ import { Markdown } from '../../components/ui/markdown'
 import { Notice } from '../../components/ui/notice'
 import { PeekPanel, type PeekMode } from '../../components/ui/peek-panel'
 import { Loading } from '../../components/ui/spinner'
+import { useCopy } from '../../i18n'
 import { useDateFormat } from '../../lib/useDateFormat'
 import { useAllCategories } from '../categories/queries'
 import { useAllDomains } from '../domains/queries'
-import { useDeleteNote, useNote } from './queries'
+import { RECOVERY_DAYS, useDeleteNote, useNote } from './queries'
 
 /**
  * A note, previewed over the list.
@@ -32,6 +33,7 @@ export function NotePeek({
   mode: PeekMode
   onClose: () => void
 }) {
+  const c = useCopy().notes
   const { data: note, isPending, error } = useNote(noteId)
   const d = useDateFormat()
   const { data: domains } = useAllDomains()
@@ -47,7 +49,7 @@ export function NotePeek({
       open
       onOpenChange={(v) => !v && onClose()}
       mode={mode}
-      title={note?.title || 'Catatan'}
+      title={note?.title || c.peek.fallbackTitle}
     >
       {isPending && <Loading />}
       {error && <Notice>{error.message}</Notice>}
@@ -64,14 +66,14 @@ export function NotePeek({
             </div>
 
             <h1 className="text-2xl font-bold tracking-tight text-card-fg">
-              {note.title || 'Tanpa judul'}
+              {note.title || c.untitled}
             </h1>
           </header>
 
           {note.contentMd.trim() ? (
             <Markdown>{note.contentMd}</Markdown>
           ) : (
-            <p className="text-sm text-subtle-fg">Catatan ini masih kosong.</p>
+            <p className="text-sm text-subtle-fg">{c.peek.emptyBody}</p>
           )}
 
           {/*
@@ -93,7 +95,7 @@ export function NotePeek({
             <Button asChild variant="secondary" size="sm">
               <Link to={`/notes/${noteId}`}>
                 <Pencil />
-                Ubah catatan
+                {c.peek.edit}
               </Link>
             </Button>
 
@@ -104,7 +106,7 @@ export function NotePeek({
               onClick={() => setConfirming(true)}
             >
               <Trash2 />
-              Hapus
+              {c.delete.action}
             </Button>
           </div>
 
@@ -115,9 +117,9 @@ export function NotePeek({
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
-        title="Hapus catatan ini?"
-        description="Catatan pindah ke Terhapus beserta kategorinya, dan bisa dikembalikan selama 30 hari."
-        confirmLabel="Hapus"
+        title={c.delete.titleOne}
+        description={c.delete.description(RECOVERY_DAYS)}
+        confirmLabel={c.delete.action}
         pending={remove.isPending}
         onConfirm={() =>
           remove.mutate(noteId, {

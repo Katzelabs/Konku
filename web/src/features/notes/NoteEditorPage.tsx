@@ -15,11 +15,12 @@ import {
 import { Loading } from '../../components/ui/spinner'
 import { Textarea } from '../../components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '../../components/ui/toggle-group'
+import { useCopy, type Copy } from '../../i18n'
 import { useFlushOnHide } from '../../lib/useFlushOnHide'
 import { useCategories, useCreateCategory } from '../categories/queries'
 import { useDomains } from '../domains/queries'
 import type { NoteInput } from './queries'
-import { useDeleteNote, useNote, useSaveNote } from './queries'
+import { RECOVERY_DAYS, useDeleteNote, useNote, useSaveNote } from './queries'
 
 /**
  * Long enough not to fire between words, short enough that leaving the page
@@ -36,6 +37,7 @@ const AUTOSAVE_MS = 1500
 const RETRY_MS = [2_000, 5_000, 15_000, 30_000, 60_000]
 
 export default function NoteEditorPage() {
+  const c = useCopy().notes
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const { data: note, isPending, error } = useNote(id)
@@ -215,19 +217,24 @@ export default function NoteEditorPage() {
         <Button asChild variant="link" size="inline">
           <Link to="/notes">
             <ArrowLeft />
-            Catatan
+            {c.editor.back}
           </Link>
         </Button>
 
         <div className="ml-auto flex items-center gap-3">
-          <SaveStatus dirty={dirty} pending={save.isPending} failed={save.isError} />
+          <SaveStatus
+            copy={c.editor.status}
+            dirty={dirty}
+            pending={save.isPending}
+            failed={save.isError}
+          />
           <Button
             variant="primary"
             size="sm"
             onClick={doSave}
             disabled={!dirty || save.isPending}
           >
-            Simpan
+            {c.editor.save}
           </Button>
         </div>
       </div>
@@ -244,10 +251,10 @@ export default function NoteEditorPage() {
             note in the database was untagged.
           */}
           <PropertyBar>
-            <PropertyRow icon={<Folder className="size-3.5" />} label="Domain">
+            <PropertyRow icon={<Folder className="size-3.5" />} label={c.editor.domain}>
               <DomainProperty domains={domains} value={domainId} onChange={setDomainId} />
             </PropertyRow>
-            <PropertyRow icon={<Tag className="size-3.5" />} label="Kategori">
+            <PropertyRow icon={<Tag className="size-3.5" />} label={c.editor.category}>
               <CategoryProperty
                 categories={categories}
                 selected={categoryIds}
@@ -261,10 +268,10 @@ export default function NoteEditorPage() {
           {/* A placeholder is not a label: it is gone the moment there is a
               title, which is most of the time this field is read (F-12). */}
           <input
-            aria-label="Judul catatan"
+            aria-label={c.editor.title.label}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Judul"
+            placeholder={c.editor.title.placeholder}
             className="w-full text-3xl font-bold tracking-tight text-card-fg placeholder:text-subtle-fg focus-visible:outline-none"
           />
         </div>
@@ -272,7 +279,7 @@ export default function NoteEditorPage() {
         <div className="flex items-center gap-3 border-b border-border px-4 py-3 md:px-8">
           <ToggleGroup>
             <ToggleGroupItem selected={mode === 'write'} onClick={() => setMode('write')}>
-              Tulis
+              {c.editor.mode.write}
             </ToggleGroupItem>
             {/* Side by side only where there is room for two columns. */}
             <ToggleGroupItem
@@ -280,13 +287,13 @@ export default function NoteEditorPage() {
               onClick={() => setMode('split')}
               className="hidden lg:inline-flex"
             >
-              Terpisah
+              {c.editor.mode.split}
             </ToggleGroupItem>
             <ToggleGroupItem
               selected={mode === 'preview'}
               onClick={() => setMode('preview')}
             >
-              Pratinjau
+              {c.editor.mode.preview}
             </ToggleGroupItem>
           </ToggleGroup>
         </div>
@@ -301,11 +308,11 @@ export default function NoteEditorPage() {
           {showWrite && (
             <Textarea
               variant="plain"
-              aria-label="Isi catatan"
+              aria-label={c.editor.body.label}
               value={content}
               onChange={(e) => setContent(e.target.value)}
               spellCheck={false}
-              placeholder="Tulis di sini…"
+              placeholder={c.editor.body.placeholder}
               className="min-h-[34rem] flex-1 font-mono text-sm"
             />
           )}
@@ -315,7 +322,7 @@ export default function NoteEditorPage() {
               {content.trim() ? (
                 <Markdown>{content}</Markdown>
               ) : (
-                <p className="text-sm text-subtle-fg">Pratinjau muncul di sini.</p>
+                <p className="text-sm text-subtle-fg">{c.editor.previewEmpty}</p>
               )}
             </div>
           )}
@@ -339,7 +346,7 @@ export default function NoteEditorPage() {
           onClick={() => setConfirming(true)}
         >
           <Trash2 />
-          Hapus catatan
+          {c.editor.delete}
         </Button>
 
         {remove.isError && <Notice>{remove.error.message}</Notice>}
@@ -348,9 +355,9 @@ export default function NoteEditorPage() {
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
-        title="Hapus catatan ini?"
-        description="Catatan pindah ke Terhapus beserta kategorinya, dan bisa dikembalikan selama 30 hari."
-        confirmLabel="Hapus"
+        title={c.delete.titleOne}
+        description={c.delete.description(RECOVERY_DAYS)}
+        confirmLabel={c.delete.action}
         pending={remove.isPending}
         onConfirm={() =>
           remove.mutate(id, {
@@ -371,11 +378,19 @@ function sameIds(a: string[], b: string[]) {
   return a.every((id) => set.has(id))
 }
 
+/**
+ * Copy is passed in rather than read from `useCopy()` here, because this is a
+ * pure display of the four states above it and the caller already holds the
+ * catalog. `Copy` is the type to take at a boundary like this one; nothing
+ * imports `id` directly to "just get a string".
+ */
 function SaveStatus({
+  copy,
   dirty,
   pending,
   failed,
 }: {
+  copy: Copy['notes']['editor']['status']
   dirty: boolean
   pending: boolean
   failed: boolean
@@ -385,9 +400,9 @@ function SaveStatus({
     // another attempt is already scheduled. This line used to be a promise the
     // code did not keep — the retry effect above is what makes it true, and it
     // is why the wording did not need softening.
-    return <span className="text-sm text-muted-fg">Belum tersimpan, mencoba lagi…</span>
+    return <span className="text-sm text-muted-fg">{copy.retrying}</span>
   }
-  if (pending) return <span className="text-sm text-subtle-fg">Menyimpan…</span>
-  if (dirty) return <span className="text-sm text-subtle-fg">Belum tersimpan</span>
-  return <span className="text-sm text-subtle-fg">Tersimpan</span>
+  if (pending) return <span className="text-sm text-subtle-fg">{copy.saving}</span>
+  if (dirty) return <span className="text-sm text-subtle-fg">{copy.unsaved}</span>
+  return <span className="text-sm text-subtle-fg">{copy.saved}</span>
 }
