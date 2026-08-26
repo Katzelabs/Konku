@@ -8,9 +8,11 @@ import { EmptyState } from '../../components/ui/empty-state'
 import { Notice } from '../../components/ui/notice'
 import { PageHeader } from '../../components/ui/page-header'
 import { Loading } from '../../components/ui/spinner'
+import { useCopy } from '../../i18n'
 import { reviewKeys, useAnswer, useDueCards, useRate } from './queries'
 
 export default function ReviewPage() {
+  const c = useCopy().review
   const { data, isPending, error } = useDueCards()
   const [index, setIndex] = useState(0)
   const qc = useQueryClient()
@@ -32,10 +34,10 @@ export default function ReviewPage() {
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
       <div className="flex items-baseline justify-between">
         <h1 className="text-2xl font-bold tracking-tight text-surface-fg">
-          Ulangan
+          {c.title}
         </h1>
         <span className="text-sm text-subtle-fg tabular-nums">
-          {index + 1} dari {cards.length}
+          {c.answering.position(index + 1, cards.length)}
         </span>
       </div>
 
@@ -63,6 +65,7 @@ export default function ReviewPage() {
 }
 
 function CardReview({ card, onRated }: { card: DueCard; onRated: () => void }) {
+  const c = useCopy().review.answering
   const [reveal, setReveal] = useState(false)
   const answer = useAnswer(card.id, reveal)
   const rate = useRate()
@@ -84,7 +87,7 @@ function CardReview({ card, onRated }: { card: DueCard; onRated: () => void }) {
         */}
         {reveal && (
           <div className="mt-6 border-t border-border pt-6">
-            {answer.isPending && <Loading label="Membuka…" />}
+            {answer.isPending && <Loading label={c.revealing} />}
             {answer.error && (
               <p className="text-sm text-muted-fg">{answer.error.message}</p>
             )}
@@ -97,7 +100,7 @@ function CardReview({ card, onRated }: { card: DueCard; onRated: () => void }) {
 
       {!reveal ? (
         <Button variant="primary" size="lg" onClick={() => setReveal(true)}>
-          Tampilkan jawaban
+          {c.reveal}
         </Button>
       ) : (
         <div className="grid grid-cols-2 gap-3">
@@ -105,7 +108,8 @@ function CardReview({ card, onRated }: { card: DueCard; onRated: () => void }) {
             Both answers are ordinary. "Belum ingat" carries no red and no
             warning tone: forgetting is the normal case the entire schedule is
             built around, not a mistake to flag. The palette has no token that
-            would let this go wrong (D-054).
+            would let this go wrong (D-054), and the catalog carries the same
+            rule across the translation — see the note on `notYet` in `en.ts`.
           */}
           <Button
             variant="secondary"
@@ -113,7 +117,7 @@ function CardReview({ card, onRated }: { card: DueCard; onRated: () => void }) {
             onClick={() => submit('lupa')}
             disabled={rate.isPending || !answer.data}
           >
-            Belum ingat
+            {c.notYet}
           </Button>
           <Button
             variant="primary"
@@ -121,7 +125,7 @@ function CardReview({ card, onRated }: { card: DueCard; onRated: () => void }) {
             onClick={() => submit('ingat')}
             disabled={rate.isPending || !answer.data}
           >
-            Ingat
+            {c.remembered}
           </Button>
         </div>
       )}
@@ -130,7 +134,7 @@ function CardReview({ card, onRated }: { card: DueCard; onRated: () => void }) {
           to point at the note it was parsed out of; a card is its own thing
           now, so it points at itself (D-055). */}
       <Button asChild variant="link" size="inline" className="self-start">
-        <Link to={`/cards/${card.id}`}>Ubah kartu ini</Link>
+        <Link to={`/cards/${card.id}`}>{c.editCard}</Link>
       </Button>
 
       {rate.isError && <Notice>{rate.error.message}</Notice>}
@@ -139,9 +143,10 @@ function CardReview({ card, onRated }: { card: DueCard; onRated: () => void }) {
 }
 
 function Finished({ deferred, nothingToday }: { deferred: number; nothingToday?: boolean }) {
+  const c = useCopy().review
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
-      <PageHeader title="Ulangan" />
+      <PageHeader title={c.title} />
 
       {/*
         Calm, not congratulatory. No confetti and nothing to lose: an empty
@@ -153,15 +158,11 @@ function Finished({ deferred, nothingToday }: { deferred: number; nothingToday?:
         not forty, and a button to override it would quietly undo that (D-009).
       */}
       <EmptyState
-        title={
-          nothingToday
-            ? 'Tidak ada yang perlu diulang hari ini.'
-            : 'Selesai untuk hari ini.'
-        }
-        description={deferred > 0 ? 'Sisanya besok.' : undefined}
+        title={nothingToday ? c.due.none : c.due.done}
+        description={deferred > 0 ? c.due.restTomorrow : undefined}
         action={
           <Button asChild variant="secondary" size="sm">
-            <Link to="/notes">Ke catatan</Link>
+            <Link to="/notes">{c.due.toNotes}</Link>
           </Button>
         }
       />

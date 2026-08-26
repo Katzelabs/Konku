@@ -7,6 +7,7 @@ import { Card } from '../../components/ui/card'
 import { Notice } from '../../components/ui/notice'
 import { PageHeader } from '../../components/ui/page-header'
 import { Loading } from '../../components/ui/spinner'
+import { useCopy } from '../../i18n'
 import { cn } from '../../lib/utils'
 import {
   useAnswerQuestion,
@@ -43,6 +44,8 @@ export default function RunPage() {
 }
 
 function Sitting({ run }: { run: RunDetail }) {
+  const copy = useCopy().review
+  const c = copy.run
   // Resuming lands on the first unanswered question rather than the start, so
   // a run picked up later carries on where it stopped (D-050).
   const firstUnanswered = run.questions.findIndex((q) => q.rating === null)
@@ -55,10 +58,7 @@ function Sitting({ run }: { run: RunDetail }) {
   if (remaining === 0 || !question) {
     return (
       <div className="mx-auto flex max-w-2xl flex-col gap-5">
-        <PageHeader
-          title="Selesai menjawab"
-          description="Semua soal sudah dijawab."
-        />
+        <PageHeader title={c.finished.title} description={c.finished.description} />
         <Button
           variant="primary"
           size="lg"
@@ -66,7 +66,7 @@ function Sitting({ run }: { run: RunDetail }) {
           disabled={finish.isPending}
           className="self-start"
         >
-          Lihat hasil
+          {c.finished.action}
         </Button>
         {finish.isError && <Notice>{finish.error.message}</Notice>}
       </div>
@@ -76,9 +76,9 @@ function Sitting({ run }: { run: RunDetail }) {
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-bold tracking-tight text-surface-fg">Ulangan</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-surface-fg">{copy.title}</h1>
         <span className="text-sm text-subtle-fg tabular-nums">
-          Soal {index + 1} dari {run.questions.length}
+          {c.position(index + 1, run.questions.length)}
         </span>
       </div>
 
@@ -110,16 +110,17 @@ function Question({
   question: RunQuestion
   onAnswered: () => void
 }) {
+  const c = useCopy().review.run
   // A card deleted after the draw still holds its place in the score, but
   // there is nothing left to ask.
   if (question.missing) {
     return (
       <div className="flex flex-col gap-5">
         <Card className="px-6 py-10">
-          <p className="text-muted-fg">Kartu ini sudah tidak ada.</p>
+          <p className="text-muted-fg">{c.missingCard}</p>
         </Card>
         <Button variant="secondary" size="lg" onClick={onAnswered} className="self-start">
-          Lewati
+          {c.skip}
         </Button>
       </div>
     )
@@ -140,6 +141,8 @@ function RecallQuestion({
   question: RunQuestion
   onAnswered: () => void
 }) {
+  // The same words as the due queue, because it is the same interaction.
+  const c = useCopy().review.answering
   const [reveal, setReveal] = useState(false)
   const answer = useRunAnswer(runId, question.cardId, reveal)
   const submit = useAnswerQuestion()
@@ -160,7 +163,7 @@ function RecallQuestion({
         */}
         {reveal && (
           <div className="mt-6 border-t border-border pt-6">
-            {answer.isPending && <Loading label="Membuka…" />}
+            {answer.isPending && <Loading label={c.revealing} />}
             {answer.error && (
               <p className="text-sm text-muted-fg">{answer.error.message}</p>
             )}
@@ -173,7 +176,7 @@ function RecallQuestion({
 
       {!reveal ? (
         <Button variant="primary" size="lg" onClick={() => setReveal(true)}>
-          Tampilkan jawaban
+          {c.reveal}
         </Button>
       ) : (
         <div className="grid grid-cols-2 gap-3">
@@ -184,7 +187,7 @@ function RecallQuestion({
             onClick={() => rate('lupa')}
             disabled={submit.isPending || !answer.data}
           >
-            Belum ingat
+            {c.notYet}
           </Button>
           <Button
             variant="primary"
@@ -192,7 +195,7 @@ function RecallQuestion({
             onClick={() => rate('ingat')}
             disabled={submit.isPending || !answer.data}
           >
-            Ingat
+            {c.remembered}
           </Button>
         </div>
       )}
@@ -218,6 +221,7 @@ function ChoiceQuestion({
   question: RunQuestion
   onAnswered: () => void
 }) {
+  const c = useCopy().review.run
   const [picked, setPicked] = useState<number | null>(null)
   const [result, setResult] = useState<AnswerResult | null>(null)
   const submit = useAnswerQuestion()
@@ -269,10 +273,10 @@ function ChoiceQuestion({
       {result !== null && (
         <div className="flex flex-col gap-4">
           <p className="text-sm text-muted-fg">
-            {result.rating === 'ingat' ? 'Betul.' : 'Belum kena — jawabannya yang ditandai.'}
+            {result.rating === 'ingat' ? c.correct : c.incorrect}
           </p>
           <Button variant="primary" size="lg" onClick={onAnswered} className="self-start">
-            Lanjut
+            {c.next}
           </Button>
         </div>
       )}
@@ -283,11 +287,12 @@ function ChoiceQuestion({
 }
 
 function Result({ run }: { run: RunDetail }) {
+  const c = useCopy().review.run
   const missed = run.questions.filter((q) => q.rating === 'lupa')
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
-      <PageHeader title="Hasil" />
+      <PageHeader title={c.result.title} />
 
       {/*
         The number, stated plainly. No grade, no pass mark, no colour: there is
@@ -300,14 +305,12 @@ function Result({ run }: { run: RunDetail }) {
           {run.correctCount}
           <span className="text-subtle-fg"> / {run.totalCount}</span>
         </p>
-        <p className="mt-2 text-sm text-muted-fg">
-          Ini tidak mengubah jadwal ulangan kartu-kartu ini.
-        </p>
+        <p className="mt-2 text-sm text-muted-fg">{c.result.noScheduleChange}</p>
       </Card>
 
       {missed.length > 0 && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-medium text-muted-fg">Yang belum nempel</h2>
+          <h2 className="text-sm font-medium text-muted-fg">{c.result.missedTitle}</h2>
           <Card>
             <ul className="divide-y divide-border">
               {missed.map((q) => (
@@ -316,7 +319,7 @@ function Result({ run }: { run: RunDetail }) {
                     to={`/cards/${q.cardId}`}
                     className="block px-4 py-3 text-sm text-secondary-fg transition-colors hover:bg-muted"
                   >
-                    {q.front || 'Kartu ini sudah tidak ada.'}
+                    {q.front || c.missingCard}
                   </Link>
                 </li>
               ))}
@@ -328,7 +331,7 @@ function Result({ run }: { run: RunDetail }) {
       <Button asChild variant="secondary" className="self-start">
         <Link to={`/review/sets/${run.setId}`}>
           <ArrowLeft />
-          Kembali ke latihan
+          {c.result.back}
         </Link>
       </Button>
     </div>
