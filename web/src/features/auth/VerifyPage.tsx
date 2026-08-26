@@ -4,6 +4,7 @@ import { Button } from '../../components/ui/button'
 import { Card } from '../../components/ui/card'
 import { Loading } from '../../components/ui/spinner'
 import { Notice } from '../../components/ui/notice'
+import { useCopy } from '../../i18n'
 import { useVerifyToken } from './useAuth'
 import { AuthLayout } from './AuthLayout'
 
@@ -17,19 +18,23 @@ import { AuthLayout } from './AuthLayout'
 export default function VerifyPage() {
   const [params] = useSearchParams()
   const token = params.get('token') ?? ''
+  const c = useCopy().auth.verify
   const verify = useVerifyToken(token)
 
   if (!token) {
-    return (
-      <VerifyFailed message="Tautan ini tidak lengkap. Buka tautan dari email kamu ya." />
-    )
+    return <VerifyFailed message={c.failed.incompleteLink} />
   }
 
   if (verify.isPending) {
     return (
-      <AuthLayout title="Memverifikasi…">
+      <AuthLayout title={c.pending}>
         <Card className="flex items-center justify-center p-8">
-          <Loading />
+          {/*
+            The label is passed rather than left to the component's default,
+            which is still Indonesian: `components/ui/` is out of scope for
+            this conversion (11 I5), so the screen supplies the half it owns.
+          */}
+          <Loading label={c.loading} />
         </Card>
       </AuthLayout>
     )
@@ -40,16 +45,14 @@ export default function VerifyPage() {
   }
 
   return (
-    <AuthLayout title="Email terverifikasi" subtitle="Akun kamu sudah aktif.">
+    <AuthLayout title={c.done.title} subtitle={c.done.subtitle}>
       <Card className="flex flex-col items-center gap-4 p-6 text-center">
         <span className="flex size-11 items-center justify-center rounded-full bg-muted text-secondary-fg">
           <CircleCheck className="size-5" />
         </span>
-        <p className="text-sm text-secondary-fg">
-          Terima kasih. Sekarang kamu bisa masuk dan mulai menulis.
-        </p>
+        <p className="text-sm text-secondary-fg">{c.done.body}</p>
         <Button asChild variant="primary" size="lg" className="mt-1 w-full">
-          <Link to="/login">Masuk</Link>
+          <Link to="/login">{c.done.signIn}</Link>
         </Button>
       </Card>
     </AuthLayout>
@@ -64,8 +67,10 @@ export default function VerifyPage() {
  * is the same in every case, so the screen offers it rather than explaining.
  */
 function VerifyFailed({ message }: { message: string }) {
+  const c = useCopy().auth.verify.failed
+
   return (
-    <AuthLayout title="Tautan tidak berlaku">
+    <AuthLayout title={c.title}>
       <Card className="flex flex-col items-center gap-4 p-6 text-center">
         <span className="flex size-11 items-center justify-center rounded-full bg-muted text-secondary-fg">
           <MailWarning className="size-5" />
@@ -73,11 +78,9 @@ function VerifyFailed({ message }: { message: string }) {
         <Notice role="alert" className="w-full">
           {message}
         </Notice>
-        <p className="text-sm text-muted-fg">
-          Masuk dengan akun kamu untuk meminta tautan baru.
-        </p>
+        <p className="text-sm text-muted-fg">{c.help}</p>
         <Button asChild variant="primary" size="lg" className="mt-1 w-full">
-          <Link to="/login">Ke halaman masuk</Link>
+          <Link to="/login">{c.signIn}</Link>
         </Button>
       </Card>
     </AuthLayout>

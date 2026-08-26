@@ -5,12 +5,16 @@ import { Card } from '../../components/ui/card'
 import { Field } from '../../components/ui/field'
 import { Input } from '../../components/ui/input'
 import { Notice } from '../../components/ui/notice'
+import { useCopy } from '../../i18n'
 import { useZodForm } from '../../lib/useZodForm'
 import { forgotSchema } from './schemas'
 import { useForgotPassword } from './useAuth'
 import { AuthLayout } from './AuthLayout'
+import { Emphasis } from './emphasis'
 
 export default function ForgotPasswordPage() {
+  const copy = useCopy().auth
+  const c = copy.forgot
   const forgot = useForgotPassword()
   const form = useZodForm(forgotSchema, { email: '' })
 
@@ -31,22 +35,17 @@ export default function ForgotPasswordPage() {
    */
   if (forgot.isSuccess) {
     return (
-      <AuthLayout title="Cek email kamu">
+      <AuthLayout title={c.sent.title}>
         <Card className="flex flex-col items-center gap-4 p-6 text-center">
           <span className="flex size-11 items-center justify-center rounded-full bg-muted text-secondary-fg">
             <MailCheck className="size-5" />
           </span>
           <p className="text-sm text-secondary-fg">
-            Kalau{' '}
-            <span className="font-medium text-surface-fg">{forgot.variables}</span>{' '}
-            terdaftar, kami sudah mengirim tautan untuk mengatur ulang kata sandi ke
-            sana.
+            <Emphasis text={c.sent.body(forgot.variables)} />
           </p>
-          <p className="text-sm text-muted-fg">
-            Tautannya berlaku 1 jam. Kalau belum masuk juga, cek folder spam.
-          </p>
+          <p className="text-sm text-muted-fg">{c.sent.expiry}</p>
           <Button asChild variant="secondary" size="lg" className="mt-1 w-full">
-            <Link to="/login">Kembali ke halaman masuk</Link>
+            <Link to="/login">{c.sent.backToLogin}</Link>
           </Button>
         </Card>
       </AuthLayout>
@@ -54,10 +53,7 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <AuthLayout
-      title="Lupa kata sandi"
-      subtitle="Kami kirimkan tautan untuk membuat kata sandi baru."
-    >
+    <AuthLayout title={c.title} subtitle={c.subtitle}>
       <Card className="p-6">
         <form
           onSubmit={form.handleSubmit(({ email }) => forgot.mutate(email))}
@@ -73,8 +69,8 @@ export default function ForgotPasswordPage() {
           */}
           <Field
             id="email"
-            label="Email"
-            hint="Alamat yang kamu pakai waktu mendaftar."
+            label={c.email}
+            hint={c.emailHint}
             error={form.errors.email}
           >
             {(a11y) => (
@@ -82,7 +78,7 @@ export default function ForgotPasswordPage() {
                 {...a11y}
                 {...form.field('email')}
                 type="email"
-                placeholder="nama@email.com"
+                placeholder={copy.emailPlaceholder}
                 autoComplete="username"
                 required
                 autoFocus
@@ -99,15 +95,15 @@ export default function ForgotPasswordPage() {
             disabled={forgot.isPending}
             className="mt-2"
           >
-            {forgot.isPending ? 'Mengirim…' : 'Kirim tautan'}
+            {forgot.isPending ? c.submitting : c.submit}
           </Button>
         </form>
       </Card>
 
       <p className="text-center text-sm text-muted-fg">
-        Ingat kata sandinya?{' '}
+        {c.rememberedIt}{' '}
         <Link to="/login" className="font-medium text-surface-fg underline underline-offset-4">
-          Masuk
+          {c.signIn}
         </Link>
       </p>
     </AuthLayout>
