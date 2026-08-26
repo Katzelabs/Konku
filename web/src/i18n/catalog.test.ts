@@ -274,21 +274,42 @@ describe('the boot hint', () => {
   // The first paint's locale has to be answerable synchronously, because an
   // effect runs after the paint and the wrong language is legible. Same shape
   // and same reason as web/public/theme.js (D-086).
+  //
+  // The order inside `bootLocale` is cache → browser → id, which is the
+  // client's half of D-094's account → Accept-Language → id. The browser step
+  // has to be stubbed in every case that is not about it, because jsdom
+  // reports an English navigator and would otherwise make "the fallback" and
+  // "the browser's answer" indistinguishable.
 
-  it('answers Indonesian when nothing is remembered', () => {
-    expect(bootLocale()).toBe('id')
+  /** Run `fn` with `navigator.languages` reporting `tags`. */
+  function withBrowserLanguages<T>(tags: string[], fn: () => T): T {
+    const original = Object.getOwnPropertyDescriptor(navigator, 'languages')
+    Object.defineProperty(navigator, 'languages', {
+      configurable: true,
+      get: () => tags,
+    })
+    try {
+      return fn()
+    } finally {
+      if (original) Object.defineProperty(navigator, 'languages', original)
+      else delete (navigator as unknown as Record<string, unknown>).languages
+    }
+  }
+
+  it('answers Indonesian when nothing is remembered and the browser asks for nothing we have', () => {
+    expect(withBrowserLanguages(['pt-BR', 'ja'], bootLocale)).toBe('id')
   })
 
   it('reads back what was remembered', () => {
     rememberLocale('en')
-    expect(bootLocale()).toBe('en')
+    expect(withBrowserLanguages(['id'], bootLocale)).toBe('en')
   })
 
   it('ignores a stored value that is not a locale', () => {
     // The cache outlives deploys. A locale removed in a later version must not
     // be able to index the catalog from a browser that still has it.
     localStorage.setItem('konku.locale', 'pt-BR')
-    expect(bootLocale()).toBe('id')
+    expect(withBrowserLanguages(['pt-BR'], bootLocale)).toBe('id')
   })
 
   it('survives storage being unavailable', () => {
@@ -299,9 +320,30 @@ describe('the boot hint', () => {
       throw new Error('denied')
     }
     try {
-      expect(bootLocale()).toBe('id')
+      expect(withBrowserLanguages(['pt-BR'], bootLocale)).toBe('id')
     } finally {
       Storage.prototype.getItem = getItem
     }
+  })
+
+  // The browser step (ticket 11 I2). A stranger's first visit has no cache and
+  // no account, so without this their first paint is Indonesian whatever they
+  // asked for — and the correction would arrive after the paint, which is the
+  // one thing this file exists to prevent.
+
+  it('follows the browser when nothing is remembered', () => {
+    expect(withBrowserLanguages(['en-GB', 'en'], bootLocale)).toBe('en')
+    expect(withBrowserLanguages(['id-ID'], bootLocale)).toBe('id')
+  })
+
+  it('takes the first language it has copy for, not the first listed', () => {
+    expect(withBrowserLanguages(['pt-BR', 'ja-JP', 'en-US'], bootLocale)).toBe('en')
+  })
+
+  it('lets the cache outrank the browser, because the account wrote it', () => {
+    // The cache is written by resolution, so by the second visit it carries
+    // the account's own setting — which outranks the browser (D-094).
+    rememberLocale('id')
+    expect(withBrowserLanguages(['en-US'], bootLocale)).toBe('id')
   })
 })

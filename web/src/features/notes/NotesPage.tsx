@@ -17,7 +17,7 @@ import { SelectCheckbox, SelectionBar } from '../../components/ui/selection-bar'
 import { Separator } from '../../components/ui/separator'
 import { Loading } from '../../components/ui/spinner'
 import { useViewMode, ViewToggle, type ViewMode } from '../../components/ui/view-toggle'
-import { humanDay } from '../../lib/date'
+import { useDateFormat } from '../../lib/useDateFormat'
 import { useAutoSelect, usePeekedId, usePeekNavigation } from '../../lib/peek-route'
 import { useSelection } from '../../lib/use-selection'
 import { cn } from '../../lib/utils'
@@ -534,6 +534,7 @@ function NoteItem({
   onOpen,
 }: ItemProps) {
   const domain = useNoteMeta(note, domains)
+  const d = useDateFormat()
   const title = note.title || 'Tanpa judul'
   const row = layout === 'list'
 
@@ -555,7 +556,7 @@ function NoteItem({
   )
 
   const date = (
-    <span className="shrink-0 text-xs text-subtle-fg">{humanDay(note.updatedAt)}</span>
+    <span className="shrink-0 text-xs text-subtle-fg">{d.humanDay(note.updatedAt)}</span>
   )
 
   // Nothing to say on the second line. Rendering it anyway leaves a row of

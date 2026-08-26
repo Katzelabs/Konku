@@ -42,6 +42,11 @@ SELECT * FROM user_settings WHERE user_id = $1;
 -- handler too. Two mechanisms: the handler's version produces an Indonesian
 -- message a person can act on, and the constraint is what makes the claim true
 -- regardless of which caller wrote the row (hard rule 9).
+--
+-- The language is NOT here. It is users.locale (00014), because every
+-- authenticated request needs it and only the auth substrate is reachable from
+-- the query that establishes identity. The settings endpoint writes both in
+-- one transaction (hard rule 3).
 INSERT INTO user_settings (user_id, default_duration_minutes, focus_step_n, rota_enabled)
 VALUES ($1, $2, $3, $4)
 ON CONFLICT (user_id) DO UPDATE
@@ -50,6 +55,19 @@ SET default_duration_minutes = excluded.default_duration_minutes,
     rota_enabled             = excluded.rota_enabled,
     updated_at               = now()
 RETURNING *;
+
+-- name: SetUserLocale :exec
+-- The account's language (00014, ticket 11 I2).
+--
+-- NULL is a value the caller means: it is "follow the browser", the middle
+-- step of D-094's resolution order rather than the absence of an answer. A
+-- COALESCE here would make the setting one-way — somebody who tried English
+-- could never get back to following their browser.
+--
+-- Scoped by id in the WHERE like everything else (hard rule 4). It is the
+-- caller's own row, and saying so in the SQL is what keeps that true when the
+-- next person copies this query for something addressed by a parameter.
+UPDATE users SET locale = $2 WHERE id = $1;
 
 -- name: MarkEmailVerified :exec
 -- Idempotent on purpose: a second click on the same link is a no-op rather
@@ -159,6 +177,14 @@ WHERE user_id = $1 AND id <> $2;
 -- name: GetActiveSession :one
 -- Expiry is enforced here rather than in Go, so an expired session can never
 -- be treated as valid by a caller that forgot to check.
+--
+-- This is also where the account's language comes from, and it is the reason
+-- 00014 put that column on users rather than on user_settings: every
+-- authenticated request needs it (an error message is copy somebody reads),
+-- this is the one query that already runs on every one of them, and it runs
+-- with no app.user_id set — so only the two tables 00006 gives a policy that
+-- permits that are reachable from here. It arrives inside sqlc.embed(users)
+-- and costs nothing.
 SELECT sqlc.embed(auth_sessions), sqlc.embed(users)
 FROM auth_sessions
 JOIN users ON users.id = auth_sessions.user_id

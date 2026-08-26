@@ -9,7 +9,8 @@ import { Notice } from '../../components/ui/notice'
 import { Separator } from '../../components/ui/separator'
 import { LoadMore } from '../../components/ui/load-more'
 import { Loading } from '../../components/ui/spinner'
-import { humanDay, today } from '../../lib/date'
+import { today } from '../../lib/date'
+import { useDateFormat } from '../../lib/useDateFormat'
 import { useCategories } from '../categories/queries'
 import { useDomains } from '../domains/queries'
 import {
@@ -333,9 +334,10 @@ function RunHistory({ setId }: { setId: string }) {
 }
 
 function RunRow({ run }: { run: Run }) {
+  const d = useDateFormat()
   return (
     <li className="flex items-baseline justify-between px-4 py-2.5">
-      <span className="text-sm text-muted-fg">{humanDay(run.startedAt)}</span>
+      <span className="text-sm text-muted-fg">{d.humanDay(run.startedAt)}</span>
       {/*
         A plain ratio, no colour and no pass mark. There is no threshold to
         fall below here — the number is information about what to revisit, not

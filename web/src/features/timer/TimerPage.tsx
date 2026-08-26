@@ -6,7 +6,8 @@ import { DomainDot } from '../../components/ui/badge'
 import { Notice } from '../../components/ui/notice'
 import { PageHeader } from '../../components/ui/page-header'
 import { ToggleGroup, ToggleGroupItem } from '../../components/ui/toggle-group'
-import { clock, timeOfDay } from '../../lib/date'
+import { clock } from '../../lib/date'
+import { useDateFormat } from '../../lib/useDateFormat'
 import { cn } from '../../lib/utils'
 import { useDomains } from '../domains/queries'
 import { SessionLog } from './SessionLog'
@@ -157,8 +158,9 @@ export default function TimerPage() {
  */
 function RunningSummary() {
   const timer = useFocusTimer()
+  const d = useDateFormat()
   const { data: domains } = useDomains()
-  const domain = domains?.find((d) => d.id === timer.domainId)
+  const domain = domains?.find((candidate) => candidate.id === timer.domainId)
 
   return (
     <Card>
@@ -187,7 +189,7 @@ function RunningSummary() {
         {timer.status === 'running' && (
           <Row
             label="Selesai sekitar"
-            value={timeOfDay(new Date(Date.now() + timer.remainingMs).toISOString())}
+            value={d.timeOfDay(new Date(Date.now() + timer.remainingMs).toISOString())}
           />
         )}
       </CardContent>

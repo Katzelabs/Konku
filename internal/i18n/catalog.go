@@ -240,6 +240,11 @@ type SessionsCopy struct {
 type SettingsCopy struct {
 	BadDuration  func(min, max int) string
 	BadFocusStep func(min, max int) string
+	// BadLocale is a locale this build has no catalog for. 00014's CHECK
+	// constraint enforces the same set (hard rule 9); this is the half that
+	// produces a sentence rather than a constraint violation arriving as a
+	// 500. The language names inside it are endonyms and stay untranslated.
+	BadLocale string
 }
 
 type BulkCopy struct {

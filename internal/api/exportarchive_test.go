@@ -169,6 +169,46 @@ func TestExportContainsEveryRowTheAccountOwns(t *testing.T) {
 	}
 }
 
+// The language setting travels with the archive (00014).
+//
+// A preference that silently does not export is a hole in what "you can take
+// everything" means (07 L6, D-096) — and a small one is the kind that
+// survives, because nobody checks the preferences file. The count-based test
+// above cannot catch it: user.json is one object, not a list, so a missing
+// *field* changes nothing it measures.
+//
+// It lands in user.json rather than settings.json because the column is on
+// users (00014's RLS reasoning). The person meets it as a preference either
+// way; what matters here is that it is in the archive at all.
+func TestExportCarriesTheLocale(t *testing.T) {
+	a := newApp(t)
+	c := a.newClient(t)
+
+	body := defaults()
+	body.Locale = ptr("en")
+	res := c.do(http.MethodPatch, "/settings", body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("choosing a language = %d, want 200", res.StatusCode)
+	}
+
+	files := downloadExport(t, c)
+	raw, ok := files["data/user.json"]
+	if !ok {
+		t.Fatal("data/user.json is missing from the archive")
+	}
+
+	var account struct {
+		Locale *string `json:"locale"`
+	}
+	if err := json.Unmarshal(raw, &account); err != nil {
+		t.Fatalf("decoding data/user.json: %v", err)
+	}
+	if account.Locale == nil || *account.Locale != "en" {
+		t.Errorf("the archive's locale = %v, want en: %s", account.Locale, raw)
+	}
+}
+
 // Notes and cards leave as markdown, one file each, including the deleted ones.
 func TestExportWritesNotesAndCardsAsMarkdown(t *testing.T) {
 	a := newApp(t)

@@ -68,7 +68,8 @@ export default function PrivacyPage() {
           supaya kamu bisa mengakhiri sesi yang tidak kamu kenali.
         </li>
         <li>
-          <strong>Pengaturan akun.</strong> Durasi timer, preferensi rotasi domain.
+          <strong>Pengaturan akun.</strong> Durasi timer, preferensi rotasi domain, bahasa
+          yang kamu pilih.
         </li>
       </ul>
 

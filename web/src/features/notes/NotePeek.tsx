@@ -9,7 +9,7 @@ import { Markdown } from '../../components/ui/markdown'
 import { Notice } from '../../components/ui/notice'
 import { PeekPanel, type PeekMode } from '../../components/ui/peek-panel'
 import { Loading } from '../../components/ui/spinner'
-import { humanDay } from '../../lib/date'
+import { useDateFormat } from '../../lib/useDateFormat'
 import { useAllCategories } from '../categories/queries'
 import { useAllDomains } from '../domains/queries'
 import { useDeleteNote, useNote } from './queries'
@@ -33,6 +33,7 @@ export function NotePeek({
   onClose: () => void
 }) {
   const { data: note, isPending, error } = useNote(noteId)
+  const d = useDateFormat()
   const { data: domains } = useAllDomains()
   const { data: categories } = useAllCategories()
   const remove = useDeleteNote()
@@ -58,7 +59,7 @@ export function NotePeek({
               {domain && <DomainBadge color={domain.color} label={domain.label} />}
               <CategoryChips ids={note.categoryIds} categories={categories} />
               <span className="ml-auto text-xs text-subtle-fg">
-                {humanDay(note.updatedAt)}
+                {d.humanDay(note.updatedAt)}
               </span>
             </div>
 

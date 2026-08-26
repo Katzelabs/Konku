@@ -171,6 +171,7 @@ var enCatalog = Catalog{
 		BadFocusStep: func(min, max int) string {
 			return fmt.Sprintf("Progressive focus must be between %d and %d.", min, max)
 		},
+		BadLocale: "That language is not available yet. Choose Bahasa Indonesia or English.",
 	},
 
 	Bulk: BulkCopy{

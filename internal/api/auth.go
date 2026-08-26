@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Katzelabs/Konku/internal/auth"
+	"github.com/Katzelabs/Konku/internal/i18n"
 	"github.com/Katzelabs/Konku/internal/store/gen"
 )
 
@@ -120,7 +121,7 @@ func (s *Server) requireUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cred := credential(r)
 
-		user, err := s.auth.Resolve(r.Context(), cred)
+		user, locale, err := s.auth.Resolve(r.Context(), cred)
 		if err != nil {
 			if !errors.Is(err, auth.ErrNoSession) {
 				writeInternal(w, r, err)
@@ -145,7 +146,14 @@ func (s *Server) requireUser(next http.Handler) http.Handler {
 			info.userID = user.ID.String()
 		}
 
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userCtxKey, user)))
+		// The account's language, layered over what negotiateLocale read out
+		// of Accept-Language. This is the top of D-094's resolution order and
+		// this is the first line of the request where there is an account to
+		// ask — which is why resolution is two middlewares rather than one.
+		// An account that has never chosen leaves the negotiated answer alone.
+		ctx := withAccountLocale(r.Context(), locale)
+
+		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, userCtxKey, user)))
 	})
 }
 
@@ -279,16 +287,39 @@ type userResponse struct {
 	// yet" apart from a broken session. Without it the only signal is a 403 on
 	// the first data request, which reads as a bug.
 	EmailVerified bool `json:"emailVerified"`
+	// Locale is the language this account chose, or **null** when it has
+	// chosen none (00014, ticket 11 I2).
+	//
+	// Null is the important value and is why this is a pointer rather than a
+	// string that could be "". The client resolves its own first paint from
+	// `navigator.language` before React mounts, and null is what tells it that
+	// answer still stands. A "" or a defaulted "id" here would repaint an
+	// English reader's screen into Indonesian the moment /auth/me landed,
+	// which is the D-086 flash with words instead of colours.
+	//
+	// It rides on /auth/me rather than only on /settings because /settings is
+	// behind requireVerified and an unverified account reads screens too — the
+	// "check your mail" screen most of all, which is the one place a new
+	// account can be stuck.
+	Locale *string `json:"locale"`
 }
 
-func toUserResponse(u gen.User) userResponse {
-	return userResponse{
+// toUserResponse renders the account. locale is its stored language choice,
+// which is "" when it has never made one — see userResponse.Locale for why
+// that has to survive as null rather than collapse to a default.
+func toUserResponse(u gen.User, locale i18n.Locale) userResponse {
+	res := userResponse{
 		ID:            u.ID.String(),
 		Email:         u.Email,
 		FirstName:     u.FirstName,
 		LastName:      u.LastName,
 		EmailVerified: u.EmailVerifiedAt != nil,
 	}
+	if i18n.Valid(locale) {
+		s := string(locale)
+		res.Locale = &s
+	}
+	return res
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -353,7 +384,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	s.setSessionCookie(w, sessionID, expires)
-	writeJSON(w, http.StatusOK, toUserResponse(user))
+	// The account's language travels with the login response, because the
+	// client writes that response straight into the cache /auth/me would
+	// otherwise fill — a login that omitted it would leave the app in the
+	// negotiated language until something happened to refetch.
+	//
+	// Free: it is a column on the users row Login already read (00014).
+	writeJSON(w, http.StatusOK, toUserResponse(user, auth.LocaleOf(user)))
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -371,5 +408,8 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, CodeUnauthorized, copyFor(r).Common.NotSignedInShort)
 		return
 	}
-	writeJSON(w, http.StatusOK, toUserResponse(user))
+	// The stored choice, not i18n.FromContext's resolved answer. They differ
+	// exactly when the account has never chosen, and that difference is the
+	// whole value of this field to the client.
+	writeJSON(w, http.StatusOK, toUserResponse(user, accountLocaleFrom(r.Context())))
 }

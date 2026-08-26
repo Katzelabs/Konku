@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { clock, format, humanDate, humanDay, timeOfDay, today } from './date'
+import { clock, dateFormatters, format, today } from './date'
+
+// The Indonesian catalog's labels, passed in rather than imported from `id.ts`
+// so that a test failure names the formatter rather than the copy.
+const ID = dateFormatters('id', { today: 'Hari ini', yesterday: 'Kemarin' })
+const EN = dateFormatters('en', { today: 'Today', yesterday: 'Yesterday' })
 
 // Dates are the thing most likely to be quietly wrong for some users, some of
 // the time — the worst kind of bug, and the reason hard rule 5 exists.
@@ -40,19 +45,19 @@ describe('humanDate', () => {
   it('reads a stored YYYY-MM-DD by its parts, not through Date parsing', () => {
     // new Date('2026-08-09') is specified as UTC midnight, which renders as
     // the 8th west of UTC. Reading the parts by hand is what avoids that.
-    expect(humanDate('2026-08-09', now)).toBe('Hari ini')
-    expect(humanDate('2026-08-08', now)).toBe('Kemarin')
+    expect(ID.humanDate('2026-08-09', now)).toBe('Hari ini')
+    expect(ID.humanDate('2026-08-08', now)).toBe('Kemarin')
   })
 
   it('drops the year within the current year and keeps it otherwise', () => {
-    expect(humanDate('2026-03-02', now)).toBe('2 Mar')
-    expect(humanDate('2025-03-02', now)).toBe('2 Mar 2025')
+    expect(ID.humanDate('2026-03-02', now)).toBe('2 Mar')
+    expect(ID.humanDate('2025-03-02', now)).toBe('2 Mar 2025')
   })
 
   it('returns empty for a malformed date rather than throwing', () => {
-    expect(humanDate('', now)).toBe('')
-    expect(humanDate('not-a-date', now)).toBe('')
-    expect(humanDate('2026-8-9', now)).toBe('')
+    expect(ID.humanDate('', now)).toBe('')
+    expect(ID.humanDate('not-a-date', now)).toBe('')
+    expect(ID.humanDate('2026-8-9', now)).toBe('')
   })
 })
 
@@ -61,22 +66,54 @@ describe('humanDay', () => {
 
   it('labels a late-evening timestamp as today, not yesterday', () => {
     const lastNight = new Date(2026, 7, 9, 23, 15, 0).toISOString()
-    expect(humanDay(lastNight, now)).toBe('Hari ini')
+    expect(ID.humanDay(lastNight, now)).toBe('Hari ini')
   })
 
   it('returns empty for an unparseable timestamp', () => {
-    expect(humanDay('rubbish', now)).toBe('')
+    expect(ID.humanDay('rubbish', now)).toBe('')
   })
 })
 
 describe('timeOfDay', () => {
   it('formats as a local 24-hour clock', () => {
-    expect(timeOfDay(new Date(2026, 7, 9, 9, 5).toISOString())).toBe('09.05')
-    expect(timeOfDay(new Date(2026, 7, 9, 23, 59).toISOString())).toBe('23.59')
+    expect(ID.timeOfDay(new Date(2026, 7, 9, 9, 5).toISOString())).toBe('09.05')
+    expect(ID.timeOfDay(new Date(2026, 7, 9, 23, 59).toISOString())).toBe('23.59')
   })
 
   it('returns empty for an unparseable timestamp', () => {
-    expect(timeOfDay('nope')).toBe('')
+    expect(ID.timeOfDay('nope')).toBe('')
+  })
+
+  it('keeps midnight as 00, not 24', () => {
+    // `hour12: false` is specified to produce h24 in some engines, which
+    // renders midnight as "24.00". hourCycle: 'h23' is what avoids it.
+    expect(ID.timeOfDay(new Date(2026, 7, 9, 0, 0).toISOString())).toBe('00.00')
+  })
+})
+
+// The reason this went through `Intl` rather than staying hand-written
+// (D-094). Every assertion below used to be a hardcoded literal that was
+// correct in Indonesian and merely legible — not obviously broken — in
+// English, which is the kind of wrongness nobody reports.
+describe('the same date in English', () => {
+  const now = new Date(2026, 7, 9, 10, 0, 0)
+
+  it('uses English month names', () => {
+    // 'Agu' in Indonesian, from a hand-written table that had no English half.
+    expect(ID.humanDate('2026-08-02', now)).toBe('2 Agu')
+    expect(EN.humanDate('2026-08-02', now)).toContain('Aug')
+  })
+
+  it('separates the clock with a colon rather than a dot', () => {
+    // Indonesian writes 14.30 and English writes 14:30. The separator was a
+    // literal '.' before this.
+    expect(ID.timeOfDay(new Date(2026, 7, 9, 14, 30).toISOString())).toBe('14.30')
+    expect(EN.timeOfDay(new Date(2026, 7, 9, 14, 30).toISOString())).toBe('14:30')
+  })
+
+  it('takes the relative labels from the catalog it was given', () => {
+    expect(EN.humanDate('2026-08-09', now)).toBe('Today')
+    expect(EN.humanDate('2026-08-08', now)).toBe('Yesterday')
   })
 })
 

@@ -81,6 +81,15 @@ func (s *Server) Routes() http.Handler {
 
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP) // trustworthy because Caddy sits in front
+	// The reader's language (D-094, ticket 11 I2). Above the routes rather
+	// than per-handler for the same reason enforceOrigin is, and above
+	// recoverer on purpose: every response below this line can carry a
+	// sentence somebody reads, and the 500 a panic produces is one of them.
+	//
+	// This is the Accept-Language half. requireUser layers the account's own
+	// setting over it, which is the top of the order — but it can only run
+	// where there is an account, and a signed-out reader gets a language too.
+	r.Use(negotiateLocale)
 	// Order matters: requestLogger is above Recoverer so a panic still
 	// produces a request log line with its status, and both are above the
 	// metrics middleware so a panicked request is counted as the 500 it is.

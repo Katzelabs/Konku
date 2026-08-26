@@ -18,9 +18,17 @@ const n = pluralFor('id')
 export const id: Copy = {
   common: {
     working: 'Sebentar…',
+    today: 'Hari ini',
+    yesterday: 'Kemarin',
   },
 
   settings: {
+    language: {
+      title: 'Bahasa',
+      description: 'Tersimpan di akun, jadi ikut ke perangkat lain.',
+      auto: 'Ikut peramban',
+    },
+
     sessions: {
       title: 'Perangkat yang masuk',
       description: 'Tempat akun ini sedang dipakai. Akhiri yang tidak kamu kenali.',

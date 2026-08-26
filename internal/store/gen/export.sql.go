@@ -637,7 +637,7 @@ func (q *Queries) ExportReviewSets(ctx context.Context, userID uuid.UUID) ([]Exp
 
 const exportUser = `-- name: ExportUser :one
 
-SELECT id, email, first_name, last_name, created_at, email_verified_at
+SELECT id, email, first_name, last_name, created_at, email_verified_at, locale
 FROM users
 WHERE id = $1
 `
@@ -649,6 +649,7 @@ type ExportUserRow struct {
 	LastName        string     `json:"last_name"`
 	CreatedAt       time.Time  `json:"created_at"`
 	EmailVerifiedAt *time.Time `json:"email_verified_at"`
+	Locale          *string    `json:"locale"`
 }
 
 // Everything an account owns (07 L6).
@@ -674,6 +675,14 @@ type ExportUserRow struct {
 // of what "everything we have on you" means (07 L6). Omitting it would make
 // the archive quietly incomplete in exactly the field a reader would check
 // first.
+//
+// locale travels with it (00014). It is presented to the person as a
+// preference, and it lands in user.json rather than settings.json only because
+// of where the column had to live — but rule 2 above applies to preferences
+// exactly as it applies to content: an export that quietly drops what somebody
+// set is not the whole account. NULL is exported as null and means "never
+// chosen", which is a different fact from "chose Indonesian" and is worth the
+// archive keeping straight.
 func (q *Queries) ExportUser(ctx context.Context, id uuid.UUID) (ExportUserRow, error) {
 	row := q.db.QueryRow(ctx, exportUser, id)
 	var i ExportUserRow
@@ -684,6 +693,7 @@ func (q *Queries) ExportUser(ctx context.Context, id uuid.UUID) (ExportUserRow, 
 		&i.LastName,
 		&i.CreatedAt,
 		&i.EmailVerifiedAt,
+		&i.Locale,
 	)
 	return i, err
 }
