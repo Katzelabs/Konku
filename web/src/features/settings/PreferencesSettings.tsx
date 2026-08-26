@@ -41,8 +41,8 @@ export default function PreferencesSettings() {
 
   return (
     <SettingsSection
-      title="Preferensi"
-      description="Tersimpan di akun, jadi ikut ke perangkat lain. Tema diatur terpisah di Tampilan karena itu milik perangkat ini."
+      title={c.settings.preferences.title}
+      description={c.settings.preferences.description}
     >
       {/*
         Language sits above the timer default because it is the setting that
@@ -87,20 +87,17 @@ export default function PreferencesSettings() {
 
       <Card className="flex flex-col gap-3 p-5">
         <div className="flex flex-col gap-1">
-          <p className="text-sm font-medium text-card-fg">Durasi fokus default</p>
+          <p className="text-sm font-medium text-card-fg">
+            {c.settings.preferences.focusDuration.title}
+          </p>
           <p className="text-sm text-muted-fg">
-            Timer terbuka dengan durasi ini. Kamu tetap bisa menggantinya sebelum
-            memulai sesi.
+            {c.settings.preferences.focusDuration.description}
           </p>
         </div>
 
-        {isPending && <Loading label="Memuat preferensi…" />}
+        {isPending && <Loading label={c.settings.preferences.loading} />}
 
-        {isError && (
-          <Notice role="alert">
-            Pengaturan belum bisa dimuat. Coba muat ulang halaman ini ya.
-          </Notice>
-        )}
+        {isError && <Notice role="alert">{c.settings.preferences.loadError}</Notice>}
 
         {settings && (
           <ToggleGroup>
@@ -111,7 +108,7 @@ export default function PreferencesSettings() {
                 disabled={update.isPending}
                 onClick={() => update.mutate({ ...settings, defaultDurationMinutes: minutes })}
               >
-                {minutes} menit
+                {c.settings.preferences.focusDuration.minutes(minutes)}
               </ToggleGroupItem>
             ))}
           </ToggleGroup>

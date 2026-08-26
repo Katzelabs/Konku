@@ -9,6 +9,7 @@ import {
   UserRound,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import type { SettingsCopy } from '../../i18n/areas/settings/types'
 
 /**
  * The settings destinations, in one place so the rail, the phone tab strip and
@@ -26,44 +27,67 @@ import type { LucideIcon } from 'lucide-react'
  * breaking those links to make the paths tidier would be a cost with no
  * benefit. They render inside the settings shell all the same, which is what
  * the pathless layout route in `App.tsx` is for.
+ *
+ * ── A label is copy, and this is a data file (ticket 11 I5) ─────────────────
+ *
+ * So the words left. What stayed is the part that does not translate: the
+ * routes, the icons, the grouping and the order. A label is now a *selector*
+ * over `SettingsCopy` rather than a string, which keeps this module a plain
+ * constant — read at import time by three different renderers — while making
+ * every reader resolve the word against the locale it is rendering in.
+ *
+ * The alternative was a hook returning the built list, and it was rejected:
+ * `settingsItemFor` is called from `crumbsFor`, which is not a component and
+ * has no business becoming one, and `SettingsLayout.test.tsx` iterates the
+ * list outside React entirely.
+ *
+ * Two of the eight labels name screens this feature does not own. They are
+ * `settings.nav.*` all the same, because the rail is settings' surface and one
+ * catalog area may not reach into another's directory.
  */
 export interface SettingsNavItem {
   to: string
-  label: string
+  /**
+   * The rail's word for this destination, resolved against a catalog. Not the
+   * heading of the screen it opens: two of these already differ from it, and
+   * the pairs that currently match are still free to stop matching.
+   */
+  label: (c: SettingsCopy) => string
   icon: LucideIcon
 }
 
 export interface SettingsNavGroup {
-  label: string
+  /** Shown above the group in the desktop rail. The phone strip is flat. */
+  label: (c: SettingsCopy) => string
   items: SettingsNavItem[]
 }
 
 export const SETTINGS_NAV: SettingsNavGroup[] = [
   {
-    label: 'Akun',
+    label: (c) => c.nav.groups.account,
     items: [
-      { to: '/settings/akun', label: 'Profil', icon: UserRound },
-      { to: '/settings/perangkat', label: 'Perangkat', icon: MonitorSmartphone },
+      { to: '/settings/akun', label: (c) => c.nav.profile, icon: UserRound },
+      { to: '/settings/perangkat', label: (c) => c.nav.devices, icon: MonitorSmartphone },
     ],
   },
   {
-    label: 'Label',
+    label: (c) => c.nav.groups.labels,
     items: [
-      { to: '/domains', label: 'Domain', icon: Tags },
-      { to: '/categories', label: 'Kategori', icon: Shapes },
+      { to: '/domains', label: (c) => c.nav.domains, icon: Tags },
+      { to: '/categories', label: (c) => c.nav.categories, icon: Shapes },
     ],
   },
   {
-    label: 'Aplikasi',
+    label: (c) => c.nav.groups.app,
     items: [
       // Preferensi before Tampilan: one is stored on the account and travels,
       // the other is stored on this device and does not. The screens say so,
       // and the order puts the account-level one first for the same reason the
       // Akun group is at the top.
-      { to: '/settings/preferensi', label: 'Preferensi', icon: SlidersHorizontal },
-      { to: '/settings/tampilan', label: 'Tampilan', icon: Palette },
-      { to: '/settings/data', label: 'Data & privasi', icon: Database },
-      { to: '/settings/tentang', label: 'Tentang', icon: Info },
+      { to: '/settings/preferensi', label: (c) => c.nav.preferences, icon: SlidersHorizontal },
+      { to: '/settings/tampilan', label: (c) => c.nav.appearance, icon: Palette },
+      { to: '/settings/data', label: (c) => c.nav.data, icon: Database },
+      { to: '/settings/tentang', label: (c) => c.nav.about, icon: Info },
     ],
   },
 ]

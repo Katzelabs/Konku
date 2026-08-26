@@ -1,6 +1,7 @@
 import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
+import { id } from '../../i18n/id'
 import SettingsLayout from './SettingsLayout'
 import { SETTINGS_ITEMS } from './nav'
 
@@ -48,8 +49,10 @@ describe('SettingsLayout', () => {
     // through a screen you did not want.
     renderAt('/settings/tampilan')
 
+    // No provider is rendered, so `useCopy()` returns the default locale —
+    // Indonesian, which is the source language and the fallback (hard rule 8).
     for (const item of SETTINGS_ITEMS) {
-      const links = screen.getAllByRole('link', { name: item.label })
+      const links = screen.getAllByRole('link', { name: item.label(id.settings) })
       // Two — the desktop rail and the phone strip. Both are in the DOM at
       // once; which one is visible is a media query's business.
       expect(links.length).toBeGreaterThan(0)

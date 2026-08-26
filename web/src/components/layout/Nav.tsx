@@ -7,6 +7,7 @@ import {
   Settings,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { copyFor, DEFAULT_LOCALE, type Copy } from '../../i18n'
 import { settingsItemFor } from '../../features/settings/nav'
 
 /**
@@ -101,12 +102,24 @@ const TRAIL: { match: RegExp; crumbs: Crumb[] }[] = [
  * time one is renamed. The section name comes from that list instead, appended
  * to the Pengaturan crumb the table already supplies. Domain and Kategori are
  * still spelled out above because their URLs are not under `/settings`.
+ *
+ * `copy` is what resolves that section name, because a settings nav label is a
+ * catalog entry now (ticket 11 I5). It is defaulted rather than required: this
+ * file's own crumbs are still Indonesian literals awaiting their own slice, so
+ * a caller that has not got a catalog is no worse off than it was, and a
+ * caller that has gets the one crumb that is already translated.
  */
-export function crumbsFor(pathname: string): Crumb[] {
+export function crumbsFor(
+  pathname: string,
+  copy: Copy = copyFor(DEFAULT_LOCALE),
+): Crumb[] {
   const crumbs = TRAIL.find((t) => t.match.test(pathname))?.crumbs ?? []
   if (!pathname.startsWith('/settings/')) return crumbs
 
   const section = settingsItemFor(pathname)
   if (!section) return crumbs
-  return [{ label: 'Pengaturan', to: '/settings' }, { label: section.label }]
+  return [
+    { label: 'Pengaturan', to: '/settings' },
+    { label: section.label(copy.settings) },
+  ]
 }

@@ -14,6 +14,7 @@ import {
 import { Field } from '../../components/ui/field'
 import { Notice } from '../../components/ui/notice'
 import { PasswordInput } from '../../components/ui/password-input'
+import { useCopy } from '../../i18n'
 import { useZodForm } from '../../lib/useZodForm'
 import { MIN_PASSWORD, changePasswordSchema } from '../auth/schemas'
 import { useChangePassword } from '../auth/useAuth'
@@ -38,6 +39,8 @@ import { SettingsRow } from './SettingsSection'
 export function ChangePassword() {
   const [open, setOpen] = useState(false)
   const change = useChangePassword()
+  const copy = useCopy()
+  const c = copy.settings.password
 
   const form = useZodForm(changePasswordSchema, {
     currentPassword: '',
@@ -59,12 +62,12 @@ export function ChangePassword() {
     <>
       <Card className="p-5">
         <SettingsRow
-          title="Ubah kata sandi"
-          description="Perangkat lain yang sedang masuk akan dikeluarkan. Perangkat ini tetap masuk."
+          title={c.title}
+          description={c.rowDescription}
           action={
             <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
               <KeyRound />
-              Ubah
+              {c.action}
             </Button>
           }
         />
@@ -90,17 +93,14 @@ export function ChangePassword() {
             noValidate
           >
             <DialogHeader>
-              <DialogTitle>Ubah kata sandi</DialogTitle>
-              <DialogDescription>
-                Masukkan kata sandi saat ini, lalu kata sandi barunya. Setelah diganti,
-                perangkat lain yang sedang masuk akan dikeluarkan.
-              </DialogDescription>
+              <DialogTitle>{c.title}</DialogTitle>
+              <DialogDescription>{c.dialogDescription}</DialogDescription>
             </DialogHeader>
 
             <DialogBody className="flex flex-col gap-4">
               <Field
                 id="currentPassword"
-                label="Kata sandi saat ini"
+                label={c.currentLabel}
                 error={form.errors.currentPassword}
               >
                 {(a11y) => (
@@ -116,9 +116,9 @@ export function ChangePassword() {
 
               <Field
                 id="password"
-                label="Kata sandi baru"
+                label={c.newLabel}
                 error={form.errors.password}
-                hint={`Minimal ${MIN_PASSWORD} karakter. Kalimat yang panjang lebih aman dan lebih mudah diingat.`}
+                hint={c.newHint(MIN_PASSWORD)}
               >
                 {(a11y) => (
                   <PasswordInput
@@ -132,14 +132,14 @@ export function ChangePassword() {
 
               <Field
                 id="confirmPassword"
-                label="Ulangi kata sandi baru"
+                label={c.confirmLabel}
                 error={form.errors.confirmPassword}
               >
                 {(a11y) => (
                   <PasswordInput
                     {...a11y}
                     {...form.field('confirmPassword')}
-                    placeholder="Ketik lagi kata sandi di atas"
+                    placeholder={c.confirmPlaceholder}
                     autoComplete="new-password"
                     required
                   />
@@ -156,10 +156,10 @@ export function ChangePassword() {
                 onClick={() => onOpenChange(false)}
                 disabled={change.isPending}
               >
-                Batal
+                {copy.settings.cancel}
               </Button>
               <Button type="submit" variant="primary" disabled={change.isPending}>
-                {change.isPending ? 'Menyimpan…' : 'Simpan kata sandi'}
+                {change.isPending ? c.saving : c.save}
               </Button>
             </DialogFooter>
           </form>

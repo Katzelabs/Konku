@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useCopy } from '../../i18n'
 import { cn } from '../../lib/utils'
 
 /**
@@ -81,7 +82,7 @@ export function SettingsRow({
 export function SettingsField({
   label,
   value,
-  empty = 'Belum diisi',
+  empty,
 }: {
   label: string
   value: string
@@ -89,9 +90,15 @@ export function SettingsField({
    * Shown when there is no value. Blank rather than the address repeated under
    * a label that says Nama: an account created before signup asked for one
    * genuinely has no name, and saying so is more honest than filling the gap.
+   *
+   * Left undefined it reads `settings.field.empty` from the catalog. It stayed
+   * overridable because the Email row passes an em dash — a placeholder that
+   * is deliberately not a sentence, and so not copy (11 I5).
    */
   empty?: string
 }) {
+  const fallback = useCopy().settings.field.empty
+
   return (
     <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-4">
       <dt className="w-28 shrink-0 text-xs font-medium text-muted-fg">{label}</dt>
@@ -101,7 +108,7 @@ export function SettingsField({
           value ? 'text-card-fg' : 'text-subtle-fg italic',
         )}
       >
-        {value || empty}
+        {value || empty || fallback}
       </dd>
     </div>
   )

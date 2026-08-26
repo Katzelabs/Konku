@@ -3,6 +3,7 @@ import { Avatar } from '../../components/ui/avatar'
 import { Button } from '../../components/ui/button'
 import { Card } from '../../components/ui/card'
 import { Separator } from '../../components/ui/separator'
+import { useCopy } from '../../i18n'
 import { displayName, initialsFor } from '../auth/displayName'
 import { useLogout, useMe } from '../auth/useAuth'
 import { ChangePassword } from './ChangePassword'
@@ -21,6 +22,7 @@ import { SettingsField, SettingsRow, SettingsSection } from './SettingsSection'
 export default function AccountSettings() {
   const { data: user } = useMe()
   const logout = useLogout()
+  const c = useCopy().settings.account
 
   /*
    * `displayName` falls back to the address, so an account with no name has
@@ -32,10 +34,7 @@ export default function AccountSettings() {
   const named = user ? displayName(user) !== user.email : false
 
   return (
-    <SettingsSection
-      title="Profil"
-      description="Akun ini dan kata sandinya. Nama dan email belum bisa diubah dari sini."
-    >
+    <SettingsSection title={c.title} description={c.description}>
       <Card className="flex flex-col gap-5 p-5">
         {user && (
           <div className="flex items-center gap-3">
@@ -45,7 +44,7 @@ export default function AccountSettings() {
                 {displayName(user)}
               </p>
               <p className="text-xs text-muted-fg">
-                {user.emailVerified ? 'Email terverifikasi' : 'Email belum diverifikasi'}
+                {user.emailVerified ? c.emailVerified : c.emailUnverified}
               </p>
             </div>
           </div>
@@ -55,10 +54,11 @@ export default function AccountSettings() {
 
         <dl className="flex flex-col gap-3">
           <SettingsField
-            label="Nama"
+            label={c.nameLabel}
             value={user ? [user.firstName, user.lastName].filter(Boolean).join(' ') : ''}
           />
-          {named && <SettingsField label="Email" value={user?.email ?? ''} empty="—" />}
+          {/* An em dash rather than a sentence, so it is not copy. */}
+          {named && <SettingsField label={c.emailLabel} value={user?.email ?? ''} empty="—" />}
         </dl>
       </Card>
 
@@ -88,8 +88,8 @@ export default function AccountSettings() {
       */}
       <Card className="border-destructive/25 p-5">
         <SettingsRow
-          title="Keluar dari perangkat ini"
-          description="Sesi di perangkat ini diakhiri. Perangkat lain tetap masuk, dan kamu bisa masuk lagi kapan saja."
+          title={c.signOut.title}
+          description={c.signOut.description}
           action={
             <Button
               variant="destructive-outline"
@@ -98,7 +98,7 @@ export default function AccountSettings() {
               disabled={logout.isPending}
             >
               <LogOut />
-              Keluar
+              {c.signOut.action}
             </Button>
           }
         />

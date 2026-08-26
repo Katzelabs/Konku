@@ -14,6 +14,7 @@ import {
 import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
 import { Notice } from '../../components/ui/notice'
+import { useCopy } from '../../i18n'
 import { useDeleteAccount } from '../auth/useAuth'
 import { SettingsRow } from './SettingsSection'
 
@@ -37,6 +38,8 @@ export function DeleteAccount() {
   const [open, setOpen] = useState(false)
   const [password, setPassword] = useState('')
   const del = useDeleteAccount()
+  const copy = useCopy()
+  const c = copy.settings.delete
 
   function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -74,7 +77,7 @@ export function DeleteAccount() {
           title={
             <span className="flex items-center gap-2 text-destructive-ink">
               <AlertTriangle className="size-4 shrink-0" aria-hidden />
-              Hapus akun ini secara permanen
+              {c.rowTitle}
             </span>
           }
           description={
@@ -84,15 +87,12 @@ export function DeleteAccount() {
               4.43:1 at 12px — just under AA, and this is the one line on the
               screen that says the thing cannot be undone.
             */
-            <span className="text-secondary-fg">
-              Semua catatan, kartu, dan riwayat review ikut terhapus. Tidak bisa
-              dikembalikan.
-            </span>
+            <span className="text-secondary-fg">{c.rowDescription}</span>
           }
           action={
             <Button variant="destructive" size="sm" onClick={() => setOpen(true)}>
               <Trash2 />
-              Hapus akun
+              {c.action}
             </Button>
           }
         />
@@ -102,11 +102,8 @@ export function DeleteAccount() {
         <DialogContent className="max-w-md">
           <form onSubmit={onSubmit}>
             <DialogHeader>
-              <DialogTitle>Hapus akun</DialogTitle>
-              <DialogDescription>
-                Catatan, kartu, jadwal ulang, riwayat ulangan, sesi fokus, dan latihan
-                kamu akan dihapus permanen. Ini tidak bisa dibatalkan.
-              </DialogDescription>
+              <DialogTitle>{c.title}</DialogTitle>
+              <DialogDescription>{c.dialogDescription}</DialogDescription>
             </DialogHeader>
 
             <DialogBody className="flex flex-col gap-4">
@@ -115,21 +112,17 @@ export function DeleteAccount() {
                 who has decided to leave will not go hunting for it first.
               */}
               <Card className="flex items-center justify-between gap-3 p-4">
-                <p className="text-sm text-secondary-fg">
-                  Mau simpan salinannya dulu?
-                </p>
+                <p className="text-sm text-secondary-fg">{c.exportPrompt}</p>
                 <Button asChild variant="secondary" size="sm">
                   <a href="/api/export" download>
                     <Download />
-                    Unduh
+                    {copy.settings.export.action}
                   </a>
                 </Button>
               </Card>
 
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="delete-password">
-                  Masukkan kata sandi untuk mengonfirmasi
-                </Label>
+                <Label htmlFor="delete-password">{c.passwordLabel}</Label>
                 <Input
                   id="delete-password"
                   type="password"
@@ -150,10 +143,10 @@ export function DeleteAccount() {
                 onClick={() => onOpenChange(false)}
                 disabled={del.isPending}
               >
-                Batal
+                {copy.settings.cancel}
               </Button>
               <Button type="submit" variant="destructive" disabled={del.isPending}>
-                {del.isPending ? 'Menghapus…' : 'Hapus akun saya'}
+                {del.isPending ? c.deleting : c.confirm}
               </Button>
             </DialogFooter>
           </form>

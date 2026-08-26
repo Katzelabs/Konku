@@ -1,6 +1,7 @@
 import { Monitor, Moon, Sun } from 'lucide-react'
 import { Card } from '../../components/ui/card'
 import { ToggleGroup, ToggleGroupItem } from '../../components/ui/toggle-group'
+import { useCopy, type Copy } from '../../i18n'
 import { SettingsSection } from './SettingsSection'
 import { useTheme, type Theme } from './useTheme'
 
@@ -20,14 +21,13 @@ import { useTheme, type Theme } from './useTheme'
  */
 export default function AppearanceSettings() {
   const { theme, setTheme } = useTheme()
+  const copy = useCopy()
+  const c = copy.settings.appearance
 
   return (
-    <SettingsSection
-      title="Tampilan"
-      description="Tersimpan di perangkat ini, bukan di akun. Perangkat lain tidak ikut berubah."
-    >
+    <SettingsSection title={c.title} description={c.description}>
       <Card className="flex flex-col gap-3 p-5">
-        <p className="text-sm font-medium text-card-fg">Tema</p>
+        <p className="text-sm font-medium text-card-fg">{c.themeLabel}</p>
         <ToggleGroup>
           {THEMES.map(({ value, label, icon: Icon }) => (
             <ToggleGroupItem
@@ -37,7 +37,7 @@ export default function AppearanceSettings() {
               className="inline-flex items-center gap-2"
             >
               <Icon className="size-4" />
-              {label}
+              {label(copy)}
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
@@ -46,8 +46,14 @@ export default function AppearanceSettings() {
   )
 }
 
-const THEMES: { value: Theme; label: string; icon: typeof Sun }[] = [
-  { value: 'light', label: 'Terang', icon: Sun },
-  { value: 'dark', label: 'Gelap', icon: Moon },
-  { value: 'system', label: 'Ikut sistem', icon: Monitor },
+/**
+ * The three options, in order. A module-level table rather than three inlined
+ * items, so the value, the word and the icon stay together — and the word is a
+ * selector over the catalog for the same reason `nav.ts` uses one: a table at
+ * module scope is built once, before any locale exists (11 I5).
+ */
+const THEMES: { value: Theme; label: (c: Copy) => string; icon: typeof Sun }[] = [
+  { value: 'light', label: (c) => c.settings.appearance.themes.light, icon: Sun },
+  { value: 'dark', label: (c) => c.settings.appearance.themes.dark, icon: Moon },
+  { value: 'system', label: (c) => c.settings.appearance.themes.system, icon: Monitor },
 ]

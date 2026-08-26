@@ -11,6 +11,7 @@ import {
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { displayName, initialsFor } from '../../features/auth/displayName'
 import type { User } from '../../features/auth/useAuth'
+import { useCopy } from '../../i18n'
 import { Avatar } from '../ui/avatar'
 import {
   DropdownMenu,
@@ -83,7 +84,8 @@ function BrandMark() {
 
 function Breadcrumbs() {
   const { pathname } = useLocation()
-  const crumbs = crumbsFor(pathname)
+  const copy = useCopy()
+  const crumbs = crumbsFor(pathname, copy)
 
   return (
     <nav aria-label="Breadcrumb" className="hidden min-w-0 items-center gap-1.5 text-sm md:flex">
