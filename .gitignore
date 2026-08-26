@@ -29,3 +29,8 @@ web/test-results-dev-proxy/
 web/playwright-report-dev-proxy/
 web/blob-report/
 web/.playwright/
+
+# Agent worktrees. Each is a full checkout of this repository, created by
+# background agents and removed when they are done. Committing one would
+# commit the repo into itself.
+.claude/worktrees/
