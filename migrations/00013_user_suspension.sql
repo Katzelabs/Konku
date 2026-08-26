@@ -12,7 +12,7 @@
 --
 -- Deliberately NOT the deleted_at that 00009 removed. Suspension is reversible
 -- and holds nothing: the rows stay, the address stays claimed, and
--- `konku suspend-user -unsuspend` puts the account back exactly as it was.
+-- `konku suspend-user -undo` puts the account back exactly as it was.
 -- Deletion means deletion, and it is still a different endpoint (07 L7).
 
 -- +goose Up
