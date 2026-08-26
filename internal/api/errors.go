@@ -4,13 +4,17 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+
+	"github.com/Katzelabs/Konku/internal/i18n"
 )
 
 // One error shape from every endpoint, so the React client has a single error
 // path instead of per-endpoint special cases (D-040).
 //
-// Code is stable and machine-readable — the client branches on it.
-// Message is user-facing and therefore in Bahasa Indonesia.
+// Code is stable, machine-readable and language-independent — the client
+// branches on it, and so do the tests. Message is user-facing and is written in
+// the reader's language (D-094, ticket 11 I3). That split is what makes
+// localising the message safe: nothing anywhere keys on a sentence.
 type errorBody struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
@@ -50,6 +54,23 @@ const (
 	CodeAccountSuspended = "account_suspended"
 )
 
+// copyFor returns the message catalog for this request's locale.
+//
+// Locale resolution — account setting, then Accept-Language, then Indonesian —
+// is ticket 11 I2's middleware, and it publishes the answer on the request
+// context. This is the only place in the package that asks for it, so a handler
+// reads as `copyFor(r).Domains.Unknown` and never has to know how the question
+// was decided. It never fails and never returns nil (see internal/i18n).
+//
+// Named after `copyFor` in `web/src/i18n/index.tsx`, which does the same job on
+// the other side of the wire.
+//
+// This is why the validators below it take an *http.Request they otherwise
+// have no use for: a message is now a function of who is reading it.
+func copyFor(r *http.Request) *i18n.Catalog {
+	return i18n.For(i18n.FromContext(r.Context()))
+}
+
 // maxRequestBody bounds every JSON body. A note is markdown typed by a human;
 // a megabyte is already far past anything real, and the parser should never be
 // handed an unbounded document.
@@ -59,7 +80,7 @@ const maxRequestBody = 1 << 20
 // as a straight line. It reports whether decoding succeeded.
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBody)).Decode(dst); err != nil {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Permintaan tidak valid.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Common.BadRequest)
 		return false
 	}
 	return true
@@ -107,11 +128,14 @@ func writeInternal(w http.ResponseWriter, r *http.Request, err error) {
 	// line, an event and the user's screenshot all name each other (D-062).
 	reportError(r, err, id)
 
-	msg := "Terjadi kesalahan di server. Coba lagi sebentar lagi."
+	// The code is shown so a screenshot is actionable. It is a random opaque
+	// token — it identifies the request, not the person (rule 10). Two leaves
+	// rather than one plus a concatenation, so neither language has to carry
+	// the branch and neither can punctuate it wrongly.
+	c := copyFor(r)
+	msg := c.Common.ServerError
 	if id != "" {
-		// Shown so a screenshot is actionable. It is a random opaque token —
-		// it identifies the request, not the person (rule 10).
-		msg += " Kode: " + id
+		msg = c.Common.ServerErrorWithCode(id)
 	}
 	writeError(w, http.StatusInternalServerError, CodeInternal, msg)
 }
@@ -120,6 +144,6 @@ func writeInternal(w http.ResponseWriter, r *http.Request, err error) {
 // user. Scoping happens in the WHERE clause, so "not yours" and "not there"
 // are indistinguishable and the API cannot be used to probe for other users'
 // data (D-039).
-func writeNotFound(w http.ResponseWriter) {
-	writeError(w, http.StatusNotFound, CodeNotFound, "Tidak ditemukan.")
+func writeNotFound(w http.ResponseWriter, r *http.Request) {
+	writeError(w, http.StatusNotFound, CodeNotFound, copyFor(r).Common.NotFound)
 }

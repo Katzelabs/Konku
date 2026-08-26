@@ -115,7 +115,7 @@ func (s *Server) handleCardAnswer(w http.ResponseWriter, r *http.Request) {
 		})
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 	if err != nil {
@@ -146,7 +146,7 @@ func (s *Server) handleRate(w http.ResponseWriter, r *http.Request) {
 	}
 	rating := srs.Rating(req.Rating)
 	if rating != srs.Ingat && rating != srs.Lupa {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Penilaian harus 'ingat' atau 'lupa'.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Review.BadRating)
 		return
 	}
 
@@ -197,7 +197,7 @@ func (s *Server) handleRate(w http.ResponseWriter, r *http.Request) {
 		return err
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 	if err != nil {
@@ -231,7 +231,7 @@ func intervalDays(s srs.Schedule) int32 {
 func cardParam(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	cardID, err := uuid.Parse(chi.URLParam(r, "cardID"))
 	if err != nil {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return uuid.UUID{}, false
 	}
 	return cardID, true

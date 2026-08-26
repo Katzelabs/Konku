@@ -60,8 +60,13 @@ func spaHandler(dist fs.FS) http.HandlerFunc {
 		if err != nil {
 			// The frontend has never been built. Only reachable in dev, where
 			// Vite serves the app on :5173 and proxies /api here.
+			//
+			// The one message in this package that is not in the catalog, and
+			// English rather than Indonesian: it is addressed to whoever just
+			// ran `go run ./cmd/konku`, not to a user, and hard rule 8 keeps
+			// developer output English. `copy_test.go` exempts it by name.
 			writeError(w, http.StatusNotFound, CodeNotFound,
-				"Frontend belum di-build. Jalankan `make dev` atau `make build`.")
+				"The frontend has not been built. Run `make dev` or `make build`.")
 			return
 		}
 

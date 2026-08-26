@@ -153,7 +153,7 @@ func (s *Server) handleCreateCard(w http.ResponseWriter, r *http.Request) {
 
 	front := strings.TrimSpace(deref(req.Front))
 	back := strings.TrimSpace(deref(req.Back))
-	if !validCard(w, front, back) {
+	if !validCard(w, r, front, back) {
 		return
 	}
 	if !s.withinCardQuota(w, r, user.ID) {
@@ -196,7 +196,7 @@ func (s *Server) handleGetCard(w http.ResponseWriter, r *http.Request) {
 		return q.GetCard(r.Context(), gen.GetCardParams{ID: id, UserID: user.ID})
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 	if err != nil {
@@ -231,7 +231,7 @@ func (s *Server) handleUpdateCard(w http.ResponseWriter, r *http.Request) {
 		return q.GetCard(r.Context(), gen.GetCardParams{ID: id, UserID: user.ID})
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 	if err != nil {
@@ -271,13 +271,13 @@ func (s *Server) handleUpdateCard(w http.ResponseWriter, r *http.Request) {
 		in.CategoryIDs = categoryIDs
 	}
 
-	if !validCard(w, in.Front, in.Back) {
+	if !validCard(w, r, in.Front, in.Back) {
 		return
 	}
 
 	card, err := s.store.UpdateCard(r.Context(), user.ID, id, in)
 	if errors.Is(err, store.ErrCardNotFound) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 	if err != nil {
@@ -300,7 +300,7 @@ func (s *Server) handleDeleteCard(w http.ResponseWriter, r *http.Request) {
 
 	err := s.store.DeleteCard(r.Context(), user.ID, id)
 	if errors.Is(err, store.ErrCardNotFound) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 	if err != nil {
@@ -321,7 +321,7 @@ func (s *Server) handleRestoreCard(w http.ResponseWriter, r *http.Request) {
 
 	err := s.store.RestoreCard(r.Context(), user.ID, id)
 	if errors.Is(err, store.ErrCardNotFound) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 	if err != nil {
@@ -394,17 +394,17 @@ func (s *Server) cardCategoryIDs(w http.ResponseWriter, r *http.Request, cardID 
 // validCard requires both sides. A card with no answer cannot be reviewed —
 // it would surface in the due list forever and never teach anything — and one
 // with no prompt cannot be asked.
-func validCard(w http.ResponseWriter, front, back string) bool {
+func validCard(w http.ResponseWriter, r *http.Request, front, back string) bool {
 	if front == "" {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Pertanyaan tidak boleh kosong.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Cards.FrontEmpty)
 		return false
 	}
 	if back == "" {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Jawaban tidak boleh kosong.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Cards.BackEmpty)
 		return false
 	}
 	if len(front) > maxCardSideLen || len(back) > maxCardSideLen {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Kartu terlalu panjang.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Cards.TooLong)
 		return false
 	}
 	return true
@@ -417,7 +417,7 @@ func validCard(w http.ResponseWriter, front, back string) bool {
 func idParam(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return uuid.UUID{}, false
 	}
 	return id, true

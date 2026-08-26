@@ -21,7 +21,7 @@ import (
 func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	user, ok := UserFrom(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, CodeUnauthorized, "Kamu belum masuk.")
+		writeError(w, http.StatusUnauthorized, CodeUnauthorized, copyFor(r).Common.NotSignedIn)
 		return
 	}
 
@@ -33,8 +33,7 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 			// only that something is wrong — a dead end here is worse than
 			// elsewhere, because the person may be trying to leave.
 			writeError(w, http.StatusRequestEntityTooLarge, CodeBadRequest,
-				"Arsip kamu terlalu besar untuk dibuat sekaligus. "+
-					"Hubungi pengelola supaya ekspornya bisa dibagi.")
+				copyFor(r).Account.ExportTooLarge)
 			return
 		}
 		writeInternal(w, r, err)

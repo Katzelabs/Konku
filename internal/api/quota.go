@@ -1,17 +1,23 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/Katzelabs/Konku/internal/config"
+	"github.com/Katzelabs/Konku/internal/i18n"
 	"github.com/Katzelabs/Konku/internal/store/gen"
 )
+
+// message picks one string out of a request's catalog.
+//
+// A middleware configured once at wiring time cannot hold a sentence, because
+// at wiring time nobody knows who will read it. It can hold the *name* of one,
+// and a func over the catalog is what a name looks like when the compiler is
+// still allowed to check it.
+type message func(*i18n.Catalog) string
 
 // Per-account limits (07 L8).
 //
@@ -119,9 +125,9 @@ const (
 // The message names the limit rather than just refusing. "Terlalu banyak" with
 // no number is a dead end: the person cannot tell whether they have hit a bug,
 // a bad request, or a rule — and cannot act on any of the three.
-func (s *Server) rejectQuota(w http.ResponseWriter, kind quotaKind, message string) {
+func (s *Server) rejectQuota(w http.ResponseWriter, kind quotaKind, msg string) {
 	s.metrics.quotaRejected(string(kind))
-	writeError(w, http.StatusTooManyRequests, CodeRateLimited, message)
+	writeError(w, http.StatusTooManyRequests, CodeRateLimited, msg)
 }
 
 // withinNoteQuota reports whether another note may be created, answering the
@@ -135,10 +141,7 @@ func (s *Server) withinNoteQuota(w http.ResponseWriter, r *http.Request, userID 
 		return false
 	}
 	if int(n) >= s.maxNotes() {
-		s.rejectQuota(w, quotaNotes, fmt.Sprintf(
-			"Kamu sudah punya %s catatan, batas maksimum untuk satu akun. "+
-				"Hapus beberapa yang tidak terpakai untuk menulis lagi.",
-			thousands(s.maxNotes())))
+		s.rejectQuota(w, quotaNotes, copyFor(r).Quota.Notes(s.maxNotes()))
 		return false
 	}
 	return true
@@ -154,10 +157,7 @@ func (s *Server) withinCardQuota(w http.ResponseWriter, r *http.Request, userID 
 		return false
 	}
 	if int(n) >= s.maxCards() {
-		s.rejectQuota(w, quotaCards, fmt.Sprintf(
-			"Kamu sudah punya %s kartu, batas maksimum untuk satu akun. "+
-				"Hapus beberapa yang tidak terpakai untuk membuat kartu lagi.",
-			thousands(s.maxCards())))
+		s.rejectQuota(w, quotaCards, copyFor(r).Quota.Cards(s.maxCards()))
 		return false
 	}
 	return true
@@ -187,9 +187,7 @@ func (s *Server) limitWrites(next http.Handler) http.Handler {
 		}
 
 		if !s.writeLimit.allow(user.ID.String()) {
-			s.rejectQuota(w, quotaWrites, fmt.Sprintf(
-				"Terlalu banyak perubahan dalam waktu singkat — batasnya %s per menit. "+
-					"Tunggu sebentar, lalu coba lagi.", thousands(s.writeLimit.limit)))
+			s.rejectQuota(w, quotaWrites, copyFor(r).Quota.Writes(s.writeLimit.limit))
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -220,7 +218,7 @@ const writeLimitWindow = time.Minute
 // The limiter is consumed before the handler runs, so a *failed* attempt costs
 // a slot. That is the point on the deletion path: the budget has to bound
 // guesses, not successes.
-func (s *Server) limitPerUser(rl *rateLimiter, kind quotaKind, message string) func(http.Handler) http.Handler {
+func (s *Server) limitPerUser(rl *rateLimiter, kind quotaKind, pick message) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user, ok := UserFrom(r.Context())
@@ -228,11 +226,11 @@ func (s *Server) limitPerUser(rl *rateLimiter, kind quotaKind, message string) f
 				// Unreachable behind requireUser. Refuse rather than pass
 				// through: an unkeyed request here would be an unlimited one,
 				// which is the failure this middleware exists to prevent.
-				writeError(w, http.StatusUnauthorized, CodeUnauthorized, "Kamu belum masuk.")
+				writeError(w, http.StatusUnauthorized, CodeUnauthorized, copyFor(r).Common.NotSignedIn)
 				return
 			}
 			if !rl.allow(user.ID.String()) {
-				s.rejectQuota(w, kind, message)
+				s.rejectQuota(w, kind, pick(copyFor(r)))
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -260,20 +258,3 @@ const (
 	maxPasswordChanges   = 10
 	passwordChangeWindow = time.Hour
 )
-
-// thousands formats a number the Indonesian way — 5.000, not 5,000 — because
-// the copy it lands in is Indonesian (hard rule 8).
-func thousands(n int) string {
-	s := strconv.Itoa(n)
-	if len(s) <= 3 {
-		return s
-	}
-	var b strings.Builder
-	for i, r := range s {
-		if i > 0 && (len(s)-i)%3 == 0 {
-			b.WriteByte('.')
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
-}

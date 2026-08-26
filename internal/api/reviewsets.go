@@ -223,7 +223,7 @@ func (s *Server) handleCreateReviewSet(w http.ResponseWriter, r *http.Request) {
 	if format == "" {
 		format = store.FormatRecall
 	}
-	if !validReviewSet(w, title, deref(req.Description), selection, format,
+	if !validReviewSet(w, r, title, deref(req.Description), selection, format,
 		req.QuestionCount, req.TimeLimitMinutes) {
 		return
 	}
@@ -314,7 +314,7 @@ func (s *Server) handleUpdateReviewSet(w http.ResponseWriter, r *http.Request) {
 		categories = parsed
 	}
 
-	if !validReviewSet(w, title, desc, selection, format, count, limit) {
+	if !validReviewSet(w, r, title, desc, selection, format, count, limit) {
 		return
 	}
 
@@ -340,7 +340,7 @@ func (s *Server) handleUpdateReviewSet(w http.ResponseWriter, r *http.Request) {
 		return writeSetFilters(r, q, user.ID, set.ID, domains, categories)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 	if err != nil {
@@ -410,7 +410,7 @@ func (s *Server) setArchive(w http.ResponseWriter, r *http.Request, archive bool
 		return q.UnarchiveReviewSet(r.Context(), gen.UnarchiveReviewSetParams{ID: id, UserID: user.ID})
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 	if err != nil {
@@ -441,7 +441,7 @@ func (s *Server) handleDeleteReviewSet(w http.ResponseWriter, r *http.Request) {
 	})
 	if isForeignKeyViolation(err) {
 		writeError(w, http.StatusConflict, CodeConflict,
-			"Latihan ini sudah pernah dikerjakan. Arsipkan saja.")
+			copyFor(r).Sets.AlreadyAttempted)
 		return
 	}
 	if err != nil {
@@ -449,7 +449,7 @@ func (s *Server) handleDeleteReviewSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if rows == 0 {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 
@@ -473,7 +473,7 @@ func (s *Server) handleSetReviewSetCards(w http.ResponseWriter, r *http.Request)
 	}
 	if set.Selection != "fixed" {
 		writeError(w, http.StatusBadRequest, CodeBadRequest,
-			"Hanya latihan dengan soal tetap yang punya daftar kartu.")
+			copyFor(r).Sets.FixedOnly)
 		return
 	}
 
@@ -484,7 +484,7 @@ func (s *Server) handleSetReviewSetCards(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if len(req.Cards) > maxQuestions {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Terlalu banyak soal.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Sets.TooManyQuestions)
 		return
 	}
 
@@ -513,7 +513,7 @@ func (s *Server) handleSetReviewSetCards(w http.ResponseWriter, r *http.Request)
 	// A card that is not this user's fails the composite foreign key rather
 	// than any check here — that is the point of D-047.
 	if errors.Is(err, errBadCardRef) || isForeignKeyViolation(err) {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Ada kartu yang tidak dikenal.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Sets.UnknownCard)
 		return
 	}
 	if err != nil {
@@ -526,36 +526,36 @@ func (s *Server) handleSetReviewSetCards(w http.ResponseWriter, r *http.Request)
 
 var errBadCardRef = errors.New("api: unparseable card reference")
 
-func validReviewSet(w http.ResponseWriter, title, desc, selection, format string, count, limit *int32) bool {
+func validReviewSet(w http.ResponseWriter, r *http.Request, title, desc, selection, format string, count, limit *int32) bool {
 	if title == "" {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Judul latihan tidak boleh kosong.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Sets.TitleEmpty)
 		return false
 	}
 	if utf8.RuneCountInString(title) > maxSetTitleLen {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Judul latihan terlalu panjang.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Sets.TitleTooLong)
 		return false
 	}
 	if utf8.RuneCountInString(desc) > maxSetDescLen {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Deskripsi latihan terlalu panjang.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Sets.DescriptionTooLong)
 		return false
 	}
 	if selection != "fixed" && selection != "random" {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Jenis soal harus 'fixed' atau 'random'.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Sets.BadSelection)
 		return false
 	}
 	if format != store.FormatRecall && format != store.FormatChoice {
 		writeError(w, http.StatusBadRequest, CodeBadRequest,
-			"Bentuk soal harus 'recall' atau 'choice'.")
+			copyFor(r).Sets.BadFormat)
 		return false
 	}
 	if selection == "random" {
 		if count == nil || *count <= 0 || *count > maxQuestions {
-			writeError(w, http.StatusBadRequest, CodeBadRequest, "Jumlah soal tidak masuk akal.")
+			writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Sets.BadCount)
 			return false
 		}
 	}
 	if limit != nil && (*limit <= 0 || *limit > maxTimeLimit) {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Batas waktu tidak masuk akal.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Sets.BadTimeLimit)
 		return false
 	}
 	return true
@@ -584,7 +584,7 @@ func (s *Server) parseDomains(w http.ResponseWriter, r *http.Request, raw *[]str
 		return nil, true
 	}
 	if len(*raw) > maxSetDomains {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Terlalu banyak domain.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Domains.TooManySelected)
 		return nil, false
 	}
 
@@ -595,7 +595,7 @@ func (s *Server) parseDomains(w http.ResponseWriter, r *http.Request, raw *[]str
 	for _, s2 := range *raw {
 		id, err := uuid.Parse(s2)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, CodeBadRequest, "Domain tidak dikenal.")
+			writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Domains.Unknown)
 			return nil, false
 		}
 		if seen[id] {
@@ -611,7 +611,7 @@ func (s *Server) parseDomains(w http.ResponseWriter, r *http.Request, raw *[]str
 			return nil, false
 		}
 		if !exists {
-			writeError(w, http.StatusBadRequest, CodeBadRequest, "Domain tidak dikenal.")
+			writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Domains.Unknown)
 			return nil, false
 		}
 		out = append(out, id)
@@ -693,7 +693,7 @@ func (s *Server) setOr404(w http.ResponseWriter, r *http.Request) (gen.GetReview
 		return q.GetReviewSet(r.Context(), gen.GetReviewSetParams{ID: id, UserID: user.ID})
 	})
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && set.ArchivedAt != nil) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return gen.GetReviewSetRow{}, false
 	}
 	if err != nil {
@@ -706,7 +706,7 @@ func (s *Server) setOr404(w http.ResponseWriter, r *http.Request) (gen.GetReview
 func setIDParam(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return uuid.UUID{}, false
 	}
 	return id, true
@@ -834,23 +834,23 @@ func (s *Server) handleStartRun(w http.ResponseWriter, r *http.Request) {
 	}
 	date, err := store.ToTime(srs.Date(req.RunDate))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Tanggal tidak valid.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Sets.BadDate)
 		return
 	}
 	if !withinClockSkew(date, time.Now()) {
 		writeError(w, http.StatusBadRequest, CodeBadRequest,
-			"Tanggal terlalu jauh dari hari ini. Cek jam di perangkat kamu.")
+			copyFor(r).Sets.DateTooFarOff)
 		return
 	}
 
 	started, err := s.store.StartRun(r.Context(), user.ID, id, date)
 	if errors.Is(err, store.ErrReviewSetNotFound) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 	if errors.Is(err, store.ErrReviewSetHasNoCards) {
 		writeError(w, http.StatusBadRequest, CodeBadRequest,
-			"Belum ada kartu yang cocok dengan filter ini. Longgarkan filternya atau tulis kartu dulu.")
+			copyFor(r).Sets.NoMatchingCards)
 		return
 	}
 	if err != nil {
@@ -943,7 +943,7 @@ func (s *Server) handleRunAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if question.Back == nil || question.DeletedAt != nil {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 
@@ -982,7 +982,7 @@ func (s *Server) handleAnswerQuestion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if run.FinishedAt != nil {
-		writeError(w, http.StatusConflict, CodeConflict, "Latihan ini sudah selesai.")
+		writeError(w, http.StatusConflict, CodeConflict, copyFor(r).Sets.RunFinished)
 		return
 	}
 	cardID, ok := cardParam(w, r)
@@ -1015,11 +1015,11 @@ func (s *Server) handleAnswerQuestion(w http.ResponseWriter, r *http.Request) {
 	if isChoice {
 		format = store.FormatChoice
 		if req.Choice == nil {
-			writeError(w, http.StatusBadRequest, CodeBadRequest, "Pilih salah satu jawaban.")
+			writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Sets.ChooseAnAnswer)
 			return
 		}
 		if *req.Choice < 0 || int(*req.Choice) >= len(question.Options) {
-			writeError(w, http.StatusBadRequest, CodeBadRequest, "Pilihan tidak dikenal.")
+			writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Sets.UnknownChoice)
 			return
 		}
 		rating = srs.Lupa
@@ -1031,7 +1031,7 @@ func (s *Server) handleAnswerQuestion(w http.ResponseWriter, r *http.Request) {
 	} else {
 		rating = srs.Rating(req.Rating)
 		if rating != srs.Ingat && rating != srs.Lupa {
-			writeError(w, http.StatusBadRequest, CodeBadRequest, "Penilaian harus 'ingat' atau 'lupa'.")
+			writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Review.BadRating)
 			return
 		}
 	}
@@ -1091,7 +1091,7 @@ func (s *Server) runQuestionOr404(
 		})
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return gen.GetRunQuestionRow{}, false
 	}
 	if err != nil {
@@ -1136,7 +1136,7 @@ func (s *Server) handleDeleteRun(w http.ResponseWriter, r *http.Request) {
 
 	id, err := uuid.Parse(chi.URLParam(r, "runID"))
 	if err != nil {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 
@@ -1148,7 +1148,7 @@ func (s *Server) handleDeleteRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if rows == 0 {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 
@@ -1160,7 +1160,7 @@ func (s *Server) runOr404(w http.ResponseWriter, r *http.Request) (gen.ReviewRun
 
 	id, err := uuid.Parse(chi.URLParam(r, "runID"))
 	if err != nil {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return gen.ReviewRun{}, false
 	}
 
@@ -1168,7 +1168,7 @@ func (s *Server) runOr404(w http.ResponseWriter, r *http.Request) (gen.ReviewRun
 		return q.GetRun(r.Context(), gen.GetRunParams{ID: id, UserID: user.ID})
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return gen.ReviewRun{}, false
 	}
 	if err != nil {

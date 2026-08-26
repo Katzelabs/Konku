@@ -104,7 +104,7 @@ func clientErrorKind(s string) string {
 func (s *Server) handleClientError(w http.ResponseWriter, r *http.Request) {
 	var req clientErrorRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxClientErrorBody)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Permintaan tidak valid.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Common.BadRequest)
 		return
 	}
 
@@ -113,7 +113,7 @@ func (s *Server) handleClientError(w http.ResponseWriter, r *http.Request) {
 		// An event with no message is an alert nobody can act on. Refusing it
 		// makes a bug in the reporter show up as a 400 in the request log
 		// rather than as a stream of blank events in Sentry.
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Permintaan tidak valid.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Common.BadRequest)
 		return
 	}
 

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Katzelabs/Konku/internal/auth"
+	"github.com/Katzelabs/Konku/internal/i18n"
 )
 
 type forgotRequest struct {
@@ -44,7 +45,7 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.signupAddrLimit.allow(strings.ToLower(email)) {
 		writeError(w, http.StatusTooManyRequests, CodeRateLimited,
-			"Terlalu banyak percobaan untuk alamat ini. Coba lagi beberapa menit lagi.")
+			copyFor(r).Common.TooManyForAddress)
 		return
 	}
 
@@ -59,7 +60,7 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.sendOrLog(r, "password reset", user.ID.String(), func(ctx context.Context) error {
-		return s.mailer.SendPasswordReset(ctx, user.Email, token)
+		return s.mailer.SendPasswordReset(ctx, i18n.FromContext(ctx), user.Email, token)
 	})
 
 	writeJSON(w, http.StatusNoContent, nil)
@@ -80,7 +81,7 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 
 	if len(req.Password) < minPasswordLength {
 		writeError(w, http.StatusBadRequest, CodeBadRequest,
-			"Kata sandi minimal 12 karakter. Kalimat yang panjang lebih aman dan lebih mudah diingat.")
+			copyFor(r).Auth.PasswordTooShort(minPasswordLength))
 		return
 	}
 
@@ -90,7 +91,7 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 			// account all arrive here and all read the same. Telling them
 			// apart tells an attacker which guesses were close (07 L4).
 			writeError(w, http.StatusBadRequest, CodeInvalidToken,
-				"Tautan ini tidak berlaku lagi. Minta tautan baru ya.")
+				copyFor(r).Auth.ResetLinkExpired)
 			return
 		}
 		writeInternal(w, r, err)

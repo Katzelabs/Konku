@@ -17,6 +17,7 @@ import (
 	"github.com/Katzelabs/Konku/internal/api"
 	"github.com/Katzelabs/Konku/internal/auth"
 	"github.com/Katzelabs/Konku/internal/config"
+	"github.com/Katzelabs/Konku/internal/i18n"
 	"github.com/Katzelabs/Konku/internal/store"
 	"github.com/Katzelabs/Konku/internal/store/gen"
 	"github.com/Katzelabs/Konku/internal/web"
@@ -42,9 +43,13 @@ type testApp struct {
 
 // sentMail is one message the server handed to the transport.
 type sentMail struct {
-	kind  string // "verification" or "reset"
-	to    string
-	token string
+	kind string // "verification" or "reset"
+	to   string
+	// locale is what the handler asked the message be written in (11 I3). The
+	// fake records it because the transport is the only place the answer is
+	// visible: the body never comes back through the API.
+	locale i18n.Locale
+	token  string
 }
 
 // fakeMailer stands in for internal/mail. The real transport has its own tests
@@ -59,19 +64,19 @@ type fakeMailer struct {
 	err error
 }
 
-func (m *fakeMailer) record(kind, to, token string) error {
+func (m *fakeMailer) record(kind string, l i18n.Locale, to, token string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.sent = append(m.sent, sentMail{kind: kind, to: to, token: token})
+	m.sent = append(m.sent, sentMail{kind: kind, to: to, locale: l, token: token})
 	return m.err
 }
 
-func (m *fakeMailer) SendVerification(_ context.Context, to, token string) error {
-	return m.record("verification", to, token)
+func (m *fakeMailer) SendVerification(_ context.Context, l i18n.Locale, to, token string) error {
+	return m.record("verification", l, to, token)
 }
 
-func (m *fakeMailer) SendPasswordReset(_ context.Context, to, token string) error {
-	return m.record("reset", to, token)
+func (m *fakeMailer) SendPasswordReset(_ context.Context, l i18n.Locale, to, token string) error {
+	return m.record("reset", l, to, token)
 }
 
 // lastTo returns the most recent message sent to an address.

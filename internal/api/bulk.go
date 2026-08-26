@@ -44,12 +44,12 @@ func parseBulkIDs(w http.ResponseWriter, r *http.Request) ([]uuid.UUID, bool) {
 		return nil, false
 	}
 	if len(req.IDs) == 0 {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Tidak ada yang dipilih.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Bulk.NothingSelected)
 		return nil, false
 	}
 	if len(req.IDs) > maxBulkIDs {
 		writeError(w, http.StatusBadRequest, CodeBadRequest,
-			"Terlalu banyak yang dipilih sekaligus.")
+			copyFor(r).Bulk.TooManySelected)
 		return nil, false
 	}
 
@@ -58,7 +58,7 @@ func parseBulkIDs(w http.ResponseWriter, r *http.Request) ([]uuid.UUID, bool) {
 	for _, raw := range req.IDs {
 		id, err := uuid.Parse(raw)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, CodeBadRequest, "Pilihan tidak valid.")
+			writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Bulk.InvalidSelection)
 			return nil, false
 		}
 		if seen[id] {

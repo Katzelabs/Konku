@@ -103,7 +103,7 @@ func (s *Server) handleCreateDomain(w http.ResponseWriter, r *http.Request) {
 	label := strings.TrimSpace(deref(req.Label))
 	color := strings.TrimSpace(deref(req.Color))
 	quota := derefInt(req.WeeklyQuota)
-	if !validDomainFields(w, label, color, quota) {
+	if !validDomainFields(w, r, label, color, quota) {
 		return
 	}
 
@@ -118,7 +118,7 @@ func (s *Server) handleCreateDomain(w http.ResponseWriter, r *http.Request) {
 		})
 	})
 	if isUniqueViolation(err) {
-		writeError(w, http.StatusConflict, CodeConflict, "Sudah ada domain dengan nama itu.")
+		writeError(w, http.StatusConflict, CodeConflict, copyFor(r).Domains.NameTaken)
 		return
 	}
 	if err != nil {
@@ -149,7 +149,7 @@ func (s *Server) handleUpdateDomain(w http.ResponseWriter, r *http.Request) {
 		return q.GetDomain(r.Context(), gen.GetDomainParams{ID: id, UserID: user.ID})
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 	if err != nil {
@@ -171,7 +171,7 @@ func (s *Server) handleUpdateDomain(w http.ResponseWriter, r *http.Request) {
 	if req.SortOrder != nil {
 		order = *req.SortOrder
 	}
-	if !validDomainFields(w, label, color, quota) {
+	if !validDomainFields(w, r, label, color, quota) {
 		return
 	}
 
@@ -186,7 +186,7 @@ func (s *Server) handleUpdateDomain(w http.ResponseWriter, r *http.Request) {
 		})
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 	if err != nil {
@@ -232,7 +232,7 @@ func (s *Server) setDomainArchived(w http.ResponseWriter, r *http.Request, archi
 	// which is indistinguishable here from not existing. Both are 404, and
 	// archiving twice is not an error worth a distinct code.
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 	if err != nil {
@@ -260,7 +260,7 @@ func (s *Server) handleDeleteDomain(w http.ResponseWriter, r *http.Request) {
 	})
 	if isForeignKeyViolation(err) {
 		writeError(w, http.StatusConflict, CodeConflict,
-			"Domain ini masih dipakai catatan atau sesi. Arsipkan saja.")
+			copyFor(r).Domains.InUse)
 		return
 	}
 	if err != nil {
@@ -268,28 +268,28 @@ func (s *Server) handleDeleteDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if rows == 0 {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
-func validDomainFields(w http.ResponseWriter, label, color string, quota int32) bool {
+func validDomainFields(w http.ResponseWriter, r *http.Request, label, color string, quota int32) bool {
 	if label == "" {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Nama domain tidak boleh kosong.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Domains.NameEmpty)
 		return false
 	}
 	if utf8.RuneCountInString(label) > maxDomainLabelLen {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Nama domain terlalu panjang.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Domains.NameTooLong)
 		return false
 	}
 	if !hexColor.MatchString(color) {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Warna harus dalam format #RRGGBB.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Common.BadColor)
 		return false
 	}
 	if quota < 0 || quota > maxWeeklyQuota {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Target mingguan tidak masuk akal.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Domains.BadWeeklyQuota)
 		return false
 	}
 	return true
@@ -323,7 +323,7 @@ func slugify(label string) string {
 func domainIDParam(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return uuid.UUID{}, false
 	}
 	return id, true

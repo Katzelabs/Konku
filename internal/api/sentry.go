@@ -204,17 +204,21 @@ func recoverer(next http.Handler) http.Handler {
 
 			reportPanic(r, rec, id)
 			writeError(w, http.StatusInternalServerError, CodeInternal,
-				panicMessage(id))
+				panicMessage(r, id))
 		}()
 
 		next.ServeHTTP(w, r)
 	})
 }
 
-func panicMessage(id string) string {
-	msg := "Terjadi kesalahan di server. Coba lagi sebentar lagi."
-	if id != "" {
-		msg += " Kode: " + id
+// panicMessage is what a recovered panic looks like from outside. Identical to
+// writeInternal's, and deliberately so: from the reader's side a panic and a
+// returned error are the same event, and a second sentence for one of them
+// would be a tell.
+func panicMessage(r *http.Request, id string) string {
+	c := copyFor(r)
+	if id == "" {
+		return c.Common.ServerError
 	}
-	return msg
+	return c.Common.ServerErrorWithCode(id)
 }

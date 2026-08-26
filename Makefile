@@ -344,6 +344,10 @@ sqlc-diff: ## Fail if generated code is stale
 # ratchet rather than a pass/fail: web/i18n-baseline.json records what is left,
 # a file that gains a literal fails, and a file that reaches zero fails until
 # it leaves the baseline. `npm run check:i18n -- --list` prints what remains.
+# The server has the same rule and its own mechanism, which is why there is no
+# Go half of this target: internal/api/copy_test.go parses the package and
+# fails on a string literal in a writeError message, and it runs under `make
+# test` like every other test (11 I3).
 check-i18n: ## Fail on user-facing copy typed into a feature folder
 	@[ -d web/node_modules/typescript ] || { \
 	  echo "check-i18n: web/node_modules is missing. Run \`make setup\`."; \

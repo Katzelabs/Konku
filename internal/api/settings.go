@@ -2,7 +2,6 @@ package api
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/jackc/pgx/v5"
@@ -82,7 +81,7 @@ func toSettingsBody(s gen.UserSetting) settingsBody {
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	user, ok := UserFrom(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, CodeUnauthorized, "Kamu belum masuk.")
+		writeError(w, http.StatusUnauthorized, CodeUnauthorized, copyFor(r).Common.NotSignedIn)
 		return
 	}
 
@@ -110,7 +109,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	user, ok := UserFrom(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, CodeUnauthorized, "Kamu belum masuk.")
+		writeError(w, http.StatusUnauthorized, CodeUnauthorized, copyFor(r).Common.NotSignedIn)
 		return
 	}
 
@@ -122,14 +121,13 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	// Validated here as well as by the CHECK constraints, because a constraint
 	// violation arrives as a 500 and a person needs a sentence they can act on.
 	if req.DefaultDurationMinutes < minDurationMinutes || req.DefaultDurationMinutes > maxDurationMinutes {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, fmt.Sprintf(
-			"Durasi default harus antara %d dan %d menit.",
-			minDurationMinutes, maxDurationMinutes))
+		writeError(w, http.StatusBadRequest, CodeBadRequest,
+			copyFor(r).Settings.BadDuration(minDurationMinutes, maxDurationMinutes))
 		return
 	}
 	if req.FocusStepN < minFocusStepN || req.FocusStepN > maxFocusStepN {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, fmt.Sprintf(
-			"Progressive focus harus antara %d dan %d.", minFocusStepN, maxFocusStepN))
+		writeError(w, http.StatusBadRequest, CodeBadRequest,
+			copyFor(r).Settings.BadFocusStep(minFocusStepN, maxFocusStepN))
 		return
 	}
 

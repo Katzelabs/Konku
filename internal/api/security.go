@@ -120,7 +120,7 @@ func enforceOrigin(next http.Handler) http.Handler {
 
 		if origin := r.Header.Get("Origin"); origin != "" && !sameOrigin(origin, r) {
 			writeError(w, http.StatusForbidden, CodeBadRequest,
-				"Permintaan ditolak karena berasal dari situs lain.")
+				copyFor(r).Security.CrossSite)
 			return
 		}
 
@@ -130,13 +130,13 @@ func enforceOrigin(next http.Handler) http.Handler {
 			// urlencoded, multipart or text/plain — the three an HTML form
 			// can produce, and therefore the shape of a form-based CSRF.
 			writeError(w, http.StatusUnsupportedMediaType, CodeBadRequest,
-				"Permintaan harus berupa JSON.")
+				copyFor(r).Security.JSONOnly)
 			return
 		case ct == "" && r.ContentLength != 0:
 			// A body with no declared type. ContentLength is -1 for chunked,
 			// which counts as "has a body" here on purpose.
 			writeError(w, http.StatusUnsupportedMediaType, CodeBadRequest,
-				"Permintaan harus berupa JSON.")
+				copyFor(r).Security.JSONOnly)
 			return
 		}
 

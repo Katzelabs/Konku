@@ -74,6 +74,20 @@ type Config struct {
 	// host that cannot verify them, and the mail is already delivered by the
 	// time anyone notices.
 	PublicBaseURL string
+	// ContactEmail is the address a user is pointed at when the application
+	// cannot help them itself — today, a suspended account (ticket 10, O1).
+	//
+	// Configuration rather than copy, and the distinction is the point. It is
+	// deployment-specific in exactly the way PublicBaseURL is: D-096 makes
+	// self-hosting a real outcome rather than a hypothetical, and a hardcoded
+	// address would have every self-hosted instance tell its users to email
+	// the operator of konkuapp.katzeapps.com. Keeping it out of the message
+	// catalog also means changing it is one env value rather than an edit to
+	// the same sentence in two languages.
+	//
+	// The default is the address already published on /privacy and /terms, so
+	// this deployment behaves exactly as it did before the value existed.
+	ContactEmail string
 	// Per-account quotas (07 L8). Not monetisation: an unbounded free write
 	// path on a shared VPS is an outage waiting for one bad actor, and the pgx
 	// pool is capped at 10 for the sake of every other project on the box
@@ -128,6 +142,7 @@ func Load() (Config, error) {
 		MaxLoginAttempts:     envInt("MAX_LOGIN_ATTEMPTS", 10),
 		MailFrom:             os.Getenv("MAIL_FROM"),
 		PublicBaseURL:        env("PUBLIC_BASE_URL", "http://localhost:5173"),
+		ContactEmail:         env("CONTACT_EMAIL", "konku@katzeapps.com"),
 		// LookupEnv, not env(): METRICS_ADDR is documented as "empty disables
 		// it", and env() returns its fallback for an empty value, so setting
 		// METRICS_ADDR= would have started the listener anyway.
