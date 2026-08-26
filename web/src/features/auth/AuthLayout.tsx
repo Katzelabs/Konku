@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { GraduationCap } from 'lucide-react'
+import { useCopy } from '../../i18n'
 
 /**
  * The frame every signed-out screen shares: mark, title, and a narrow column.
@@ -18,6 +19,8 @@ export function AuthLayout({
   subtitle?: string
   children: ReactNode
 }) {
+  const c = useCopy().auth.legal
+
   return (
     <main className="flex min-h-dvh items-center justify-center p-6">
       <div className="flex w-full max-w-sm flex-col gap-6">
@@ -39,11 +42,11 @@ export function AuthLayout({
         */}
         <p className="text-center text-xs text-muted-fg">
           <Link to="/privacy" className="underline underline-offset-4">
-            Kebijakan Privasi
+            {c.privacy}
           </Link>
           {' · '}
           <Link to="/terms" className="underline underline-offset-4">
-            Ketentuan Layanan
+            {c.terms}
           </Link>
         </p>
       </div>

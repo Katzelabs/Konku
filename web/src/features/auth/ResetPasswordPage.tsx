@@ -5,6 +5,7 @@ import { Card } from '../../components/ui/card'
 import { Field } from '../../components/ui/field'
 import { Notice } from '../../components/ui/notice'
 import { PasswordInput } from '../../components/ui/password-input'
+import { useCopy } from '../../i18n'
 import { useZodForm } from '../../lib/useZodForm'
 import { MIN_PASSWORD, resetSchema } from './schemas'
 import { useResetPassword } from './useAuth'
@@ -21,14 +22,14 @@ import { AuthLayout } from './AuthLayout'
 export default function ResetPasswordPage() {
   const [params] = useSearchParams()
   const token = params.get('token') ?? ''
+  const copy = useCopy().auth
+  const c = copy.reset
   const reset = useResetPassword()
 
   const form = useZodForm(resetSchema, { password: '', confirmPassword: '' })
 
   if (!token) {
-    return (
-      <ResetFailed message="Tautan ini tidak lengkap. Buka tautan dari email kamu ya." />
-    )
+    return <ResetFailed message={c.failed.incompleteLink} />
   }
 
   /*
@@ -39,17 +40,14 @@ export default function ResetPasswordPage() {
    */
   if (reset.isSuccess) {
     return (
-      <AuthLayout title="Kata sandi diperbarui">
+      <AuthLayout title={c.done.title}>
         <Card className="flex flex-col items-center gap-4 p-6 text-center">
           <span className="flex size-11 items-center justify-center rounded-full bg-muted text-secondary-fg">
             <CircleCheck className="size-5" />
           </span>
-          <p className="text-sm text-secondary-fg">
-            Kata sandi kamu sudah diganti. Semua perangkat yang tadinya masuk sudah
-            dikeluarkan, jadi silakan masuk lagi dengan kata sandi yang baru.
-          </p>
+          <p className="text-sm text-secondary-fg">{c.done.body}</p>
           <Button asChild variant="primary" size="lg" className="mt-1 w-full">
-            <Link to="/login">Masuk</Link>
+            <Link to="/login">{c.done.signIn}</Link>
           </Button>
         </Card>
       </AuthLayout>
@@ -57,7 +55,7 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <AuthLayout title="Buat kata sandi baru">
+    <AuthLayout title={c.title}>
       <Card className="p-6">
         <form
           onSubmit={form.handleSubmit(({ password }) => reset.mutate({ token, password }))}
@@ -66,9 +64,9 @@ export default function ResetPasswordPage() {
         >
           <Field
             id="password"
-            label="Kata sandi baru"
+            label={c.password}
             error={form.errors.password}
-            hint={`Minimal ${MIN_PASSWORD} karakter. Kalimat yang panjang lebih aman dan lebih mudah diingat.`}
+            hint={copy.password.hint(MIN_PASSWORD)}
           >
             {(a11y) => (
               <PasswordInput
@@ -90,14 +88,14 @@ export default function ResetPasswordPage() {
           */}
           <Field
             id="confirmPassword"
-            label="Ulangi kata sandi baru"
+            label={c.confirmPassword}
             error={form.errors.confirmPassword}
           >
             {(a11y) => (
               <PasswordInput
                 {...a11y}
                 {...form.field('confirmPassword')}
-                placeholder="Ketik lagi kata sandi di atas"
+                placeholder={copy.password.confirmPlaceholder}
                 autoComplete="new-password"
                 required
               />
@@ -113,7 +111,7 @@ export default function ResetPasswordPage() {
             disabled={reset.isPending}
             className="mt-2"
           >
-            {reset.isPending ? 'Menyimpan…' : 'Simpan kata sandi'}
+            {reset.isPending ? c.submitting : c.submit}
           </Button>
         </form>
       </Card>
@@ -127,8 +125,10 @@ export default function ResetPasswordPage() {
  * were close. The way out is identical in every case, so the screen offers it.
  */
 function ResetFailed({ message }: { message: string }) {
+  const c = useCopy().auth.reset.failed
+
   return (
-    <AuthLayout title="Tautan tidak berlaku">
+    <AuthLayout title={c.title}>
       <Card className="flex flex-col items-center gap-4 p-6 text-center">
         <span className="flex size-11 items-center justify-center rounded-full bg-muted text-secondary-fg">
           <MailWarning className="size-5" />
@@ -137,7 +137,7 @@ function ResetFailed({ message }: { message: string }) {
           {message}
         </Notice>
         <Button asChild variant="primary" size="lg" className="mt-1 w-full">
-          <Link to="/forgot">Minta tautan baru</Link>
+          <Link to="/forgot">{c.requestNew}</Link>
         </Button>
       </Card>
     </AuthLayout>

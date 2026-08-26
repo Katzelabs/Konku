@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '../../components/ui/button'
+import { useCopy } from '../../i18n'
 import { CheckYourMail } from './CheckYourMail'
 import { meQueryKey, useLogout } from './useAuth'
 import { AuthLayout } from './AuthLayout'
@@ -21,6 +22,7 @@ import { AuthLayout } from './AuthLayout'
  * to a login form you have already been through.
  */
 export default function VerifyPendingPage({ email }: { email: string }) {
+  const c = useCopy().auth.checkMail
   const logout = useLogout()
   const qc = useQueryClient()
 
@@ -52,7 +54,7 @@ export default function VerifyPendingPage({ email }: { email: string }) {
   }, [qc])
 
   return (
-    <AuthLayout title="Cek email kamu" subtitle="Tinggal satu langkah lagi.">
+    <AuthLayout title={c.title} subtitle={c.subtitle}>
       <CheckYourMail email={email}>
         <Button
           variant="ghost"
@@ -60,7 +62,7 @@ export default function VerifyPendingPage({ email }: { email: string }) {
           disabled={logout.isPending}
           onClick={() => logout.mutate()}
         >
-          Keluar
+          {c.signOut}
         </Button>
       </CheckYourMail>
     </AuthLayout>

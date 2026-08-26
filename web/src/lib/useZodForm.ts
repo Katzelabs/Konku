@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState, type FormEvent } from 'react'
 import type { z } from 'zod'
+import { useCopy, type Copy } from '../i18n'
 
 /**
  * A form backed by a zod schema.
@@ -29,6 +30,14 @@ import type { z } from 'zod'
  * `values` is kept as strings throughout. The parsed, transformed output —
  * trimmed names, trimmed address — is what `onValid` receives, so callers send
  * the cleaned value while the person still sees exactly what they typed.
+ *
+ * **The schema may be a builder** (11 I5). A validation message is copy, so a
+ * schema that carries its messages needs a locale, and a module-level schema
+ * would have had to choose one at import time — which is how a form ends up
+ * permanently Indonesian in a way nothing notices. Passing
+ * `(copy: Copy) => schema` lets this hook supply the active locale, which it
+ * can because it is a hook and the schemas are not. A plain schema still works
+ * unchanged; nothing at a call site had to move.
  */
 
 type Errors<T> = Partial<Record<keyof T & string, string>>
@@ -58,9 +67,23 @@ export interface ZodForm<In extends Record<string, string>, Out> {
 }
 
 export function useZodForm<In extends Record<string, string>, Out>(
-  schema: z.ZodType<Out, In>,
+  source: z.ZodType<Out, In> | ((copy: Copy) => z.ZodType<Out, In>),
   initial: In,
 ): ZodForm<In, Out> {
+  const copy = useCopy()
+
+  // Memoised, and the memo is load-bearing. `validate` — and through it
+  // `field`, `setValue` and `handleSubmit` — is rebuilt whenever the schema's
+  // identity changes, so a schema rebuilt on every render would hand every
+  // input a new `onChange` on every keystroke. A catalog is one object per
+  // locale, built once when its module is evaluated, so it changes exactly
+  // when the language does; a builder is a module-level function, so it never
+  // does.
+  const schema = useMemo(
+    () => (typeof source === 'function' ? source(copy) : source),
+    [source, copy],
+  )
+
   const [values, setValues] = useState<In>(initial)
   const [errors, setErrors] = useState<Errors<In>>({})
   const [touched, setTouched] = useState<Partial<Record<string, true>>>({})

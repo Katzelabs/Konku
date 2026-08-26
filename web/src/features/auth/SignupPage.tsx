@@ -5,6 +5,7 @@ import { Field } from '../../components/ui/field'
 import { Input } from '../../components/ui/input'
 import { Notice } from '../../components/ui/notice'
 import { PasswordInput } from '../../components/ui/password-input'
+import { useCopy } from '../../i18n'
 import { useZodForm } from '../../lib/useZodForm'
 import { CheckYourMail } from './CheckYourMail'
 import { MIN_PASSWORD, signupSchema } from './schemas'
@@ -12,6 +13,8 @@ import { useSignup } from './useAuth'
 import { AuthLayout } from './AuthLayout'
 
 export default function SignupPage() {
+  const copy = useCopy().auth
+  const c = copy.signup
   const signup = useSignup()
 
   const form = useZodForm(signupSchema, {
@@ -36,10 +39,10 @@ export default function SignupPage() {
    */
   if (signup.isSuccess) {
     return (
-      <AuthLayout title="Cek email kamu" subtitle="Tinggal satu langkah lagi.">
+      <AuthLayout title={copy.checkMail.title} subtitle={copy.checkMail.subtitle}>
         <CheckYourMail email={signup.variables.email} justSent>
           <Button asChild variant="ghost" size="lg">
-            <Link to="/login">Kembali ke halaman masuk</Link>
+            <Link to="/login">{copy.checkMail.backToLogin}</Link>
           </Button>
         </CheckYourMail>
       </AuthLayout>
@@ -47,7 +50,7 @@ export default function SignupPage() {
   }
 
   return (
-    <AuthLayout title="Buat akun" subtitle="Mulai simpan apa yang kamu pelajari.">
+    <AuthLayout title={c.title} subtitle={c.subtitle}>
       <Card className="p-6">
         <form
           onSubmit={form.handleSubmit((values) => signup.mutate(values))}
@@ -64,7 +67,7 @@ export default function SignupPage() {
           <div className="flex flex-col gap-4 sm:flex-row">
             <Field
               id="firstName"
-              label="Nama depan"
+              label={c.firstName}
               error={form.errors.firstName}
               className="flex-1"
             >
@@ -76,7 +79,7 @@ export default function SignupPage() {
                   // actually teaches is the shape asked for: one name, not the
                   // full name someone would otherwise type into the first box
                   // and then have to cut in half.
-                  placeholder="Sena"
+                  placeholder={c.firstNamePlaceholder}
                   autoComplete="given-name"
                   required
                   autoFocus
@@ -98,7 +101,7 @@ export default function SignupPage() {
             */}
             <Field
               id="lastName"
-              label="Nama belakang"
+              label={c.lastName}
               error={form.errors.lastName}
               className="flex-1"
             >
@@ -106,14 +109,14 @@ export default function SignupPage() {
                 <Input
                   {...a11y}
                   {...form.field('lastName')}
-                  placeholder="Opsional"
+                  placeholder={c.lastNamePlaceholder}
                   autoComplete="family-name"
                 />
               )}
             </Field>
           </div>
 
-          <Field id="email" label="Email" error={form.errors.email}>
+          <Field id="email" label={c.email} error={form.errors.email}>
             {(a11y) => (
               <Input
                 {...a11y}
@@ -122,7 +125,7 @@ export default function SignupPage() {
                 // The format, shown rather than described. This is the field
                 // people mistype, and "nama@email.com" answers the question
                 // before the schema has to.
-                placeholder="nama@email.com"
+                placeholder={copy.emailPlaceholder}
                 autoComplete="username"
                 required
               />
@@ -131,14 +134,14 @@ export default function SignupPage() {
 
           <Field
             id="password"
-            label="Kata sandi"
+            label={c.password}
             error={form.errors.password}
             /*
               Stated up front rather than as an error after submitting. A rule
               you only learn by breaking it is a rule that annoys, and the
               server's message says the same thing in the same words.
             */
-            hint={`Minimal ${MIN_PASSWORD} karakter. Kalimat yang panjang lebih aman dan lebih mudah diingat.`}
+            hint={copy.password.hint(MIN_PASSWORD)}
           >
             {/*
               No placeholder here, and that is the considered choice rather
@@ -159,14 +162,14 @@ export default function SignupPage() {
 
           <Field
             id="confirmPassword"
-            label="Ulangi kata sandi"
+            label={c.confirmPassword}
             error={form.errors.confirmPassword}
           >
             {(a11y) => (
               <PasswordInput
                 {...a11y}
                 {...form.field('confirmPassword')}
-                placeholder="Ketik lagi kata sandi di atas"
+                placeholder={copy.password.confirmPlaceholder}
                 autoComplete="new-password"
                 required
               />
@@ -182,15 +185,15 @@ export default function SignupPage() {
             disabled={signup.isPending}
             className="mt-2"
           >
-            {signup.isPending ? 'Sebentar…' : 'Buat akun'}
+            {signup.isPending ? c.submitting : c.submit}
           </Button>
         </form>
       </Card>
 
       <p className="text-center text-sm text-muted-fg">
-        Sudah punya akun?{' '}
+        {c.haveAccount}{' '}
         <Link to="/login" className="font-medium text-surface-fg underline underline-offset-4">
-          Masuk
+          {c.signIn}
         </Link>
       </p>
     </AuthLayout>

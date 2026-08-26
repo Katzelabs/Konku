@@ -3,6 +3,8 @@ import { MailCheck } from 'lucide-react'
 import { Button } from '../../components/ui/button'
 import { Card } from '../../components/ui/card'
 import { Notice } from '../../components/ui/notice'
+import { useCopy } from '../../i18n'
+import { Emphasis } from './emphasis'
 import { useResendVerification } from './useAuth'
 import { useResendCooldown } from './useResendCooldown'
 
@@ -40,6 +42,7 @@ export function CheckYourMail({
   /** What to offer after the resend — sign out, or back to the login screen. */
   children?: ReactNode
 }) {
+  const c = useCopy().auth.checkMail
   const resend = useResendVerification()
   // Keyed by address, so signing out and in as someone else does not inherit
   // the previous account's wait.
@@ -64,17 +67,13 @@ export function CheckYourMail({
       </span>
 
       <p className="text-sm text-secondary-fg">
-        Kami sudah mengirim tautan verifikasi ke{' '}
-        <span className="font-medium text-surface-fg">{email}</span>. Buka tautannya
-        untuk mengaktifkan akun kamu.
+        <Emphasis text={c.sentTo(email)} />
       </p>
-      <p className="text-sm text-muted-fg">
-        Tautannya berlaku 24 jam. Kalau belum masuk juga, cek folder spam dulu ya.
-      </p>
+      <p className="text-sm text-muted-fg">{c.expiry}</p>
 
       {resend.isSuccess && (
         <Notice role="status" className="w-full">
-          Tautan baru sudah dikirim kalau akunnya memang belum terverifikasi.
+          {c.resent}
         </Notice>
       )}
       {resend.isError && (
@@ -97,10 +96,10 @@ export function CheckYourMail({
           }}
         >
           {resend.isPending
-            ? 'Mengirim…'
+            ? c.resending
             : cooldown.waiting
-              ? `Kirim ulang dalam ${cooldown.remaining} detik`
-              : 'Kirim ulang tautan'}
+              ? c.resendIn(cooldown.remaining)
+              : c.resend}
         </Button>
 
         {/*
@@ -116,8 +115,8 @@ export function CheckYourMail({
         */}
         <p aria-live="polite" className="sr-only">
           {cooldown.waiting
-            ? `Bisa kirim ulang dalam ${cooldown.remaining} detik.`
-            : 'Sekarang bisa kirim ulang tautan.'}
+            ? c.resendWaitAnnounce(cooldown.remaining)
+            : c.resendReadyAnnounce}
         </p>
 
         {children}
