@@ -10,6 +10,7 @@ import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
 import { Notice } from '../../components/ui/notice'
 import { Loading } from '../../components/ui/spinner'
+import { useCopy } from '../../i18n'
 import { cn } from '../../lib/utils'
 import {
   useAllDomains,
@@ -27,6 +28,7 @@ import {
  * taking a slot in the nav.
  */
 export default function DomainSettings() {
+  const c = useCopy().domains
   const { data, isPending, error } = useAllDomains()
   const [adding, setAdding] = useState(false)
 
@@ -47,7 +49,7 @@ export default function DomainSettings() {
         <div className="flex justify-end">
           <Button variant="secondary" size="sm" onClick={() => setAdding(true)}>
             <Plus />
-            Tambah
+            {c.add}
           </Button>
         </div>
       )}
@@ -56,8 +58,8 @@ export default function DomainSettings() {
 
       {live.length === 0 && !adding && (
         <EmptyState
-          title="Belum ada domain."
-          description="Domain dipakai buat menandai catatan dan sesi fokus."
+          title={c.empty.title}
+          description={c.empty.description}
         />
       )}
 
@@ -71,7 +73,7 @@ export default function DomainSettings() {
 
       {archived.length > 0 && (
         <div className="flex flex-col gap-2">
-          <h3 className="text-sm font-medium text-muted-fg">Diarsipkan</h3>
+          <h3 className="text-sm font-medium text-muted-fg">{c.archivedHeading}</h3>
           <ul className="flex flex-col gap-2">
             {archived.map((d) => (
               <DomainRow key={d.id} domain={d} />
@@ -84,6 +86,7 @@ export default function DomainSettings() {
 }
 
 function NewDomainForm({ onDone }: { onDone: () => void }) {
+  const c = useCopy().domains
   const [label, setLabel] = useState('')
   const [color, setColor] = useState(COLOR_PALETTE[0])
   const [quota, setQuota] = useState(1)
@@ -99,13 +102,13 @@ function NewDomainForm({ onDone }: { onDone: () => void }) {
     <Card className="border-primary-ink">
       <form onSubmit={submit} className="flex flex-col gap-4 p-4">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="new-domain">Nama domain</Label>
+          <Label htmlFor="new-domain">{c.form.label}</Label>
           <Input
             id="new-domain"
             autoFocus
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            placeholder="Pengetahuan umum"
+            placeholder={c.form.placeholder}
           />
         </div>
 
@@ -121,10 +124,10 @@ function NewDomainForm({ onDone }: { onDone: () => void }) {
             size="sm"
             disabled={create.isPending || !label.trim()}
           >
-            Simpan
+            {c.form.save}
           </Button>
           <Button type="button" variant="secondary" size="sm" onClick={onDone}>
-            Batal
+            {c.form.cancel}
           </Button>
         </div>
       </form>
@@ -133,6 +136,7 @@ function NewDomainForm({ onDone }: { onDone: () => void }) {
 }
 
 function DomainRow({ domain }: { domain: Domain }) {
+  const c = useCopy().domains
   const [editing, setEditing] = useState(false)
   const archive = useArchiveDomain()
   const del = useDeleteDomain()
@@ -155,15 +159,15 @@ function DomainRow({ domain }: { domain: Domain }) {
           </span>
           <span className="text-xs text-subtle-fg">
             {domain.weeklyQuota > 0
-              ? `${domain.weeklyQuota}× / minggu`
-              : 'di luar rotasi'}
+              ? c.row.perWeek(domain.weeklyQuota)
+              : c.row.outOfRotation}
           </span>
         </div>
 
         <div className="flex gap-3">
           {!isArchived && (
             <Button variant="link" size="inline" onClick={() => setEditing(true)}>
-              Ubah
+              {c.row.edit}
             </Button>
           )}
           <Button
@@ -171,10 +175,10 @@ function DomainRow({ domain }: { domain: Domain }) {
             size="inline"
             onClick={() => archive.mutate({ id: domain.id, archived: !isArchived })}
           >
-            {isArchived ? 'Aktifkan lagi' : 'Arsipkan'}
+            {isArchived ? c.row.unarchive : c.row.archive}
           </Button>
           <Button variant="link" size="inline" onClick={() => del.mutate(domain.id)}>
-            Hapus
+            {c.row.delete}
           </Button>
         </div>
 
@@ -191,6 +195,7 @@ function DomainRow({ domain }: { domain: Domain }) {
 }
 
 function EditDomainForm({ domain, onDone }: { domain: Domain; onDone: () => void }) {
+  const c = useCopy().domains
   const [label, setLabel] = useState(domain.label)
   const [color, setColor] = useState(domain.color)
   const [quota, setQuota] = useState(domain.weeklyQuota)
@@ -213,7 +218,7 @@ function EditDomainForm({ domain, onDone }: { domain: Domain; onDone: () => void
             autoFocus
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            aria-label="Nama domain"
+            aria-label={c.form.label}
           />
           <ColorPicker value={color} onChange={setColor} />
           <QuotaPicker value={quota} onChange={setQuota} />
@@ -222,10 +227,10 @@ function EditDomainForm({ domain, onDone }: { domain: Domain; onDone: () => void
 
           <div className="flex gap-2">
             <Button type="submit" variant="primary" size="sm" disabled={update.isPending}>
-              Simpan
+              {c.form.save}
             </Button>
             <Button type="button" variant="secondary" size="sm" onClick={onDone}>
-              Batal
+              {c.form.cancel}
             </Button>
           </div>
         </form>
@@ -235,9 +240,11 @@ function EditDomainForm({ domain, onDone }: { domain: Domain; onDone: () => void
 }
 
 function QuotaPicker({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const c = useCopy().domains
+
   return (
     <div className="flex flex-col gap-1.5">
-      <Label htmlFor={`quota-${value}`}>Target mingguan</Label>
+      <Label htmlFor={`quota-${value}`}>{c.form.quota}</Label>
       <Input
         id={`quota-${value}`}
         type="number"

@@ -1,3 +1,4 @@
+import { useCopy } from '../../i18n'
 import { SettingsSection } from '../settings/SettingsSection'
 import CategorySettings from './CategorySettings'
 
@@ -9,11 +10,10 @@ import CategorySettings from './CategorySettings'
  * you can move between directly rather than through Pengaturan.
  */
 export default function CategoriesPage() {
+  const c = useCopy().categories
+
   return (
-    <SettingsSection
-      title="Kategori"
-      description="Satu kosakata yang dipakai bersama oleh catatan dan kartu. Biasanya kamu bikin langsung sambil nulis — di sini tempatnya kalau mau dirapikan."
-    >
+    <SettingsSection title={c.title} description={c.description}>
       <CategorySettings />
     </SettingsSection>
   )

@@ -18,6 +18,7 @@ import { SelectCheckbox, SelectionBar } from '../../components/ui/selection-bar'
 import { Separator } from '../../components/ui/separator'
 import { Loading } from '../../components/ui/spinner'
 import { useViewMode, ViewToggle, type ViewMode } from '../../components/ui/view-toggle'
+import { useCopy } from '../../i18n'
 import { useAutoSelect, usePeekedId, usePeekNavigation } from '../../lib/peek-route'
 import { useSelection } from '../../lib/use-selection'
 import { cn } from '../../lib/utils'
@@ -40,6 +41,7 @@ import { useCards, useDeleteCards, useRestoreCards } from './queries'
  * whole review history, since card_schedules was never touched.
  */
 export default function CardsPage() {
+  const c = useCopy().cards
   const [view, setView] = useViewMode('konku:cards-view')
   const [params, setParams] = useSearchParams()
 
@@ -192,37 +194,37 @@ export default function CardsPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={deleted ? 'Terhapus' : 'Kartu'}
-        description={
-          deleted
-            ? 'Kartu yang kamu hapus. Dikembalikan lengkap dengan riwayat ulangannya. Kartu yang belum pernah diulang hilang permanen setelah 30 hari.'
-            : 'Satu pertanyaan, satu jawaban. Ditulis di sini, diulang di layar ulangan.'
-        }
+        title={deleted ? c.deleted.title : c.index.title}
+        description={deleted ? c.deleted.description : c.index.description}
         meta={
           /*
             The collection, not the page — the header used to state the length
             of a list that stopped at 500 (D-084).
+
+            Counted through the catalog rather than `{total} kartu`: Indonesian
+            writes 20.000 where English writes 20,000, and the 07 L8 card quota
+            is 20.000, so a raw interpolation prints 20000 in both.
           */
-          !isPending && <span>{total} kartu</span>
+          !isPending && <span>{c.index.count(total)}</span>
         }
         actions={
           deleted ? (
             <Button variant="secondary" onClick={() => setParam('deleted', null)}>
-              Kembali ke kartu
+              {c.deleted.back}
             </Button>
           ) : (
             <>
               <Button variant="secondary" onClick={() => setParam('deleted', 'true')}>
                 <Trash2 />
-                Terhapus
+                {c.deleted.title}
               </Button>
               <Button asChild variant="secondary">
-                <Link to="/review/due">Mulai ulangan</Link>
+                <Link to="/review/due">{c.index.startReview}</Link>
               </Button>
               <Button asChild variant="primary">
                 <Link to="/cards/new">
                   <Plus />
-                  Kartu baru
+                  {c.index.newCard}
                 </Link>
               </Button>
             </>
@@ -236,7 +238,7 @@ export default function CardsPage() {
 
       {undo && (
         <Notice className="flex flex-wrap items-center gap-3">
-          <span>{undo.count} kartu dipindahkan ke Terhapus.</span>
+          <span>{c.deleted.undo.moved(undo.count)}</span>
           <Button
             variant="link"
             size="inline"
@@ -244,7 +246,7 @@ export default function CardsPage() {
             disabled={restoreMany.isPending}
           >
             <Undo2 />
-            Urungkan
+            {c.deleted.undo.action}
           </Button>
         </Notice>
       )}
@@ -265,12 +267,12 @@ export default function CardsPage() {
               disabled={restoreMany.isPending}
             >
               <Undo2 />
-              {restoreMany.isPending ? 'Mengembalikan…' : 'Kembalikan'}
+              {restoreMany.isPending ? c.deleted.restoring : c.deleted.restore}
             </Button>
           ) : (
             <Button variant="destructive" size="sm" onClick={() => setConfirming(true)}>
               <Trash2 />
-              Hapus
+              {c.index.delete}
             </Button>
           )}
         </SelectionBar>
@@ -280,7 +282,7 @@ export default function CardsPage() {
         split={split}
         peeked={peekId !== null}
         detail={preview}
-        placeholder={<DetailPlaceholder>Pilih kartu untuk melihat isinya.</DetailPlaceholder>}
+        placeholder={<DetailPlaceholder>{c.index.placeholder}</DetailPlaceholder>}
       >
         <div className="flex flex-col gap-4">
           {/*
@@ -296,8 +298,8 @@ export default function CardsPage() {
                 className="flex-1 @2xl:max-w-sm"
                 value={query}
                 onChange={(next) => setParam('q', next)}
-                placeholder="Cari isi kartu…"
-                label="Cari kartu"
+                placeholder={c.index.search.placeholder}
+                label={c.index.search.label}
               />
               <ViewToggle mode={view} onChange={setView} />
             </div>
@@ -324,16 +326,14 @@ export default function CardsPage() {
 
           {!isPending && cards.length === 0 && !filtering && (
             <EmptyState
-              title={deleted ? 'Tidak ada kartu terhapus.' : 'Belum ada kartu.'}
+              title={deleted ? c.deleted.empty.title : c.index.empty.title}
               description={
-                deleted
-                  ? 'Kartu yang kamu hapus akan muncul di sini.'
-                  : 'Satu pertanyaan yang ingin kamu ingat sudah cukup untuk mulai.'
+                deleted ? c.deleted.empty.description : c.index.empty.description
               }
               action={
                 !deleted && (
                   <Button asChild variant="primary" size="sm">
-                    <Link to="/cards/new">Kartu baru</Link>
+                    <Link to="/cards/new">{c.index.newCard}</Link>
                   </Button>
                 )
               }
@@ -341,7 +341,7 @@ export default function CardsPage() {
           )}
 
           {!isPending && cards.length === 0 && filtering && (
-            <p className="py-4 text-sm text-muted-fg">Tidak ada kartu yang cocok.</p>
+            <p className="py-4 text-sm text-muted-fg">{c.index.noMatch}</p>
           )}
 
           {/*
@@ -387,7 +387,14 @@ export default function CardsPage() {
             loading={isFetchingNextPage}
             error={error}
             onLoadMore={() => fetchNextPage()}
-            noun="kartu"
+            /*
+              The word is ours and comes from the catalog; the sentence around
+              it is `LoadMore`'s own and is still Indonesian. `components/ui/`
+              is shared with the notes index and is converted separately —
+              when it is, this prop wants to become `(n: number) => string`,
+              since English needs the count to pick "card" or "cards".
+            */
+            noun={c.index.listNoun}
           />
         </div>
       </ListDetail>
@@ -395,9 +402,13 @@ export default function CardsPage() {
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
-        title={selection.count === 1 ? 'Hapus kartu ini?' : `Hapus ${selection.count} kartu?`}
-        description="Kartu pindah ke Terhapus. Jadwal dan riwayat ulangannya tetap utuh. Kartu yang pernah kamu ulang bisa dikembalikan kapan saja; yang belum pernah, selama 30 hari."
-        confirmLabel="Hapus"
+        title={
+          selection.count === 1
+            ? c.confirmDelete.one
+            : c.confirmDelete.many(selection.count)
+        }
+        description={c.confirmDelete.description}
+        confirmLabel={c.confirmDelete.confirm}
         pending={removeMany.isPending}
         onConfirm={confirmDelete}
       />
@@ -439,6 +450,7 @@ function CardItem({
   onToggle,
   onOpen,
 }: CardItemProps) {
+  const c = useCopy().cards
   const domain = domains?.find((d) => d.id === card.domainId)
   const row = layout === 'list'
 
@@ -447,7 +459,7 @@ function CardItem({
       checked={selected}
       onToggle={onToggle}
       visible={anySelected}
-      label="Pilih kartu ini"
+      label={c.index.selectCard}
       className="pointer-events-auto"
     />
   )

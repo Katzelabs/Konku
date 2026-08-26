@@ -1,3 +1,4 @@
+import { useCopy } from '../../i18n'
 import { SettingsSection } from '../settings/SettingsSection'
 import DomainSettings from './DomainSettings'
 
@@ -11,11 +12,10 @@ import DomainSettings from './DomainSettings'
  * now instead of a trip back through a screen nobody wanted to be on.
  */
 export default function DomainsPage() {
+  const c = useCopy().domains
+
   return (
-    <SettingsSection
-      title="Domain"
-      description="Domain menandai catatan dan sesi fokus, dan jadi dasar rotasi mingguan. Target mingguan cuma penanda arah, bukan setoran — nol berarti domain tetap bisa dipakai tapi tidak ikut rotasi."
-    >
+    <SettingsSection title={c.title} description={c.description}>
       <DomainSettings />
     </SettingsSection>
   )
