@@ -57,6 +57,16 @@
 /** The locale tags this app ships. Also valid BCP-47 tags for `Intl`. */
 export type Locale = 'id' | 'en'
 
+import type { AuthCopy } from './areas/auth/types'
+import type { CardsCopy } from './areas/cards/types'
+import type { CategoriesCopy } from './areas/categories/types'
+import type { DomainsCopy } from './areas/domains/types'
+import type { HomeCopy } from './areas/home/types'
+import type { NotesCopy } from './areas/notes/types'
+import type { ReviewCopy } from './areas/review/types'
+import type { SettingsCopy } from './areas/settings/types'
+import type { TimerCopy } from './areas/timer/types'
+
 export interface Copy {
   /**
    * Strings used by two or more features. A string used by one feature belongs
@@ -81,72 +91,14 @@ export interface Copy {
     yesterday: string
   }
 
-  settings: {
-    /**
-     * Choosing a language (00014, ticket 11 I2).
-     *
-     * On Preferensi rather than Tampilan, because it is stored on the account
-     * and travels — which is the line `nav.ts` draws between those two
-     * screens, and which the Tampilan screen states in its own description.
-     *
-     * The language *names* are deliberately not keys. A picker lists every
-     * language in its own language, so "Bahasa Indonesia" and "English" read
-     * the same in both catalogs and belong in the component that renders them
-     * — the same rule that keeps browser and platform names out of here.
-     */
-    language: {
-      title: string
-      description: string
-      /**
-       * The option that stores nothing and follows the browser. Named for what
-       * it does, because "Indonesian" would be a lie on an English browser.
-       */
-      auto: string
-    }
 
-    /**
-     * Where the account is signed in (07 L5).
-     *
-     * Deliberately not punitive and not alarming (hard rule 6). A list of your
-     * own devices is not a security warning, so there is no "unrecognised
-     * device" language here and no urgency — the sort of copy that makes an
-     * ordinary second browser frightening. `ActiveSessions.test.tsx` asserts
-     * the Indonesian half of that and `catalog.test.ts` the English.
-     */
-    sessions: {
-      title: string
-      description: string
-      /** Marks the row you are reading this on. Includes its own parentheses. */
-      currentDevice: string
-      /** No User-Agent at all. */
-      unknownDevice: string
-      /** No IP recorded. Lower case: it sits mid-line after a separator. */
-      unknownAddress: string
-      /** `describeClient` output when both halves are known. */
-      clientOn: (browser: string, platform: string) => string
-      /** Takes the already-formatted output of `ago` below. */
-      lastActive: (relative: string) => string
-      /** Ends the session you are using. It is a sign-out, and says so. */
-      signOutCurrent: string
-      /** Ends one of the others. */
-      endSession: string
-      signOutOthers: {
-        title: string
-        description: string
-        action: string
-      }
-      /**
-       * Coarse on purpose: `last_seen_at` is only written every few minutes, so
-       * anything more precise would claim accuracy the value does not have.
-       */
-      ago: {
-        justNow: string
-        minutes: (n: number) => string
-        hours: (n: number) => string
-        yesterday: string
-        days: (n: number) => string
-        overAMonth: string
-      }
-    }
-  }
+  auth: AuthCopy
+  cards: CardsCopy
+  categories: CategoriesCopy
+  domains: DomainsCopy
+  home: HomeCopy
+  notes: NotesCopy
+  review: ReviewCopy
+  settings: SettingsCopy
+  timer: TimerCopy
 }

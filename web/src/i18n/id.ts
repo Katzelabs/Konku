@@ -1,4 +1,12 @@
-import { pluralFor } from './plural'
+import { auth } from './areas/auth/id'
+import { cards } from './areas/cards/id'
+import { categories } from './areas/categories/id'
+import { domains } from './areas/domains/id'
+import { home } from './areas/home/id'
+import { notes } from './areas/notes/id'
+import { review } from './areas/review/id'
+import { settings } from './areas/settings/id'
+import { timer } from './areas/timer/id'
 import type { Copy } from './types'
 
 /**
@@ -12,9 +20,6 @@ import type { Copy } from './types'
  * no filler, and never punitive.
  */
 
-/** Indonesian has one plural form. The helper still formats the number. */
-const n = pluralFor('id')
-
 export const id: Copy = {
   common: {
     working: 'Sebentar…',
@@ -22,36 +27,13 @@ export const id: Copy = {
     yesterday: 'Kemarin',
   },
 
-  settings: {
-    language: {
-      title: 'Bahasa',
-      description: 'Tersimpan di akun, jadi ikut ke perangkat lain.',
-      auto: 'Ikut peramban',
-    },
-
-    sessions: {
-      title: 'Perangkat yang masuk',
-      description: 'Tempat akun ini sedang dipakai. Akhiri yang tidak kamu kenali.',
-      currentDevice: '(perangkat ini)',
-      unknownDevice: 'Perangkat tidak dikenal',
-      unknownAddress: 'alamat tidak diketahui',
-      clientOn: (browser, platform) => `${browser} di ${platform}`,
-      lastActive: (relative) => `aktif ${relative}`,
-      signOutCurrent: 'Keluar',
-      endSession: 'Akhiri',
-      signOutOthers: {
-        title: 'Keluar dari perangkat lain',
-        description: 'Sesi di perangkat ini tetap aktif.',
-        action: 'Keluarkan',
-      },
-      ago: {
-        justNow: 'baru saja',
-        minutes: (count) => n(count, { other: '# menit lalu' }),
-        hours: (count) => n(count, { other: '# jam lalu' }),
-        yesterday: 'kemarin',
-        days: (count) => n(count, { other: '# hari lalu' }),
-        overAMonth: 'lebih dari sebulan lalu',
-      },
-    },
-  },
+  auth,
+  cards,
+  categories,
+  domains,
+  home,
+  notes,
+  review,
+  settings,
+  timer,
 }
