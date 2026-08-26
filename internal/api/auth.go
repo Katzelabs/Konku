@@ -181,6 +181,62 @@ func (s *Server) requireVerified(next http.Handler) http.Handler {
 	})
 }
 
+// msgAccountSuspended is what a suspended account is told, wherever it is told
+// (ticket 10, O1).
+//
+// One string rather than one per call site, because it is one fact. It states
+// the fact and where to ask about it, and it does not scold: hard rule 6 rules
+// out punitive copy, and a person reading this may well be here because
+// somebody else's account was compromised, or because the operator got it
+// wrong. The address is the one already published on /privacy and /terms —
+// there is no other channel to point at, and inventing a second one would mean
+// a support inbox nobody reads.
+const msgAccountSuspended = "Akun ini sedang ditangguhkan. " +
+	"Hubungi konku@katzeapps.com kalau ada yang perlu ditanyakan."
+
+// requireNotSuspended blocks an account the operator has suspended.
+//
+// The same seam as requireVerified and the same shape: a group inside
+// requireUser, above every route that touches stored content, so a route added
+// later is covered by default rather than when somebody remembers.
+//
+// 403 rather than 401, for the reason requireVerified is 403. A 401 means
+// "authenticate", and the client acts on it by clearing the session and
+// showing the login screen — which would put a suspended person in a loop:
+// sign in, land nowhere, be signed out, sign in again. The caller is asking
+// about their own account and already knows it exists, so nothing leaks by
+// answering honestly, and CodeAccountSuspended is what lets a screen say so
+// rather than render a generic permissions error.
+//
+// This is the second mechanism, not the only one (hard rule 9). Suspending
+// also revokes the account's live sessions and login refuses outright, so in
+// practice a suspended request rarely reaches here. What this covers is every
+// way that could fail: a revocation that errored after the UPDATE committed, a
+// session minted by some future path, a request already in flight. The gate
+// reads the users row on every request through Resolve, so it is true the
+// instant the column is written and needs nothing else to have worked.
+func (s *Server) requireNotSuspended(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, ok := UserFrom(r.Context())
+		if !ok {
+			// Unreachable behind requireUser, and a 500 rather than a silent
+			// pass-through if the middleware order is ever changed.
+			writeInternal(w, r, errors.New("api: requireNotSuspended ran outside requireUser"))
+			return
+		}
+		if user.SuspendedAt != nil {
+			// A user id and a request id are enough to debug and not enough to
+			// leak (hard rule 10, D-062). Info rather than Warn: this is the
+			// mechanism working, not a fault.
+			slog.Info("blocked a request from a suspended account",
+				"request_id", requestIDOf(w), "user_id", user.ID.String())
+			writeError(w, http.StatusForbidden, CodeAccountSuspended, msgAccountSuspended)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 type loginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
@@ -250,6 +306,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	user, sessionID, expires, err := s.auth.Login(r.Context(), req.Email, req.Password, client)
 	if err != nil {
+		if errors.Is(err, auth.ErrAccountSuspended) {
+			// Only reachable with the right password (see auth.Login), so this
+			// tells the account's owner something they are owed and tells a
+			// stranger nothing. No session is minted and no cookie is set.
+			writeError(w, http.StatusForbidden, CodeAccountSuspended, msgAccountSuspended)
+			return
+		}
 		if errors.Is(err, auth.ErrInvalidCredentials) {
 			// One message for both unknown-email and wrong-password: telling
 			// them apart lets anyone enumerate registered addresses.

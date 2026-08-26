@@ -181,6 +181,7 @@ type User struct {
 	EmailVerifiedAt *time.Time `json:"email_verified_at"`
 	FirstName       string     `json:"first_name"`
 	LastName        string     `json:"last_name"`
+	SuspendedAt     *time.Time `json:"suspended_at"`
 }
 
 type UserSetting struct {
