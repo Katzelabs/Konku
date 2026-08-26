@@ -193,6 +193,17 @@ func (s *Server) Routes() http.Handler {
 			// requireUser is a group: "all of /api except these" is a security
 			// boundary, and one that a new route joins by default.
 			r.Group(func(r chi.Router) {
+				// Suspension is checked before verification, because it is the
+				// more important fact about an account that is both: telling
+				// somebody to check their mail for a link that will not help
+				// is worse than saying nothing (ticket 10, O1).
+				//
+				// In this group rather than merged into requireUser for the
+				// same reason requireVerified is: /auth/me and /auth/logout
+				// stay reachable, so a client holding a session that was live
+				// when the account was suspended can still read its own state
+				// and sign out of it.
+				r.Use(s.requireNotSuspended)
 				r.Use(s.requireVerified)
 				// Above the routes rather than per-handler, so a new write
 				// endpoint is covered the moment it is added rather than when

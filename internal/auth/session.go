@@ -22,6 +22,11 @@ var (
 	// Distinguishing them would let anyone enumerate registered addresses.
 	ErrInvalidCredentials = errors.New("auth: invalid credentials")
 	ErrNoSession          = errors.New("auth: no valid session")
+	// ErrAccountSuspended is a correct password on an account the operator has
+	// stopped (ticket 10, O1). Deliberately distinct from
+	// ErrInvalidCredentials, and deliberately only reachable *after* the
+	// password has been verified — see Login.
+	ErrAccountSuspended = errors.New("auth: account suspended")
 )
 
 type Service struct {
@@ -87,6 +92,24 @@ func (s *Service) Login(ctx context.Context, email, password string, client Clie
 	}
 	if !ok {
 		return zero, "", time.Time{}, ErrInvalidCredentials
+	}
+
+	// Suspension is checked here, after the password, and never before it
+	// (ticket 10, O1).
+	//
+	// Order is the whole point. Answering "this account is suspended" to
+	// anyone who types an address would turn the login form into an oracle for
+	// which addresses exist *and* which of them the operator has acted on —
+	// the same existence leak the single ErrInvalidCredentials above exists to
+	// close (D-058). After a correct password, the caller has proven they own
+	// the account and is owed the real reason.
+	//
+	// Refusing at login rather than only at the data routes is what makes the
+	// suspension legible: the login screen already renders the server's
+	// message, so the person is told once, plainly, at the moment they ask,
+	// instead of signing in successfully and finding every screen broken.
+	if user.SuspendedAt != nil {
+		return zero, "", time.Time{}, ErrAccountSuspended
 	}
 
 	id, err := NewSessionID()

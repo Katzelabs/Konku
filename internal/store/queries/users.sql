@@ -58,6 +58,33 @@ UPDATE users
 SET email_verified_at = now()
 WHERE id = $1 AND email_verified_at IS NULL;
 
+-- Suspension (ticket 10, O1). NULL means active; the timestamp answers "since
+-- when". Both statements are addressed by email because the operator has an
+-- address and nothing else — the same reason GetUserByEmail is not scoped by a
+-- user id. The address is the input here, not a claim about who is asking.
+--
+-- Neither returns the email. The caller prints the id, so a CLI error that
+-- reaches slog cannot carry an address into a log line (hard rule 10, D-062).
+
+-- name: SuspendUser :one
+-- Idempotent, and idempotent in the way that matters: coalesce keeps the
+-- original timestamp, so suspending an already-suspended account does not
+-- rewrite when it happened. An operator re-running the command is a normal
+-- thing to do, and it must not destroy the one fact the column carries.
+UPDATE users
+SET suspended_at = coalesce(suspended_at, now())
+WHERE email = $1
+RETURNING id, suspended_at;
+
+-- name: UnsuspendUser :one
+-- The way back. An operator who suspends the wrong account needs this to be
+-- one command and no arguments beyond the address — a mechanism that can be
+-- applied but not lifted is one nobody dares use.
+UPDATE users
+SET suspended_at = NULL
+WHERE email = $1
+RETURNING id, suspended_at;
+
 -- name: GetUserByEmail :one
 SELECT * FROM users WHERE email = $1;
 

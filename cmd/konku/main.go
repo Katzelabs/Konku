@@ -41,6 +41,18 @@ func main() {
 		return
 	}
 
+	// Stopping an account, and putting it back (ticket 10, O1). A subcommand
+	// rather than an admin endpoint: there is no admin role in this product
+	// and adding one to suspend an account would be a larger, more dangerous
+	// surface than the problem needs. See suspend_user.go.
+	if len(os.Args) > 1 && os.Args[1] == "suspend-user" {
+		if err := suspendUser(os.Args[2:]); err != nil {
+			slog.Error("suspend-user failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	// Demo content for one account: screenshots, design work, and showing the
 	// thing to somebody. It guards itself against a non-dev config and against
 	// an account that already has content — see seed_demo.go.

@@ -484,6 +484,18 @@ type Querier interface {
 	// Already-deleted ids simply do not match, which makes a repeated request a
 	// no-op rather than a way to push deleted_at forward.
 	SoftDeleteNotes(ctx context.Context, arg SoftDeleteNotesParams) (int64, error)
+	// Suspension (ticket 10, O1). NULL means active; the timestamp answers "since
+	// when". Both statements are addressed by email because the operator has an
+	// address and nothing else — the same reason GetUserByEmail is not scoped by a
+	// user id. The address is the input here, not a claim about who is asking.
+	//
+	// Neither returns the email. The caller prints the id, so a CLI error that
+	// reaches slog cannot carry an address into a log line (hard rule 10, D-062).
+	// Idempotent, and idempotent in the way that matters: coalesce keeps the
+	// original timestamp, so suspending an already-suspended account does not
+	// rewrite when it happened. An operator re-running the command is a normal
+	// thing to do, and it must not destroy the one fact the column carries.
+	SuspendUser(ctx context.Context, email string) (SuspendUserRow, error)
 	// Bumped at most once per interval, not on every request.
 	//
 	// The caller decides when to call this from the last_seen_at it already has,
@@ -496,6 +508,10 @@ type Querier interface {
 	// be the safe alternative to deleting, and a safe alternative you cannot undo
 	// is only half of one.
 	UnarchiveReviewSet(ctx context.Context, arg UnarchiveReviewSetParams) (ReviewSet, error)
+	// The way back. An operator who suspends the wrong account needs this to be
+	// one command and no arguments beyond the address — a mechanism that can be
+	// applied but not lifted is one nobody dares use.
+	UnsuspendUser(ctx context.Context, email string) (UnsuspendUserRow, error)
 	// No content matching anywhere: the uuid identifies the card and the text is
 	// just a column. Rewriting front and back leaves card_schedules untouched, so
 	// fixing a typo costs nothing — the property D-019's stable IDs existed to

@@ -167,7 +167,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (A
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (id, email, password_hash, email_verified_at, first_name, last_name)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, email, password_hash, created_at, email_verified_at, first_name, last_name
+RETURNING id, email, password_hash, created_at, email_verified_at, first_name, last_name, suspended_at
 `
 
 type CreateUserParams struct {
@@ -213,6 +213,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.EmailVerifiedAt,
 		&i.FirstName,
 		&i.LastName,
+		&i.SuspendedAt,
 	)
 	return i, err
 }
@@ -342,7 +343,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) error {
 }
 
 const getActiveSession = `-- name: GetActiveSession :one
-SELECT auth_sessions.id, auth_sessions.user_id, auth_sessions.expires_at, auth_sessions.created_at, auth_sessions.last_seen_at, auth_sessions.user_agent, auth_sessions.ip, auth_sessions.public_id, users.id, users.email, users.password_hash, users.created_at, users.email_verified_at, users.first_name, users.last_name
+SELECT auth_sessions.id, auth_sessions.user_id, auth_sessions.expires_at, auth_sessions.created_at, auth_sessions.last_seen_at, auth_sessions.user_agent, auth_sessions.ip, auth_sessions.public_id, users.id, users.email, users.password_hash, users.created_at, users.email_verified_at, users.first_name, users.last_name, users.suspended_at
 FROM auth_sessions
 JOIN users ON users.id = auth_sessions.user_id
 WHERE auth_sessions.id = $1
@@ -375,12 +376,13 @@ func (q *Queries) GetActiveSession(ctx context.Context, id string) (GetActiveSes
 		&i.User.EmailVerifiedAt,
 		&i.User.FirstName,
 		&i.User.LastName,
+		&i.User.SuspendedAt,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, created_at, email_verified_at, first_name, last_name FROM users WHERE email = $1
+SELECT id, email, password_hash, created_at, email_verified_at, first_name, last_name, suspended_at FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -394,12 +396,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.EmailVerifiedAt,
 		&i.FirstName,
 		&i.LastName,
+		&i.SuspendedAt,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, created_at, email_verified_at, first_name, last_name FROM users WHERE id = $1
+SELECT id, email, password_hash, created_at, email_verified_at, first_name, last_name, suspended_at FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
@@ -413,6 +416,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.EmailVerifiedAt,
 		&i.FirstName,
 		&i.LastName,
+		&i.SuspendedAt,
 	)
 	return i, err
 }
@@ -513,6 +517,37 @@ func (q *Queries) MarkEmailVerified(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+const suspendUser = `-- name: SuspendUser :one
+
+UPDATE users
+SET suspended_at = coalesce(suspended_at, now())
+WHERE email = $1
+RETURNING id, suspended_at
+`
+
+type SuspendUserRow struct {
+	ID          uuid.UUID  `json:"id"`
+	SuspendedAt *time.Time `json:"suspended_at"`
+}
+
+// Suspension (ticket 10, O1). NULL means active; the timestamp answers "since
+// when". Both statements are addressed by email because the operator has an
+// address and nothing else — the same reason GetUserByEmail is not scoped by a
+// user id. The address is the input here, not a claim about who is asking.
+//
+// Neither returns the email. The caller prints the id, so a CLI error that
+// reaches slog cannot carry an address into a log line (hard rule 10, D-062).
+// Idempotent, and idempotent in the way that matters: coalesce keeps the
+// original timestamp, so suspending an already-suspended account does not
+// rewrite when it happened. An operator re-running the command is a normal
+// thing to do, and it must not destroy the one fact the column carries.
+func (q *Queries) SuspendUser(ctx context.Context, email string) (SuspendUserRow, error) {
+	row := q.db.QueryRow(ctx, suspendUser, email)
+	var i SuspendUserRow
+	err := row.Scan(&i.ID, &i.SuspendedAt)
+	return i, err
+}
+
 const touchSession = `-- name: TouchSession :exec
 UPDATE auth_sessions
 SET last_seen_at = now()
@@ -532,6 +567,28 @@ type TouchSessionParams struct {
 func (q *Queries) TouchSession(ctx context.Context, arg TouchSessionParams) error {
 	_, err := q.db.Exec(ctx, touchSession, arg.ID, arg.LastSeenAt)
 	return err
+}
+
+const unsuspendUser = `-- name: UnsuspendUser :one
+UPDATE users
+SET suspended_at = NULL
+WHERE email = $1
+RETURNING id, suspended_at
+`
+
+type UnsuspendUserRow struct {
+	ID          uuid.UUID  `json:"id"`
+	SuspendedAt *time.Time `json:"suspended_at"`
+}
+
+// The way back. An operator who suspends the wrong account needs this to be
+// one command and no arguments beyond the address — a mechanism that can be
+// applied but not lifted is one nobody dares use.
+func (q *Queries) UnsuspendUser(ctx context.Context, email string) (UnsuspendUserRow, error) {
+	row := q.db.QueryRow(ctx, unsuspendUser, email)
+	var i UnsuspendUserRow
+	err := row.Scan(&i.ID, &i.SuspendedAt)
+	return i, err
 }
 
 const updatePassword = `-- name: UpdatePassword :exec

@@ -40,6 +40,14 @@ const (
 	// links, which are deliberately indistinguishable (07 L3, L4).
 	CodeEmailUnverified = "email_unverified"
 	CodeInvalidToken    = "invalid_token"
+
+	// CodeAccountSuspended is the operator having stopped an account (ticket
+	// 10, O1). Its own code rather than a bare 403 because the two 403s a
+	// signed-in client can see mean opposite things: email_unverified is
+	// something the person can fix in a minute, and this one is not fixable
+	// from inside the app at all. A client that cannot tell them apart offers
+	// a resend button to somebody it will not help.
+	CodeAccountSuspended = "account_suspended"
 )
 
 // maxRequestBody bounds every JSON body. A note is markdown typed by a human;
