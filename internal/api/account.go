@@ -28,7 +28,7 @@ type deleteAccountRequest struct {
 func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 	user, ok := UserFrom(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, CodeUnauthorized, "Kamu belum masuk.")
+		writeError(w, http.StatusUnauthorized, CodeUnauthorized, copyFor(r).Common.NotSignedIn)
 		return
 	}
 
@@ -38,14 +38,14 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Password == "" {
 		writeError(w, http.StatusBadRequest, CodeBadRequest,
-			"Masukkan kata sandi kamu untuk mengonfirmasi.")
+			copyFor(r).Account.ConfirmWithPassword)
 		return
 	}
 
 	if err := s.auth.DeleteAccount(r.Context(), user.ID, req.Password); err != nil {
 		if errors.Is(err, auth.ErrInvalidCredentials) {
 			writeError(w, http.StatusUnauthorized, CodeUnauthorized,
-				"Kata sandi salah. Akun kamu tidak jadi dihapus.")
+				copyFor(r).Account.WrongPasswordNotDeleted)
 			return
 		}
 		writeInternal(w, r, err)

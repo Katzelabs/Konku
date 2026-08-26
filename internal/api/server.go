@@ -14,6 +14,7 @@ import (
 
 	"github.com/Katzelabs/Konku/internal/auth"
 	"github.com/Katzelabs/Konku/internal/config"
+	"github.com/Katzelabs/Konku/internal/i18n"
 	"github.com/Katzelabs/Konku/internal/store"
 )
 
@@ -308,8 +309,7 @@ func (s *Server) Routes() http.Handler {
 				// waves reads through, and this read holds an open transaction
 				// and the whole account in memory while it runs.
 				r.With(s.limitPerUser(s.exportLimit, quotaExport,
-					"Terlalu banyak permintaan ekspor. Coba lagi satu jam lagi — "+
-						"arsip yang sudah diunduh tetap lengkap.",
+					func(c *i18n.Catalog) string { return c.Account.TooManyExports },
 				)).Get("/export", s.handleExport)
 
 				// Irreversible, and the only endpoint that re-authenticates
@@ -322,7 +322,7 @@ func (s *Server) Routes() http.Handler {
 				// rather than merely tidy: without one, the write rate is the
 				// only bound on guessing it.
 				r.With(s.limitPerUser(s.deleteAccountLimit, quotaAccountDelete,
-					"Terlalu banyak percobaan penghapusan akun. Coba lagi satu jam lagi.",
+					func(c *i18n.Catalog) string { return c.Account.TooManyDeleteAttempts },
 				)).Delete("/account", s.handleDeleteAccount)
 
 				// Changing the password from inside the app, rather than
@@ -332,7 +332,7 @@ func (s *Server) Routes() http.Handler {
 				// tighter bound on guessing than the write rate, exactly like
 				// DELETE /account.
 				r.With(s.limitPerUser(s.passwordChangeLimit, quotaPasswordChange,
-					"Terlalu banyak percobaan ganti kata sandi. Coba lagi satu jam lagi.",
+					func(c *i18n.Catalog) string { return c.Account.TooManyPasswordChanges },
 				)).Post("/auth/password", s.handleChangePassword)
 
 				// Logins, not study time. Under /auth because /sessions has
@@ -360,7 +360,7 @@ func (s *Server) Routes() http.Handler {
 
 		// Unknown /api paths must return JSON, never the HTML shell.
 		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
-			writeNotFound(w)
+			writeNotFound(w, r)
 		})
 	})
 

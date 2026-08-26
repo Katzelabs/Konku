@@ -27,6 +27,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/Katzelabs/Konku/internal/i18n"
 )
 
 // sendTimeout bounds a whole SMTP conversation when the caller's context has
@@ -115,8 +117,17 @@ func New(smtpURL, from, baseURL string) (*Sender, error) {
 //
 // token is the raw token, which exists in exactly two places: this message and
 // the user's mailbox. The database holds only its hash (07 L1).
-func (s *Sender) SendVerification(ctx context.Context, to, token string) error {
-	m, err := verificationMessage(s.baseURL, token)
+//
+// l is an argument rather than something read off ctx, and that is deliberate.
+// Everywhere else in the server the request's locale travels on the context and
+// `i18n.FromContext` is the right way to ask for it — but mail is the one thing
+// that leaves. A message in the wrong language is invisible to everybody in the
+// loop, because nobody in the loop reads it; and the sender that a reminder job
+// will eventually be (PRD §5.11) has no request behind it at all and would
+// silently take the default. Naming the locale in the signature makes the
+// caller answer "whose language?" out loud.
+func (s *Sender) SendVerification(ctx context.Context, l i18n.Locale, to, token string) error {
+	m, err := verificationMessage(l, s.baseURL, token)
 	if err != nil {
 		return err
 	}
@@ -124,8 +135,8 @@ func (s *Sender) SendVerification(ctx context.Context, to, token string) error {
 }
 
 // SendPasswordReset sends the password-reset message.
-func (s *Sender) SendPasswordReset(ctx context.Context, to, token string) error {
-	m, err := passwordResetMessage(s.baseURL, token)
+func (s *Sender) SendPasswordReset(ctx context.Context, l i18n.Locale, to, token string) error {
+	m, err := passwordResetMessage(l, s.baseURL, token)
 	if err != nil {
 		return err
 	}

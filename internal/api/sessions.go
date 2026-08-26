@@ -49,7 +49,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.DurationMinutes < minDurationMinutes || req.DurationMinutes > maxDurationMinutes {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Durasi sesi tidak masuk akal.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Sessions.BadDuration)
 		return
 	}
 	domainID, ok := s.parseDomain(w, r, req.DomainID)
@@ -59,12 +59,12 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 
 	date, err := store.ToTime(srs.Date(req.SessionDate))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Tanggal sesi tidak valid.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Sessions.BadDate)
 		return
 	}
 	if !withinClockSkew(date, time.Now()) {
 		writeError(w, http.StatusBadRequest, CodeBadRequest,
-			"Tanggal sesi terlalu jauh dari hari ini. Cek jam di perangkat kamu.")
+			copyFor(r).Sessions.DateTooFarOff)
 		return
 	}
 

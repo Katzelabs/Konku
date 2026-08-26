@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Katzelabs/Konku/internal/i18n"
 )
 
 // End-to-end against the dev SMTP catcher (07 L2).
@@ -91,25 +93,50 @@ func TestMailArrivesInTheCatcher(t *testing.T) {
 
 	cases := []struct {
 		name    string
-		send    func(context.Context, string, string) error
+		send    func(context.Context, i18n.Locale, string, string) error
+		locale  i18n.Locale
 		token   string
 		subject string
 		link    string
+		// reassures is the line that tells somebody who did not ask for this
+		// that nothing has happened to them.
+		reassures string
 	}{
 		{
-			name: "verification", send: s.SendVerification, token: "verify-token-1",
-			subject: "Verifikasi alamat email kamu",
-			link:    "http://localhost:5173/verify?token=verify-token-1",
+			name: "verification/id", send: s.SendVerification, locale: i18n.ID,
+			token:     "verify-token-1",
+			subject:   "Verifikasi alamat email kamu",
+			link:      "http://localhost:5173/verify?token=verify-token-1",
+			reassures: "abaikan saja email ini",
 		},
 		{
-			name: "reset", send: s.SendPasswordReset, token: "reset-token-1",
-			subject: "Atur ulang kata sandi Konku kamu",
-			link:    "http://localhost:5173/reset-password?token=reset-token-1",
+			name: "reset/id", send: s.SendPasswordReset, locale: i18n.ID,
+			token:     "reset-token-1",
+			subject:   "Atur ulang kata sandi Konku kamu",
+			link:      "http://localhost:5173/reset-password?token=reset-token-1",
+			reassures: "abaikan saja email ini",
+		},
+		// Both languages over the wire, not only through the renderer: the
+		// subject is Q-encoded on the way out, and a non-ASCII subject that
+		// survives locally can still arrive mangled.
+		{
+			name: "verification/en", send: s.SendVerification, locale: i18n.EN,
+			token:     "verify-token-2",
+			subject:   "Verify your email address",
+			link:      "http://localhost:5173/verify?token=verify-token-2",
+			reassures: "ignore this message",
+		},
+		{
+			name: "reset/en", send: s.SendPasswordReset, locale: i18n.EN,
+			token:     "reset-token-2",
+			subject:   "Reset your Konku password",
+			link:      "http://localhost:5173/reset-password?token=reset-token-2",
+			reassures: "ignore this message",
 		},
 	}
 
 	for _, tc := range cases {
-		if err := tc.send(context.Background(), testAddr, tc.token); err != nil {
+		if err := tc.send(context.Background(), tc.locale, testAddr, tc.token); err != nil {
 			t.Fatalf("%s: sending: %v", tc.name, err)
 		}
 	}
@@ -147,8 +174,9 @@ func TestMailArrivesInTheCatcher(t *testing.T) {
 				t.Errorf("the HTML part has no working link; want %q in:\n%s", tc.link, msg.HTML)
 			}
 			// The reassurance line survives encoding and transport, not just
-			// template rendering (hard rule 6).
-			if !strings.Contains(msg.Text, "abaikan saja email ini") {
+			// template rendering (hard rule 6). Per locale, because that line
+			// is exactly the sort of copy a translation drops.
+			if !strings.Contains(msg.Text, tc.reassures) {
 				t.Error("the delivered text lost its reassurance line")
 			}
 		})

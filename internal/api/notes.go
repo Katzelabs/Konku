@@ -101,7 +101,7 @@ func (s *Server) handleCreateNote(w http.ResponseWriter, r *http.Request) {
 
 	title := strings.TrimSpace(deref(req.Title))
 	content := deref(req.ContentMd)
-	if !s.validNote(w, title, content) {
+	if !s.validNote(w, r, title, content) {
 		return
 	}
 	// Checked on create only. A restore returns a row that already exists and
@@ -150,7 +150,7 @@ func (s *Server) handleGetNote(w http.ResponseWriter, r *http.Request) {
 		return q.GetNote(r.Context(), gen.GetNoteParams{ID: id, UserID: user.ID})
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 	if err != nil {
@@ -214,7 +214,7 @@ func (s *Server) handleUpdateNote(w http.ResponseWriter, r *http.Request) {
 		return q.GetNote(r.Context(), gen.GetNoteParams{ID: id, UserID: user.ID})
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 	if err != nil {
@@ -257,7 +257,7 @@ func (s *Server) handleUpdateNote(w http.ResponseWriter, r *http.Request) {
 		in.CategoryIDs = categoryIDs
 	}
 
-	if !s.validNote(w, in.Title, in.ContentMd) {
+	if !s.validNote(w, r, in.Title, in.ContentMd) {
 		return
 	}
 	if in.Title == "" {
@@ -266,7 +266,7 @@ func (s *Server) handleUpdateNote(w http.ResponseWriter, r *http.Request) {
 
 	note, err := s.store.UpdateNote(r.Context(), user.ID, id, in)
 	if errors.Is(err, store.ErrNoteNotFound) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 	if err != nil {
@@ -290,7 +290,7 @@ func (s *Server) handleDeleteNote(w http.ResponseWriter, r *http.Request) {
 
 	err := s.store.DeleteNote(r.Context(), user.ID, id)
 	if errors.Is(err, store.ErrNoteNotFound) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 	if err != nil {
@@ -311,7 +311,7 @@ func (s *Server) handleRestoreNote(w http.ResponseWriter, r *http.Request) {
 
 	err := s.store.RestoreNote(r.Context(), user.ID, id)
 	if errors.Is(err, store.ErrNoteNotFound) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 	if err != nil {
@@ -452,7 +452,7 @@ func uuidListQuery(w http.ResponseWriter, r *http.Request, name string) ([]uuid.
 		}
 		id, err := uuid.Parse(v)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, CodeBadRequest, "Filter tidak valid.")
+			writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Common.InvalidFilter)
 			return nil, false
 		}
 		out = append(out, id)
@@ -464,13 +464,13 @@ func uuidListQuery(w http.ResponseWriter, r *http.Request, name string) ([]uuid.
 // validNote checks what the database cannot express as a clean error. A
 // hand-written check rather than struct tags: eight endpoints do not justify a
 // validation framework (D-045).
-func (s *Server) validNote(w http.ResponseWriter, title, content string) bool {
+func (s *Server) validNote(w http.ResponseWriter, r *http.Request, title, content string) bool {
 	if utf8.RuneCountInString(title) > maxTitleLen {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Judul terlalu panjang.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Notes.TitleTooLong)
 		return false
 	}
 	if len(content) > maxContentLen {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Catatan terlalu panjang.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Notes.BodyTooLong)
 		return false
 	}
 	return true
@@ -493,7 +493,7 @@ func (s *Server) parseDomain(w http.ResponseWriter, r *http.Request, raw *string
 
 	id, err := uuid.Parse(*raw)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Domain tidak dikenal.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Domains.Unknown)
 		return nil, false
 	}
 
@@ -509,7 +509,7 @@ func (s *Server) parseDomain(w http.ResponseWriter, r *http.Request, raw *string
 		return nil, false
 	}
 	if !exists {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Domain tidak dikenal.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Domains.Unknown)
 		return nil, false
 	}
 	return &id, true
@@ -537,7 +537,7 @@ func (s *Server) parseCategories(w http.ResponseWriter, r *http.Request, raw *[]
 		return nil, true
 	}
 	if len(*raw) > maxCategoriesPerItem {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Terlalu banyak kategori.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Categories.TooManySelected)
 		return nil, false
 	}
 
@@ -548,7 +548,7 @@ func (s *Server) parseCategories(w http.ResponseWriter, r *http.Request, raw *[]
 	for _, s2 := range *raw {
 		id, err := uuid.Parse(s2)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, CodeBadRequest, "Kategori tidak dikenal.")
+			writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Categories.Unknown)
 			return nil, false
 		}
 		if seen[id] {
@@ -561,7 +561,7 @@ func (s *Server) parseCategories(w http.ResponseWriter, r *http.Request, raw *[]
 				ID: id, UserID: user.ID,
 			})
 		}); errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusBadRequest, CodeBadRequest, "Kategori tidak dikenal.")
+			writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Categories.Unknown)
 			return nil, false
 		} else if err != nil {
 			writeInternal(w, r, err)
@@ -600,7 +600,7 @@ func truncate(s string, max int) string {
 func noteIDParam(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return uuid.UUID{}, false
 	}
 	return id, true

@@ -9,8 +9,11 @@ import (
 	"mime/quotedprintable"
 	"net"
 	"net/mail"
+	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/Katzelabs/Konku/internal/i18n"
 )
 
 const testAddr = "murid@example.com"
@@ -81,17 +84,27 @@ func TestBothMessagesCarryTextAndHTML(t *testing.T) {
 	// the entire risk in this feature. So this is not a formatting preference.
 	cases := []struct {
 		name    string
-		build   func(string, string) (message, error)
+		locale  i18n.Locale
+		build   func(i18n.Locale, string, string) (message, error)
 		subject string
 		link    string
 	}{
-		{"verification", verificationMessage, "Verifikasi alamat email kamu", "/verify?token=tok"},
-		{"reset", passwordResetMessage, "Atur ulang kata sandi Konku kamu", "/reset-password?token=tok"},
+		{"verification/id", i18n.ID, verificationMessage,
+			"Verifikasi alamat email kamu", "/verify?token=tok"},
+		{"reset/id", i18n.ID, passwordResetMessage,
+			"Atur ulang kata sandi Konku kamu", "/reset-password?token=tok"},
+		// The subject is part of the copy: a bilingual body under an
+		// Indonesian subject is worse than either, because the subject is the
+		// only part a reader sees before deciding this is spam.
+		{"verification/en", i18n.EN, verificationMessage,
+			"Verify your email address", "/verify?token=tok"},
+		{"reset/en", i18n.EN, passwordResetMessage,
+			"Reset your Konku password", "/reset-password?token=tok"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			m, err := tc.build("https://konku.test", "tok")
+			m, err := tc.build(tc.locale, "https://konku.test", "tok")
 			if err != nil {
 				t.Fatalf("building: %v", err)
 			}
@@ -131,7 +144,7 @@ func TestBothMessagesCarryTextAndHTML(t *testing.T) {
 func TestMessageUsesCRLF(t *testing.T) {
 	// A lone \n is not a line ending on the wire. The failure it causes is a
 	// mangled message rather than a rejected one, so nothing else would notice.
-	m, err := verificationMessage("https://konku.test", "tok")
+	m, err := verificationMessage(i18n.ID, "https://konku.test", "tok")
 	if err != nil {
 		t.Fatalf("building: %v", err)
 	}
@@ -149,7 +162,7 @@ func TestMessageUsesCRLF(t *testing.T) {
 func TestTokenIsEscapedIntoTheLink(t *testing.T) {
 	// base64url makes a special character unlikely, not impossible, and
 	// "unlikely" is not the standard for the credential that unlocks an account.
-	m, err := passwordResetMessage("https://konku.test", "a+b/c=d&e")
+	m, err := passwordResetMessage(i18n.ID, "https://konku.test", "a+b/c=d&e")
 	if err != nil {
 		t.Fatalf("building: %v", err)
 	}
@@ -166,21 +179,119 @@ func TestCopyIsNotPunitive(t *testing.T) {
 	// Hard rule 6, applied to the surface where guilt copy usually arrives
 	// disguised as urgency. Both messages must state the expiry as a fact and
 	// reassure the reader who did not ask for them.
-	for _, build := range []func(string, string) (message, error){
-		verificationMessage, passwordResetMessage,
-	} {
-		m, err := build("https://konku.test", "tok")
-		if err != nil {
-			t.Fatalf("building: %v", err)
-		}
-		if !strings.Contains(m.text, "abaikan saja email ini") {
-			t.Error("no reassurance for a reader who did not request this")
-		}
-		for _, banned := range []string{"segera", "jangan sampai", "akan dihapus", "terakhir"} {
-			if strings.Contains(strings.ToLower(m.text), banned) {
-				t.Errorf("urgency copy %q; the tone is never punitive", banned)
+	//
+	// Both languages, and English is the half that needs watching: it has a far
+	// larger vocabulary of gentle blame, and every phrase in it sounds friendly.
+	// Same list and same reasoning as internal/i18n/catalog_test.go.
+	cases := []struct {
+		locale    i18n.Locale
+		reassures string
+		banned    []string
+	}{
+		{i18n.ID, "abaikan saja email ini",
+			[]string{"segera", "jangan sampai", "akan dihapus", "terakhir", "!"}},
+		{i18n.EN, "ignore this message",
+			[]string{"don't forget", "make sure you", "act now", "will be deleted",
+				"expires", "running out", "last chance", "hurry", "!"}},
+	}
+
+	for _, tc := range cases {
+		for _, build := range []func(i18n.Locale, string, string) (message, error){
+			verificationMessage, passwordResetMessage,
+		} {
+			m, err := build(tc.locale, "https://konku.test", "tok")
+			if err != nil {
+				t.Fatalf("%s: building: %v", tc.locale, err)
+			}
+			if !strings.Contains(m.text, tc.reassures) {
+				t.Errorf("%s: no reassurance for a reader who did not request this", tc.locale)
+			}
+			// The subject is copy too, and it is the half a spam filter and a
+			// reader both judge first. The HTML body is scanned with its tags
+			// stripped: <!doctype html> is not an exclamation mark.
+			for _, part := range []string{m.subject, m.text, stripTags(m.html)} {
+				for _, banned := range tc.banned {
+					if strings.Contains(strings.ToLower(part), banned) {
+						t.Errorf("%s: urgency copy %q; the tone is never punitive",
+							tc.locale, banned)
+					}
+				}
 			}
 		}
+	}
+}
+
+func TestEveryLocaleHasCompleteMail(t *testing.T) {
+	// The second mechanism (hard rule 9), and the same one internal/i18n uses:
+	// `localeCopy` being one struct guarantees the shape, not that anybody
+	// filled it in. A nil template panics on the first send; an empty subject
+	// arrives as a blank line in somebody's inbox and is never reported.
+	for _, l := range i18n.Locales {
+		c, ok := catalogs[l]
+		if !ok {
+			t.Errorf("i18n.Locales carries %q with no mail behind it", l)
+			continue
+		}
+		if missing := i18n.Missing(c); len(missing) > 0 {
+			t.Errorf("mail for %q is missing: %v", l, missing)
+		}
+	}
+	if len(catalogs) != len(i18n.Locales) {
+		t.Errorf("mail has %d locales, i18n.Locales declares %d", len(catalogs), len(i18n.Locales))
+	}
+}
+
+func TestEachLocaleSaysSomethingDifferent(t *testing.T) {
+	// The likeliest way a translation goes wrong is a copy-paste that was never
+	// touched: the struct is complete, the templates parse, and an English
+	// reader is served Indonesian. Nothing here is legitimately identical.
+	for _, build := range []func(i18n.Locale, string, string) (message, error){
+		verificationMessage, passwordResetMessage,
+	} {
+		id, err := build(i18n.ID, "https://konku.test", "tok")
+		if err != nil {
+			t.Fatalf("building id: %v", err)
+		}
+		en, err := build(i18n.EN, "https://konku.test", "tok")
+		if err != nil {
+			t.Fatalf("building en: %v", err)
+		}
+		if id.subject == en.subject {
+			t.Errorf("both locales use the subject %q", id.subject)
+		}
+		if id.text == en.text {
+			t.Error("both locales use the same text body")
+		}
+		if id.html == en.html {
+			t.Error("both locales use the same HTML body")
+		}
+		// The lang attribute is not decoration: a screen reader announcing
+		// English prose in an Indonesian voice is the same bug as the wrong
+		// language, and some clients use it to decide whether to offer a
+		// translation.
+		if !strings.Contains(id.html, `lang="id"`) {
+			t.Error("the Indonesian HTML body does not declare lang=\"id\"")
+		}
+		if !strings.Contains(en.html, `lang="en"`) {
+			t.Error("the English HTML body does not declare lang=\"en\"")
+		}
+	}
+}
+
+func TestAnUnknownLocaleFallsBackToIndonesian(t *testing.T) {
+	// i18n.WithLocale validates, so this is unreachable through a request. It
+	// is reachable from a future job that reads a locale out of a row, and the
+	// fallback has to be the language that is guaranteed to exist (hard rule 8).
+	m, err := verificationMessage("pt-BR", "https://konku.test", "tok")
+	if err != nil {
+		t.Fatalf("building: %v", err)
+	}
+	id, err := verificationMessage(i18n.ID, "https://konku.test", "tok")
+	if err != nil {
+		t.Fatalf("building: %v", err)
+	}
+	if m.subject != id.subject || m.text != id.text {
+		t.Error("an unknown locale did not fall back to Indonesian")
 	}
 }
 
@@ -339,7 +450,7 @@ func TestSendDeliversToTheServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if err := s.SendVerification(context.Background(), testAddr, "tok-123"); err != nil {
+	if err := s.SendVerification(context.Background(), i18n.ID, testAddr, "tok-123"); err != nil {
 		t.Fatalf("SendVerification: %v", err)
 	}
 
@@ -371,7 +482,7 @@ func TestSendErrorNeverCarriesTheAddress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	err = s.SendVerification(context.Background(), testAddr, "tok")
+	err = s.SendVerification(context.Background(), i18n.ID, testAddr, "tok")
 	if err == nil {
 		t.Fatal("want an error from a rejected recipient, got none")
 	}
@@ -382,3 +493,8 @@ func TestSendErrorNeverCarriesTheAddress(t *testing.T) {
 		t.Errorf("the error carries the local part of the address: %v", err)
 	}
 }
+
+// stripTags removes markup so the punitive check reads prose rather than HTML.
+var tag = regexp.MustCompile(`<[^>]*>`)
+
+func stripTags(html string) string { return tag.ReplaceAllString(html, " ") }

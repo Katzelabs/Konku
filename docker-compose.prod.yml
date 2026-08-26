@@ -125,6 +125,10 @@ services:
       # against it, and a wrong value is only discovered after the mail has
       # already been delivered — so this one *is* guarded.
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL to https://$KONKU_HOST}
+      # Where a suspended account is told to write (ticket 10 O1). Optional:
+      # unset falls back to the address /privacy and /terms already publish, so
+      # this is here for a self-hosted instance rather than for this one.
+      CONTACT_EMAIL: ${CONTACT_EMAIL:-}
     # A wedged process counts as up forever under `restart: unless-stopped`,
     # and /healthz exists precisely so it does not have to.
     #

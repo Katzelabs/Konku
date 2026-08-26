@@ -48,7 +48,7 @@ type authSessionBody struct {
 func (s *Server) handleListAuthSessions(w http.ResponseWriter, r *http.Request) {
 	user, ok := UserFrom(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, CodeUnauthorized, "Kamu belum masuk.")
+		writeError(w, http.StatusUnauthorized, CodeUnauthorized, copyFor(r).Common.NotSignedIn)
 		return
 	}
 
@@ -81,7 +81,7 @@ func (s *Server) handleListAuthSessions(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleRevokeAuthSession(w http.ResponseWriter, r *http.Request) {
 	user, ok := UserFrom(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, CodeUnauthorized, "Kamu belum masuk.")
+		writeError(w, http.StatusUnauthorized, CodeUnauthorized, copyFor(r).Common.NotSignedIn)
 		return
 	}
 
@@ -89,7 +89,7 @@ func (s *Server) handleRevokeAuthSession(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		// Not a 400: an unparseable handle and a handle belonging to someone
 		// else must look the same, or the difference is a probe (D-039).
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 
@@ -107,7 +107,7 @@ func (s *Server) handleRevokeAuthSession(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if !deleted {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 
@@ -125,7 +125,7 @@ func (s *Server) handleRevokeAuthSession(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleRevokeOtherAuthSessions(w http.ResponseWriter, r *http.Request) {
 	user, ok := UserFrom(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, CodeUnauthorized, "Kamu belum masuk.")
+		writeError(w, http.StatusUnauthorized, CodeUnauthorized, copyFor(r).Common.NotSignedIn)
 		return
 	}
 

@@ -116,7 +116,7 @@ func (rl *rateLimiter) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !rl.allow(clientKey(r)) {
 			writeError(w, http.StatusTooManyRequests, CodeRateLimited,
-				"Terlalu banyak percobaan. Coba lagi beberapa menit lagi.")
+				copyFor(r).Common.TooManyAttempts)
 			return
 		}
 		next.ServeHTTP(w, r)

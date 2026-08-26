@@ -30,7 +30,7 @@ type changePasswordRequest struct {
 func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	user, ok := UserFrom(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, CodeUnauthorized, "Kamu belum masuk.")
+		writeError(w, http.StatusUnauthorized, CodeUnauthorized, copyFor(r).Common.NotSignedIn)
 		return
 	}
 
@@ -41,14 +41,14 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 
 	if req.CurrentPassword == "" {
 		writeError(w, http.StatusBadRequest, CodeBadRequest,
-			"Masukkan kata sandi kamu saat ini.")
+			copyFor(r).Auth.CurrentPasswordRequired)
 		return
 	}
 	if len(req.NewPassword) < minPasswordLength {
 		// The same sentence signup and reset use. One rule stated three ways
 		// would read as three rules.
 		writeError(w, http.StatusBadRequest, CodeBadRequest,
-			"Kata sandi minimal 12 karakter. Kalimat yang panjang lebih aman dan lebih mudah diingat.")
+			copyFor(r).Auth.PasswordTooShort(minPasswordLength))
 		return
 	}
 	if req.NewPassword == req.CurrentPassword {
@@ -57,7 +57,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		// telling them they have not — particularly when the reason they are
 		// here is that they think the old one is compromised.
 		writeError(w, http.StatusBadRequest, CodeBadRequest,
-			"Kata sandi baru masih sama dengan yang lama. Pilih yang berbeda ya.")
+			copyFor(r).Auth.PasswordUnchanged)
 		return
 	}
 
@@ -65,7 +65,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		req.CurrentPassword, req.NewPassword, credential(r)); err != nil {
 		if errors.Is(err, auth.ErrInvalidCredentials) {
 			writeError(w, http.StatusUnauthorized, CodeUnauthorized,
-				"Kata sandi saat ini salah. Kata sandi kamu tidak berubah.")
+				copyFor(r).Auth.CurrentPasswordWrong)
 			return
 		}
 		writeInternal(w, r, err)

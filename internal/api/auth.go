@@ -130,9 +130,10 @@ func (s *Server) requireUser(next http.Handler) http.Handler {
 			// Telling someone their session expired when they simply have not
 			// logged in yet is confusing, and the copy rule is plain and
 			// direct.
-			msg := "Kamu belum masuk."
+			c := copyFor(r)
+			msg := c.Common.NotSignedIn
 			if cred != "" {
-				msg = "Sesi kamu sudah berakhir. Masuk lagi ya."
+				msg = c.Common.SessionExpired
 			}
 			writeError(w, http.StatusUnauthorized, CodeUnauthorized, msg)
 			return
@@ -174,25 +175,45 @@ func (s *Server) requireVerified(next http.Handler) http.Handler {
 		}
 		if user.EmailVerifiedAt == nil {
 			writeError(w, http.StatusForbidden, CodeEmailUnverified,
-				"Verifikasi alamat email kamu dulu ya. Cek kotak masuk untuk tautannya.")
+				copyFor(r).Auth.EmailNotVerified)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-// msgAccountSuspended is what a suspended account is told, wherever it is told
+// suspendedMessage is what a suspended account is told, wherever it is told
 // (ticket 10, O1).
 //
-// One string rather than one per call site, because it is one fact. It states
-// the fact and where to ask about it, and it does not scold: hard rule 6 rules
-// out punitive copy, and a person reading this may well be here because
+// One function rather than one string per call site, because it is one fact. It
+// states the fact and where to ask about it, and it does not scold: hard rule 6
+// rules out punitive copy, and a person reading this may well be here because
 // somebody else's account was compromised, or because the operator got it
-// wrong. The address is the one already published on /privacy and /terms —
-// there is no other channel to point at, and inventing a second one would mean
-// a support inbox nobody reads.
-const msgAccountSuspended = "Akun ini sedang ditangguhkan. " +
-	"Hubungi konku@katzeapps.com kalau ada yang perlu ditanyakan."
+// wrong.
+//
+// The address comes from configuration rather than from the copy, and that is
+// the deliberate half. It is deployment-specific exactly as PUBLIC_BASE_URL is
+// — D-096 makes self-hosting a real outcome — so a hardcoded address would have
+// every self-hosted instance point its users at somebody else's inbox. It also
+// keeps changing the address a one-line config change rather than an edit to
+// the same sentence in two languages. CONTACT_EMAIL defaults to the address
+// already published on /privacy and /terms, so this deployment is unchanged.
+func (s *Server) suspendedMessage(r *http.Request) string {
+	return copyFor(r).Auth.AccountSuspended(s.contactEmail())
+}
+
+// defaultContactEmail is what CONTACT_EMAIL falls back to, and it matches the
+// address /privacy and /terms already publish. A default rather than a required
+// value because an empty one would put a sentence with a hole in it in front of
+// somebody who is already locked out — the same reason maxNotes has one.
+const defaultContactEmail = "konku@katzeapps.com"
+
+func (s *Server) contactEmail() string {
+	if s.cfg.ContactEmail != "" {
+		return s.cfg.ContactEmail
+	}
+	return defaultContactEmail
+}
 
 // requireNotSuspended blocks an account the operator has suspended.
 //
@@ -230,7 +251,7 @@ func (s *Server) requireNotSuspended(next http.Handler) http.Handler {
 			// mechanism working, not a fault.
 			slog.Info("blocked a request from a suspended account",
 				"request_id", requestIDOf(w), "user_id", user.ID.String())
-			writeError(w, http.StatusForbidden, CodeAccountSuspended, msgAccountSuspended)
+			writeError(w, http.StatusForbidden, CodeAccountSuspended, s.suspendedMessage(r))
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -273,11 +294,11 @@ func toUserResponse(u gen.User) userResponse {
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Permintaan tidak valid.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Common.BadRequest)
 		return
 	}
 	if req.Email == "" || req.Password == "" {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Email dan kata sandi wajib diisi.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Auth.CredentialsRequired)
 		return
 	}
 
@@ -310,14 +331,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			// Only reachable with the right password (see auth.Login), so this
 			// tells the account's owner something they are owed and tells a
 			// stranger nothing. No session is minted and no cookie is set.
-			writeError(w, http.StatusForbidden, CodeAccountSuspended, msgAccountSuspended)
+			writeError(w, http.StatusForbidden, CodeAccountSuspended, s.suspendedMessage(r))
 			return
 		}
 		if errors.Is(err, auth.ErrInvalidCredentials) {
 			// One message for both unknown-email and wrong-password: telling
 			// them apart lets anyone enumerate registered addresses.
 			writeError(w, http.StatusUnauthorized, CodeUnauthorized,
-				"Email atau kata sandi salah.")
+				copyFor(r).Auth.WrongCredentials)
 			return
 		}
 		writeInternal(w, r, err)
@@ -347,7 +368,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	user, ok := UserFrom(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, CodeUnauthorized, "Belum masuk.")
+		writeError(w, http.StatusUnauthorized, CodeUnauthorized, copyFor(r).Common.NotSignedInShort)
 		return
 	}
 	writeJSON(w, http.StatusOK, toUserResponse(user))

@@ -108,7 +108,7 @@ func (s *Server) handleCreateCategory(w http.ResponseWriter, r *http.Request) {
 
 	label := strings.TrimSpace(deref(req.Label))
 	slug := categorySlug(label)
-	if !validCategory(w, label, slug) {
+	if !validCategory(w, r, label, slug) {
 		return
 	}
 
@@ -119,7 +119,7 @@ func (s *Server) handleCreateCategory(w http.ResponseWriter, r *http.Request) {
 	color := defaultCategoryColor
 	if req.Color != nil {
 		color = strings.TrimSpace(*req.Color)
-		if !validColor(w, color) {
+		if !validColor(w, r, color) {
 			return
 		}
 	}
@@ -179,7 +179,7 @@ func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request) {
 		return q.GetCategory(r.Context(), gen.GetCategoryParams{ID: id, UserID: user.ID})
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 	if err != nil {
@@ -199,10 +199,10 @@ func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request) {
 	// category's slug is its identity to the user — unlike a domain's, which is
 	// a seed and frozen. Renaming one is meant to move it.
 	slug := categorySlug(label)
-	if !validCategory(w, label, slug) {
+	if !validCategory(w, r, label, slug) {
 		return
 	}
-	if !validColor(w, color) {
+	if !validColor(w, r, color) {
 		return
 	}
 
@@ -214,7 +214,7 @@ func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request) {
 			Slug: slug, UserID: user.ID,
 		})
 	}); err == nil && existing.ID != id {
-		writeError(w, http.StatusConflict, CodeConflict, "Sudah ada kategori dengan nama itu.")
+		writeError(w, http.StatusConflict, CodeConflict, copyFor(r).Categories.NameTaken)
 		return
 	} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		writeInternal(w, r, err)
@@ -227,7 +227,7 @@ func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request) {
 		})
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 	if err != nil {
@@ -268,7 +268,7 @@ func (s *Server) setCategoryArchived(w http.ResponseWriter, r *http.Request, arc
 		})
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 	if err != nil {
@@ -297,7 +297,7 @@ func (s *Server) handleDeleteCategory(w http.ResponseWriter, r *http.Request) {
 	})
 	if isForeignKeyViolation(err) {
 		writeError(w, http.StatusConflict, CodeConflict,
-			"Kategori ini masih dipakai. Arsipkan saja kalau sudah tidak perlu.")
+			copyFor(r).Categories.InUse)
 		return
 	}
 	if err != nil {
@@ -305,26 +305,26 @@ func (s *Server) handleDeleteCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if rows == 0 {
-		writeNotFound(w)
+		writeNotFound(w, r)
 		return
 	}
 
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
-func validCategory(w http.ResponseWriter, label, slug string) bool {
+func validCategory(w http.ResponseWriter, r *http.Request, label, slug string) bool {
 	if label == "" {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Nama kategori tidak boleh kosong.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Categories.NameEmpty)
 		return false
 	}
 	if utf8.RuneCountInString(label) > maxCategoryLabelLen {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Nama kategori terlalu panjang.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Categories.NameTooLong)
 		return false
 	}
 	// A label of nothing but punctuation slugifies to the empty string, which
 	// would collide with every other such label under the unique index.
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Nama kategori tidak valid.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Categories.NameInvalid)
 		return false
 	}
 	return true
@@ -334,9 +334,9 @@ func validCategory(w http.ResponseWriter, label, slug string) bool {
 // other half is the CHECK constraint in 00011. It reuses domains' hexColor
 // pattern because the two are the same value going to the same place — an
 // inline `style` on a coloured dot.
-func validColor(w http.ResponseWriter, color string) bool {
+func validColor(w http.ResponseWriter, r *http.Request, color string) bool {
 	if !hexColor.MatchString(color) {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Warna harus dalam format #RRGGBB.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Common.BadColor)
 		return false
 	}
 	return true

@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/Katzelabs/Konku/internal/auth"
+	"github.com/Katzelabs/Konku/internal/i18n"
 )
 
 // Mailer is the transport the account flows need.
@@ -22,9 +23,16 @@ import (
 // signup path without a catcher, and so a nil one is a legible "mail is not
 // configured" rather than a panic. Config already refuses to start with
 // ALLOW_SIGNUP=true and no SMTP_URL, so a live signup route always has one.
+//
+// The locale is an explicit argument rather than something read off ctx, and
+// internal/mail's SendVerification explains why: mail is the one thing that
+// leaves, so a message in the wrong language is invisible to everybody who
+// could notice. Today it is the requester's locale, which is the account
+// holder's — signup, resend and reset are all requests made by the person the
+// message is going to.
 type Mailer interface {
-	SendVerification(ctx context.Context, to, token string) error
-	SendPasswordReset(ctx context.Context, to, token string) error
+	SendVerification(ctx context.Context, l i18n.Locale, to, token string) error
+	SendPasswordReset(ctx context.Context, l i18n.Locale, to, token string) error
 }
 
 // minPasswordLength matches the seed-user command. A long passphrase beats
@@ -91,18 +99,18 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 
 	email := strings.TrimSpace(req.Email)
 	if !validEmail(email) {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Alamat email tidak valid.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Auth.InvalidEmail)
 		return
 	}
 	if len(req.Password) < minPasswordLength {
 		writeError(w, http.StatusBadRequest, CodeBadRequest,
-			"Kata sandi minimal 12 karakter. Kalimat yang panjang lebih aman dan lebih mudah diingat.")
+			copyFor(r).Auth.PasswordTooShort(minPasswordLength))
 		return
 	}
 
 	firstName, ok := cleanName(req.FirstName)
 	if !ok || firstName == "" {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Nama depan wajib diisi.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Auth.FirstNameRequired)
 		return
 	}
 	// Optional, and it stays optional. Plenty of people have one name, and a
@@ -110,7 +118,7 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	// own name.
 	lastName, ok := cleanName(req.LastName)
 	if !ok {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Nama belakang terlalu panjang.")
+		writeError(w, http.StatusBadRequest, CodeBadRequest, copyFor(r).Auth.LastNameTooLong)
 		return
 	}
 
@@ -118,7 +126,7 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	// alone lets an attacker mailbomb one victim from many hosts (07 L3).
 	if !s.signupAddrLimit.allow(strings.ToLower(email)) {
 		writeError(w, http.StatusTooManyRequests, CodeRateLimited,
-			"Terlalu banyak percobaan untuk alamat ini. Coba lagi beberapa menit lagi.")
+			copyFor(r).Common.TooManyForAddress)
 		return
 	}
 
@@ -142,7 +150,7 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.sendOrLog(r, "verification", user.ID.String(), func(ctx context.Context) error {
-		return s.mailer.SendVerification(ctx, user.Email, token)
+		return s.mailer.SendVerification(ctx, i18n.FromContext(ctx), user.Email, token)
 	})
 
 	writeJSON(w, http.StatusNoContent, nil)
@@ -164,7 +172,7 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 			// One message for unknown, spent and expired. Distinguishing them
 			// tells an attacker which guesses were close.
 			writeError(w, http.StatusBadRequest, CodeInvalidToken,
-				"Tautan verifikasi tidak berlaku lagi. Minta tautan baru ya.")
+				copyFor(r).Auth.VerifyLinkExpired)
 			return
 		}
 		writeInternal(w, r, err)
@@ -194,7 +202,7 @@ func (s *Server) handleResendVerification(w http.ResponseWriter, r *http.Request
 	}
 	if !s.signupAddrLimit.allow(strings.ToLower(email)) {
 		writeError(w, http.StatusTooManyRequests, CodeRateLimited,
-			"Terlalu banyak percobaan untuk alamat ini. Coba lagi beberapa menit lagi.")
+			copyFor(r).Common.TooManyForAddress)
 		return
 	}
 
@@ -209,7 +217,7 @@ func (s *Server) handleResendVerification(w http.ResponseWriter, r *http.Request
 	}
 
 	s.sendOrLog(r, "verification", user.ID.String(), func(ctx context.Context) error {
-		return s.mailer.SendVerification(ctx, user.Email, token)
+		return s.mailer.SendVerification(ctx, i18n.FromContext(ctx), user.Email, token)
 	})
 
 	writeJSON(w, http.StatusNoContent, nil)
