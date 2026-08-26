@@ -1,6 +1,7 @@
 import { ExternalLink } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Card } from '../../components/ui/card'
+import { useCopy } from '../../i18n'
 import { SettingsSection } from './SettingsSection'
 
 /**
@@ -13,22 +14,18 @@ import { SettingsSection } from './SettingsSection'
  * that drifts from them would be worse than no summary.
  */
 export default function AboutSettings() {
+  const c = useCopy().settings.about
+
   return (
-    <SettingsSection title="Tentang" description="Apa yang Konku simpan, dan dokumennya.">
+    <SettingsSection title={c.title} description={c.description}>
       <Card className="flex flex-col gap-3 p-5 text-sm">
-        <p className="text-secondary-fg">
-          Konku menyimpan apa yang kamu tulis dan alamat email kamu. Tidak dijual,
-          tidak dipakai untuk iklan, tidak dipakai melatih model AI.
-        </p>
-        <p className="text-muted-fg">
-          Riwayat belajar kamu tidak pernah digabung dengan punya orang lain — semua
-          angka di aplikasi ini dihitung untuk akun kamu sendiri.
-        </p>
+        <p className="text-secondary-fg">{c.stores}</p>
+        <p className="text-muted-fg">{c.notAggregated}</p>
       </Card>
 
       <div className="flex flex-col gap-2">
-        <LegalLink to="/privacy" label="Kebijakan Privasi" />
-        <LegalLink to="/terms" label="Ketentuan Layanan" />
+        <LegalLink to="/privacy" label={c.privacy} />
+        <LegalLink to="/terms" label={c.terms} />
       </div>
     </SettingsSection>
   )

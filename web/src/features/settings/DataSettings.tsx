@@ -1,3 +1,4 @@
+import { useCopy } from '../../i18n'
 import { DeleteAccount } from './DeleteAccount'
 import { ExportData } from './ExportData'
 import { SettingsSection } from './SettingsSection'
@@ -17,19 +18,15 @@ import { SettingsSection } from './SettingsSection'
  * visit.
  */
 export default function DataSettings() {
+  const c = useCopy().settings
+
   return (
     <div className="flex flex-col gap-10">
-      <SettingsSection
-        title="Unduh datamu"
-        description="Semua yang tersimpan di akun ini, dalam satu arsip."
-      >
+      <SettingsSection title={c.export.title} description={c.export.description}>
         <ExportData />
       </SettingsSection>
 
-      <SettingsSection
-        title="Hapus akun"
-        description="Kalau kamu mau berhenti. Unduh datanya dulu kalau perlu."
-      >
+      <SettingsSection title={c.delete.title} description={c.delete.description}>
         <DeleteAccount />
       </SettingsSection>
     </div>

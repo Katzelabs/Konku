@@ -1,6 +1,7 @@
 import { Download } from 'lucide-react'
 import { Button } from '../../components/ui/button'
 import { Card } from '../../components/ui/card'
+import { useCopy } from '../../i18n'
 import { SettingsRow } from './SettingsSection'
 
 /**
@@ -16,23 +17,19 @@ import { SettingsRow } from './SettingsSection'
  * in sync here.
  */
 export function ExportData() {
+  const c = useCopy().settings.export
+
   return (
     <Card className="flex flex-col gap-4 p-5">
       <div>
-        <p className="text-sm text-secondary-fg">
-          Catatan dan kartu sebagai file markdown biasa, sisanya JSON — jadwal ulang,
-          riwayat ulangan, sesi fokus, domain, kategori, dan latihan tersimpan.
-        </p>
-        <p className="mt-2 text-sm text-muted-fg">
-          Bisa dibuka di Obsidian atau editor teks apa pun. Tidak ada yang dikunci di
-          format khusus.
-        </p>
+        <p className="text-sm text-secondary-fg">{c.formats}</p>
+        <p className="mt-2 text-sm text-muted-fg">{c.portable}</p>
       </div>
 
       <SettingsRow
         className="border-t border-border pt-4"
-        title="Unduh arsip"
-        description="Kata sandi dan sesi login tidak ikut diunduh."
+        title={c.row.title}
+        description={c.row.description}
         action={
           /*
             asChild so the anchor keeps the button's styling. A <button> firing
@@ -42,7 +39,7 @@ export function ExportData() {
           <Button asChild variant="secondary" size="sm">
             <a href="/api/export" download>
               <Download />
-              Unduh
+              {c.action}
             </a>
           </Button>
         }

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { PageHeader } from '../../components/ui/page-header'
+import { useCopy } from '../../i18n'
 import { cn } from '../../lib/utils'
 import { SETTINGS_ITEMS, SETTINGS_NAV } from './nav'
 
@@ -19,12 +20,11 @@ import { SETTINGS_ITEMS, SETTINGS_NAV } from './nav'
  * that is not already on screen.
  */
 export default function SettingsLayout() {
+  const c = useCopy().settings.shell
+
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        title="Pengaturan"
-        description="Akun, label, tampilan, dan datamu."
-      />
+      <PageHeader title={c.title} description={c.description} />
 
       <div className="grid items-start gap-6 lg:grid-cols-[13.5rem_minmax(0,1fr)] lg:gap-10">
         <SettingsRail />
@@ -46,15 +46,20 @@ export default function SettingsLayout() {
 
 /** Desktop: grouped, vertical, and sticky so it survives a long section. */
 function SettingsRail() {
+  const c = useCopy().settings
+
   return (
     <nav
-      aria-label="Bagian pengaturan"
+      aria-label={c.shell.navLabel}
       className="hidden flex-col gap-5 lg:sticky lg:top-0 lg:flex"
     >
       {SETTINGS_NAV.map((group) => (
-        <div key={group.label} className="flex flex-col gap-1">
+        // Keyed on the first destination in the group rather than on its
+        // label: the label is a translated string now, so keying on it would
+        // remount all three groups on a language switch.
+        <div key={group.items[0].to} className="flex flex-col gap-1">
           <p className="px-3 pb-1 text-xs font-medium tracking-wide text-subtle-fg uppercase">
-            {group.label}
+            {group.label(c)}
           </p>
           {group.items.map((item) => (
             <SettingsNavLink key={item.to} item={item} />
@@ -77,6 +82,7 @@ function SettingsRail() {
 function SettingsTabs() {
   const { pathname } = useLocation()
   const strip = useRef<HTMLElement>(null)
+  const c = useCopy().settings.shell
 
   /*
    * Scroll the open section into the strip.
@@ -95,7 +101,7 @@ function SettingsTabs() {
   return (
     <nav
       ref={strip}
-      aria-label="Bagian pengaturan"
+      aria-label={c.navLabel}
       className="-mx-4 overflow-x-auto px-4 pb-1 lg:hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
       <div className="flex w-max gap-2">
@@ -109,6 +115,7 @@ function SettingsTabs() {
 
 function SettingsNavLink({ item }: { item: (typeof SETTINGS_ITEMS)[number] }) {
   const Icon = item.icon
+  const c = useCopy().settings
 
   return (
     <NavLink
@@ -123,7 +130,7 @@ function SettingsNavLink({ item }: { item: (typeof SETTINGS_ITEMS)[number] }) {
       }
     >
       <Icon className="size-4 shrink-0" />
-      {item.label}
+      {item.label(c)}
     </NavLink>
   )
 }
