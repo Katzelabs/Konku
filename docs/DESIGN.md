@@ -410,3 +410,28 @@ The non-punitive rules survive translation and that is not automatic: English
 has a far larger vocabulary of gentle blame. No *don't forget*, no *you missed*,
 no *keep your streak*. The style clause applies to both languages — plain,
 direct, active voice, sentence case, no filler.
+
+**Where it lives.** `web/src/i18n/` — `types.ts` declares the `Copy` contract,
+`id.ts` is the original, `en.ts` is translated from it. One accessor:
+
+```tsx
+const c = useCopy()                       // the whole typed catalog
+<h2>{c.settings.sessions.title}</h2>
+<p>{c.settings.sessions.ago.hours(3)}</p> // plural lives in en.ts
+```
+
+Outside a component — a zod schema, a table of labels, a helper — take the
+catalog as an argument and let the caller get it from `useCopy()`, or use
+`copyFor(locale)`. Never import `id` directly to "just get a string": that is
+how a screen ends up permanently Indonesian in a way nothing notices.
+
+The key path *is* the id: feature folder, then screen, then what the string is
+on that screen (`settings.sessions.signOutOthers.action`) — never what it says.
+A string with a value in it is a **function** in the catalog, so the argument
+count is typechecked and `Intl.PluralRules` stays inside `en.ts`. Numbers and
+dates go through `Intl`, never hand-formatted — Indonesian writes 5.000 where
+English writes 5,000.
+
+`features/settings/ActiveSessions.tsx` is the worked example; copy its shape.
+A proper noun that is the same word in both languages (`Chrome`, `macOS`) is
+not copy — mark it `// i18n-exempt: <reason>` and leave it in the code.

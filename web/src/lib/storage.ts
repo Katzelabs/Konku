@@ -17,8 +17,16 @@ const PREFIXES = ['konku.', 'konku:']
  * Kept across a sign-out. The theme is a property of the screen you are
  * looking at, not of the account looking at it — clearing it would repaint the
  * login page white on a device someone deliberately set to dark.
+ *
+ * `konku.locale` is kept for the same reason and needs one more sentence,
+ * because unlike the theme the locale genuinely *is* an account setting
+ * (D-094). What is stored here is not that setting — it is a hint about which
+ * catalog chunk the next boot should fetch before it paints. Clearing it would
+ * send an English reader back to an Indonesian login screen every time they
+ * signed out, and the account's own setting outranks it the moment they sign
+ * in again. It holds a language, and nothing about who was reading it.
  */
-const KEEP = new Set(['konku.theme'])
+const KEEP = new Set(['konku.theme', 'konku.locale'])
 
 /** Remove everything this app stored for the account that is leaving. */
 export function clearAccountStorage() {

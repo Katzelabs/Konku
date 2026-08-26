@@ -51,7 +51,7 @@ KONKU_BACKUP_DIR ?= $(HOME)/Backups/konku
 # needs RESTORE_DB=konku CONFIRM=yes, typed on purpose.
 RESTORE_DB ?= konku_restore
 
-.PHONY: help setup dev dev-api dev-web build test test-integration test-mail seed-demo sqlc sqlc-diff lint check check-pure check-toolchains migrate-up migrate-down db-up db-down db-app-role db-dump db-restore db-upgrade-pg18 mail-up mail-down release-verify clean
+.PHONY: help setup dev dev-api dev-web build test test-integration test-mail seed-demo sqlc sqlc-diff lint check check-pure check-toolchains check-i18n migrate-up migrate-down db-up db-down db-app-role db-dump db-restore db-upgrade-pg18 mail-up mail-down release-verify clean
 
 help:
 	@grep -E '^[a-zA-Z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -328,7 +328,30 @@ sqlc-diff: ## Fail if generated code is stale
 		echo "sqlc not installed (go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest); skipping drift check"; \
 	fi
 
-check: lint test check-pure check-toolchains sqlc-diff ## All checks
+# Hard rule 8, as amended by D-094: user-facing copy ships in Indonesian AND
+# English, out of web/src/i18n/. The `Copy` type is what makes a missing
+# translation a compile error — but only for a string that is already a key.
+# This is the other mechanism (hard rule 9): it fails on a sentence typed
+# straight into a feature folder, which the type system cannot see because it
+# was never a key in the first place.
+#
+# Deliberately narrow about what counts as copy — class names, test ids, query
+# keys, URLs, aria roles and HTTP verbs are not — because a check that cries
+# wolf gets switched off, and this one has to survive the whole of ticket 11.
+# What it catches and what it does not is written out at the top of the script.
+#
+# It runs against 41 files that still hold Indonesian literals, so it is a
+# ratchet rather than a pass/fail: web/i18n-baseline.json records what is left,
+# a file that gains a literal fails, and a file that reaches zero fails until
+# it leaves the baseline. `npm run check:i18n -- --list` prints what remains.
+check-i18n: ## Fail on user-facing copy typed into a feature folder
+	@[ -d web/node_modules/typescript ] || { \
+	  echo "check-i18n: web/node_modules is missing. Run \`make setup\`."; \
+	  exit 1; \
+	}
+	@cd web && node scripts/check-i18n.mjs
+
+check: lint test check-pure check-toolchains check-i18n sqlc-diff ## All checks
 
 # The image builds with the toolchains the test jobs use (D-088).
 #

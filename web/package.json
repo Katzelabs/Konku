@@ -8,6 +8,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "check:bundle": "node scripts/check-bundle.mjs",
+    "check:i18n": "node scripts/check-i18n.mjs",
     "icons": "node scripts/icons.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
