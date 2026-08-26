@@ -12,6 +12,7 @@ import {
 } from '../../components/ui/dialog'
 import { Notice } from '../../components/ui/notice'
 import { Textarea } from '../../components/ui/textarea'
+import { useCopy } from '../../i18n'
 import { useCreateNote } from '../notes/queries'
 
 /**
@@ -36,6 +37,7 @@ export default function CaptureDialog({
   domainId: DomainId | null
   onClose: () => void
 }) {
+  const c = useCopy().timer.capture
   const [text, setText] = useState('')
   const create = useCreateNote()
   const field = useRef<HTMLTextAreaElement>(null)
@@ -60,8 +62,8 @@ export default function CaptureDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent showClose={false}>
         <DialogHeader>
-          <DialogTitle>Apa yang kamu pelajari?</DialogTitle>
-          <DialogDescription>Satu baris saja cukup.</DialogDescription>
+          <DialogTitle>{c.title}</DialogTitle>
+          <DialogDescription>{c.description}</DialogDescription>
         </DialogHeader>
 
         <DialogBody className="flex flex-col gap-2">
@@ -70,15 +72,16 @@ export default function CaptureDialog({
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
+              // i18n-exempt: 'Enter' is a KeyboardEvent.key value, not copy.
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) save()
             }}
             rows={4}
-            placeholder="Satu baris saja cukup."
+            placeholder={c.placeholder}
           />
 
           <p className="text-xs text-subtle-fg">
-            Tulis kartu dengan format{' '}
-            <code className="rounded-sm bg-muted px-1 font-mono">Tanya :: Jawab</code>
+            {c.cardHint}{' '}
+            <code className="rounded-sm bg-muted px-1 font-mono">{c.cardSyntax}</code>
           </p>
 
           {create.isError && <Notice>{create.error.message}</Notice>}
@@ -86,14 +89,14 @@ export default function CaptureDialog({
 
         <DialogFooter>
           {/*
-            "Lewati" is a plain, equal option — same weight as saving, no
+            Skipping is a plain, equal option — same weight as saving, no
             greying out, no guilt copy. Nothing was lost by not writing.
           */}
           <Button variant="secondary" onClick={onClose} disabled={create.isPending}>
-            Lewati
+            {c.skip}
           </Button>
           <Button variant="primary" onClick={save} disabled={create.isPending}>
-            {create.isPending ? 'Menyimpan…' : 'Simpan'}
+            {create.isPending ? c.saving : c.save}
           </Button>
         </DialogFooter>
       </DialogContent>

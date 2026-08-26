@@ -17,7 +17,6 @@
     "categories/CategorySettings.tsx": 18,
     "domains/DomainSettings.tsx": 18,
     "domains/DomainsPage.tsx": 2,
-    "home/HomePage.tsx": 23,
     "notes/NoteEditorPage.tsx": 20,
     "notes/NotePeek.tsx": 8,
     "notes/NotesPage.tsx": 27,
@@ -35,9 +34,6 @@
     "settings/nav.ts": 11,
     "settings/PreferencesSettings.tsx": 6,
     "settings/SettingsLayout.tsx": 4,
-    "settings/SettingsSection.tsx": 1,
-    "timer/CaptureDialog.tsx": 9,
-    "timer/SessionLog.tsx": 6,
-    "timer/TimerPage.tsx": 21
+    "settings/SettingsSection.tsx": 1
   }
 }
