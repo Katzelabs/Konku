@@ -77,9 +77,17 @@ const n = pluralFor('en')
 export const en: Copy = {
   common: {
     working: 'One moment…',
+    today: 'Today',
+    yesterday: 'Yesterday',
   },
 
   settings: {
+    language: {
+      title: 'Language',
+      description: 'Stored on your account, so it follows you to other devices.',
+      auto: 'Follow the browser',
+    },
+
     sessions: {
       title: 'Signed-in devices',
       description: 'Where this account is in use. End any you do not recognise.',

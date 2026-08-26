@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/Katzelabs/Konku/internal/i18n"
 	"github.com/Katzelabs/Konku/internal/store"
 	"github.com/Katzelabs/Konku/internal/store/gen"
 )
@@ -133,22 +134,37 @@ func (s *Service) Login(ctx context.Context, email, password string, client Clie
 	return user, id, expires, nil
 }
 
-// Resolve returns the user behind a session ID.
+// Resolve returns the user behind a session ID, and the language that account
+// has chosen to read in.
 //
 // Expiry is enforced in SQL, so an expired session can never be treated as
 // valid by a caller that forgot to check.
-func (s *Service) Resolve(ctx context.Context, sessionID string) (gen.User, error) {
+//
+// The locale is the empty i18n.Locale when the account has never chosen one,
+// which is a different fact from having chosen Indonesian: it is what leaves
+// the caller's Accept-Language answer standing (D-094's middle step). Anything
+// stored that this build has no catalog for is flattened to empty here rather
+// than passed on — the column's CHECK constraint is the other mechanism, and
+// between them a value with no copy behind it cannot reach a handler.
+//
+// It comes out of the users row this query already reads rather than costing a
+// lookup of its own — which is why 00014 put the column there. Every
+// authenticated request needs it, and a second round trip per request is what
+// a pool capped at 10 for the rest of the box cannot afford (D-028).
+func (s *Service) Resolve(ctx context.Context, sessionID string) (gen.User, i18n.Locale, error) {
 	if sessionID == "" {
-		return gen.User{}, ErrNoSession
+		return gen.User{}, "", ErrNoSession
 	}
 
 	row, err := s.store.Q().GetActiveSession(ctx, sessionID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return gen.User{}, ErrNoSession
+			return gen.User{}, "", ErrNoSession
 		}
-		return gen.User{}, fmt.Errorf("auth: resolving session: %w", err)
+		return gen.User{}, "", fmt.Errorf("auth: resolving session: %w", err)
 	}
+
+	locale := LocaleOf(row.User)
 
 	// "Last seen" would be a write on every single request if it were written
 	// unconditionally, on a pool capped at 10 connections for the sake of every
@@ -176,12 +192,31 @@ func (s *Service) Resolve(ctx context.Context, sessionID string) (gen.User, erro
 		}
 	}
 
-	return row.User, nil
+	return row.User, locale, nil
 }
 
 // lastSeenInterval is how stale last_seen_at may get before a request pays for
 // an update. See Resolve.
 const lastSeenInterval = 5 * time.Minute
+
+// LocaleOf returns the language an account has chosen, or the empty Locale
+// when it has chosen none (00014).
+//
+// One function rather than a dereference at each call site, because the same
+// two checks are needed everywhere the column is read and one of them is easy
+// to skip: the column is text with a CHECK constraint behind it, but a build
+// that has dropped a catalog would still find a value there. Anything this
+// application has no copy for is flattened to empty, so a caller never gets a
+// locale it cannot look up.
+func LocaleOf(u gen.User) i18n.Locale {
+	if u.Locale == nil {
+		return ""
+	}
+	if l := i18n.Locale(*u.Locale); i18n.Valid(l) {
+		return l
+	}
+	return ""
+}
 
 // ListSessions returns the account's live sessions, newest activity first.
 //

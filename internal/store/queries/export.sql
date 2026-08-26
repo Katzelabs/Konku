@@ -23,7 +23,15 @@
 -- of what "everything we have on you" means (07 L6). Omitting it would make
 -- the archive quietly incomplete in exactly the field a reader would check
 -- first.
-SELECT id, email, first_name, last_name, created_at, email_verified_at
+--
+-- locale travels with it (00014). It is presented to the person as a
+-- preference, and it lands in user.json rather than settings.json only because
+-- of where the column had to live — but rule 2 above applies to preferences
+-- exactly as it applies to content: an export that quietly drops what somebody
+-- set is not the whole account. NULL is exported as null and means "never
+-- chosen", which is a different fact from "chose Indonesian" and is worth the
+-- archive keeping straight.
+SELECT id, email, first_name, last_name, created_at, email_verified_at, locale
 FROM users
 WHERE id = $1;
 

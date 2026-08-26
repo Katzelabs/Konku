@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/ca
 import { EmptyState } from '../../components/ui/empty-state'
 import { Notice } from '../../components/ui/notice'
 import { Loading } from '../../components/ui/spinner'
-import { humanDate, timeOfDay } from '../../lib/date'
+import { useDateFormat } from '../../lib/useDateFormat'
 import type { FocusSession } from '../../api/types'
 import { useAllDomains } from '../domains/queries'
 import { useSessions } from './queries'
@@ -27,6 +27,7 @@ import { useSessions } from './queries'
  * deferred — which is why this states the count and offers no "load more".
  */
 export function SessionLog() {
+  const d = useDateFormat()
   const { sessions, total, truncated, isPending, error } = useSessions()
   // The display path needs archived domains too — a session keeps its tag when
   // the domain is archived, and the record is the point (D-051).
@@ -75,7 +76,7 @@ export function SessionLog() {
             <section key={day.date}>
               <header className="flex items-baseline justify-between gap-3 bg-muted px-5 py-1.5">
                 <h4 className="text-xs font-medium text-muted-fg">
-                  {humanDate(day.date)}
+                  {d.humanDate(day.date)}
                 </h4>
                 <span className="text-xs text-subtle-fg tabular-nums">
                   {day.totalMinutes} menit
@@ -91,7 +92,7 @@ export function SessionLog() {
                       className="flex items-center gap-3 px-5 py-2.5 text-sm"
                     >
                       <span className="w-11 shrink-0 text-xs text-subtle-fg tabular-nums">
-                        {timeOfDay(s.completedAt)}
+                        {d.timeOfDay(s.completedAt)}
                       </span>
                       {domain ? (
                         <>

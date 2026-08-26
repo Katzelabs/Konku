@@ -220,6 +220,14 @@ type Querier interface {
 	// of what "everything we have on you" means (07 L6). Omitting it would make
 	// the archive quietly incomplete in exactly the field a reader would check
 	// first.
+	//
+	// locale travels with it (00014). It is presented to the person as a
+	// preference, and it lands in user.json rather than settings.json only because
+	// of where the column had to live — but rule 2 above applies to preferences
+	// exactly as it applies to content: an export that quietly drops what somebody
+	// set is not the whole account. NULL is exported as null and means "never
+	// chosen", which is a different fact from "chose Indonesian" and is worth the
+	// archive keeping straight.
 	ExportUser(ctx context.Context, id uuid.UUID) (ExportUserRow, error)
 	ExportUserSettings(ctx context.Context, userID uuid.UUID) (UserSetting, error)
 	// The counts are recomputed here rather than accepted from the client. total
@@ -228,6 +236,14 @@ type Querier interface {
 	FinishRun(ctx context.Context, arg FinishRunParams) (ReviewRun, error)
 	// Expiry is enforced here rather than in Go, so an expired session can never
 	// be treated as valid by a caller that forgot to check.
+	//
+	// This is also where the account's language comes from, and it is the reason
+	// 00014 put that column on users rather than on user_settings: every
+	// authenticated request needs it (an error message is copy somebody reads),
+	// this is the one query that already runs on every one of them, and it runs
+	// with no app.user_id set — so only the two tables 00006 gives a policy that
+	// permits that are reachable from here. It arrives inside sqlc.embed(users)
+	// and costs nothing.
 	GetActiveSession(ctx context.Context, id string) (GetActiveSessionRow, error)
 	GetCard(ctx context.Context, arg GetCardParams) (Card, error)
 	GetCardWithSchedule(ctx context.Context, arg GetCardWithScheduleParams) (GetCardWithScheduleRow, error)
@@ -465,6 +481,17 @@ type Querier interface {
 	// The undo. note_categories was never touched, so a restored note comes back
 	// still wearing its labels.
 	RestoreNotes(ctx context.Context, arg RestoreNotesParams) (int64, error)
+	// The account's language (00014, ticket 11 I2).
+	//
+	// NULL is a value the caller means: it is "follow the browser", the middle
+	// step of D-094's resolution order rather than the absence of an answer. A
+	// COALESCE here would make the setting one-way — somebody who tried English
+	// could never get back to following their browser.
+	//
+	// Scoped by id in the WHERE like everything else (hard rule 4). It is the
+	// caller's own row, and saying so in the SQL is what keeps that true when the
+	// next person copies this query for something addressed by a parameter.
+	SetUserLocale(ctx context.Context, arg SetUserLocaleParams) error
 	// options and correct_index are NULL for a recall question, and for a choice
 	// question that could not find enough distractors to build from.
 	SnapshotRunCard(ctx context.Context, arg SnapshotRunCardParams) error
@@ -535,6 +562,11 @@ type Querier interface {
 	// handler too. Two mechanisms: the handler's version produces an Indonesian
 	// message a person can act on, and the constraint is what makes the claim true
 	// regardless of which caller wrote the row (hard rule 9).
+	//
+	// The language is NOT here. It is users.locale (00014), because every
+	// authenticated request needs it and only the auth substrate is reachable from
+	// the query that establishes identity. The settings endpoint writes both in
+	// one transaction (hard rule 3).
 	UpsertUserSettings(ctx context.Context, arg UpsertUserSettingsParams) (UserSetting, error)
 }
 

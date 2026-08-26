@@ -111,6 +111,7 @@ Commit `internal/web/dist/.gitkeep` — `//go:embed all:dist` is a compile-time 
 ```sql
 users            -- id, email, password_hash (argon2id), created_at,
                  -- email_verified_at, deleted_at             (D-058, D-066)
+                 -- locale ('id'|'en'|NULL)                   (D-094, 00014)
 user_settings    -- user_id, default_duration_minutes, focus_step_n,
                  -- rota_enabled                              (D-058)
 auth_sessions    -- id, user_id, expires_at, created_at,

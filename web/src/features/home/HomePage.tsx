@@ -13,7 +13,7 @@ import { EmptyState } from '../../components/ui/empty-state'
 import { Notice } from '../../components/ui/notice'
 import { PageHeader } from '../../components/ui/page-header'
 import { Loading } from '../../components/ui/spinner'
-import { humanDay } from '../../lib/date'
+import { useDateFormat } from '../../lib/useDateFormat'
 import { useDomains } from '../domains/queries'
 import { useCreateNote, useRecentNotes } from '../notes/queries'
 import { useDueCards } from '../review/queries'
@@ -156,6 +156,7 @@ function RecentNotes() {
   // the whole collection into memory to render a corner of the home screen.
   const { data: recent = [], isPending, error } = useRecentNotes(6)
   const { data: domains } = useDomains()
+  const d = useDateFormat()
 
   return (
     <Card>
@@ -199,7 +200,7 @@ function RecentNotes() {
                       {n.title || 'Tanpa judul'}
                     </span>
                     <span className="shrink-0 text-xs text-subtle-fg">
-                      {humanDay(n.updatedAt)}
+                      {d.humanDay(n.updatedAt)}
                     </span>
                   </Link>
                 </li>

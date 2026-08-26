@@ -19,24 +19,29 @@ import type { Locale } from './types'
  * painted until React mounts anyway — `index.html` has an empty `#root`. It
  * needs only to run before `createRoot`.
  *
- * ── What I2 changes here ────────────────────────────────────────────────────
+ * ── How I2 resolves it ──────────────────────────────────────────────────────
  *
  * The resolution order is account setting → `Accept-Language` → `id` (D-094).
- * Two halves of that belong in this file, and neither is implemented:
+ * Two halves of it live in this file, and both are now implemented:
  *
- *   1. **`navigator.language`**, folded in below where it is marked. It is the
- *      client-side half of `Accept-Language` and it is available synchronously,
- *      which is what makes it usable here. A stranger's first visit has no
- *      cache, so without it their first paint is Indonesian whatever their
- *      browser asked for.
- *   2. **`rememberLocale()` must be called whenever resolution produces an
- *      answer** — when `/auth/me` returns the account's setting, and when the
- *      user changes it. Nothing else writes the cache, so skipping that call
- *      means every reload paints the previous language until the account loads.
+ *   1. **`navigator.language`**, folded into `bootLocale()` below. It is the
+ *      client-side half of `Accept-Language` and it is available
+ *      synchronously, which is what makes it usable here. A stranger's first
+ *      visit has no cache, so without it their first paint would be Indonesian
+ *      whatever their browser asked for. Doing it in an effect would be the
+ *      D-086 flash, and worse: a wrong language is *legible*.
+ *   2. **`rememberLocale()` is called whenever resolution produces an
+ *      answer** — `AppLocale` in `./AppLocale.tsx` is the one caller, and it
+ *      covers both cases that produce one: `/auth/me` returning the account's
+ *      setting, and the user changing it on the Preferensi screen (which
+ *      writes the new value into that same query).
  *
  * The cache is a *hint about the next boot*, never the source of truth. The
  * account setting outranks it the moment it arrives, and `LocaleProvider`
  * switches without a flash when it does.
+ *
+ * It is kept across sign-out (see `lib/storage.ts`), so the login screen stays
+ * in the language the person was just reading rather than snapping back.
  */
 
 /** Where the boot hint lives. Swept on sign-out unless it is in the keep list. */
@@ -62,10 +67,40 @@ export function bootLocale(): Locale {
     // Storage unavailable. The default is the right answer.
   }
 
-  // I2: `navigator.language` goes here, and only here. An effect that corrects
-  // the locale after mount is the flash this file exists to prevent.
+  return browserLocale() ?? 'id'
+}
 
-  return 'id'
+/**
+ * What the browser asked for, if this app has copy for it.
+ *
+ * The client-side half of `Accept-Language`, and it must stay synchronous —
+ * an effect that corrects the locale after mount is the flash this file exists
+ * to prevent. `internal/api/locale.go` reads the header form of the same
+ * preference for the server's own copy; the two answer the same question from
+ * the same source and are expected to agree.
+ *
+ * `navigator.languages` rather than `navigator.language`: it is the ordered
+ * list, so somebody whose first choice is a language this app does not have
+ * still gets their second rather than the fallback. It is missing in a few
+ * environments (and in jsdom, depending on the version), hence the fallback to
+ * the singular.
+ *
+ * Only the primary subtag is compared, exactly as the server does: `en-GB`,
+ * `en-US` and `en` are all English as far as two catalogs are concerned. A tag
+ * this app has no copy for is skipped rather than matched — a locale with no
+ * catalog behind it is the one answer that must never be returned.
+ */
+function browserLocale(): Locale | undefined {
+  try {
+    const tags = navigator.languages?.length ? navigator.languages : [navigator.language]
+    for (const tag of tags) {
+      const primary = String(tag).split('-')[0].toLowerCase()
+      if (isLocale(primary)) return primary
+    }
+  } catch {
+    // No navigator, or a hostile one. The default is the right answer.
+  }
+  return undefined
 }
 
 /**

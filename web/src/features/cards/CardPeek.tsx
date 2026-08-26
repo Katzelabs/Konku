@@ -10,7 +10,7 @@ import { MarkdownInline } from '../../components/ui/markdown'
 import { Notice } from '../../components/ui/notice'
 import { PeekPanel, type PeekMode } from '../../components/ui/peek-panel'
 import { Loading } from '../../components/ui/spinner'
-import { humanDay } from '../../lib/date'
+import { useDateFormat } from '../../lib/useDateFormat'
 import { useAllCategories } from '../categories/queries'
 import { useAllDomains } from '../domains/queries'
 import { useCard, useDeleteCard } from './queries'
@@ -43,6 +43,7 @@ export function CardPeek({
   onClose: () => void
 }) {
   const { data: card, isPending, error } = useCard(cardId)
+  const d = useDateFormat()
   const { data: domains } = useAllDomains()
   const { data: categories } = useAllCategories()
   const remove = useDeleteCard()
@@ -67,7 +68,7 @@ export function CardPeek({
             {domain && <DomainBadge color={domain.color} label={domain.label} />}
             <CategoryChips ids={card.categoryIds} categories={categories} />
             <span className="ml-auto text-xs text-subtle-fg">
-              {humanDay(card.updatedAt)}
+              {d.humanDay(card.updatedAt)}
             </span>
           </div>
 

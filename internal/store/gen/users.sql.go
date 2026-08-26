@@ -167,7 +167,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (A
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (id, email, password_hash, email_verified_at, first_name, last_name)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, email, password_hash, created_at, email_verified_at, first_name, last_name, suspended_at
+RETURNING id, email, password_hash, created_at, email_verified_at, first_name, last_name, suspended_at, locale
 `
 
 type CreateUserParams struct {
@@ -214,6 +214,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.FirstName,
 		&i.LastName,
 		&i.SuspendedAt,
+		&i.Locale,
 	)
 	return i, err
 }
@@ -343,7 +344,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) error {
 }
 
 const getActiveSession = `-- name: GetActiveSession :one
-SELECT auth_sessions.id, auth_sessions.user_id, auth_sessions.expires_at, auth_sessions.created_at, auth_sessions.last_seen_at, auth_sessions.user_agent, auth_sessions.ip, auth_sessions.public_id, users.id, users.email, users.password_hash, users.created_at, users.email_verified_at, users.first_name, users.last_name, users.suspended_at
+SELECT auth_sessions.id, auth_sessions.user_id, auth_sessions.expires_at, auth_sessions.created_at, auth_sessions.last_seen_at, auth_sessions.user_agent, auth_sessions.ip, auth_sessions.public_id, users.id, users.email, users.password_hash, users.created_at, users.email_verified_at, users.first_name, users.last_name, users.suspended_at, users.locale
 FROM auth_sessions
 JOIN users ON users.id = auth_sessions.user_id
 WHERE auth_sessions.id = $1
@@ -357,6 +358,14 @@ type GetActiveSessionRow struct {
 
 // Expiry is enforced here rather than in Go, so an expired session can never
 // be treated as valid by a caller that forgot to check.
+//
+// This is also where the account's language comes from, and it is the reason
+// 00014 put that column on users rather than on user_settings: every
+// authenticated request needs it (an error message is copy somebody reads),
+// this is the one query that already runs on every one of them, and it runs
+// with no app.user_id set — so only the two tables 00006 gives a policy that
+// permits that are reachable from here. It arrives inside sqlc.embed(users)
+// and costs nothing.
 func (q *Queries) GetActiveSession(ctx context.Context, id string) (GetActiveSessionRow, error) {
 	row := q.db.QueryRow(ctx, getActiveSession, id)
 	var i GetActiveSessionRow
@@ -377,12 +386,13 @@ func (q *Queries) GetActiveSession(ctx context.Context, id string) (GetActiveSes
 		&i.User.FirstName,
 		&i.User.LastName,
 		&i.User.SuspendedAt,
+		&i.User.Locale,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, created_at, email_verified_at, first_name, last_name, suspended_at FROM users WHERE email = $1
+SELECT id, email, password_hash, created_at, email_verified_at, first_name, last_name, suspended_at, locale FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -397,12 +407,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.FirstName,
 		&i.LastName,
 		&i.SuspendedAt,
+		&i.Locale,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, created_at, email_verified_at, first_name, last_name, suspended_at FROM users WHERE id = $1
+SELECT id, email, password_hash, created_at, email_verified_at, first_name, last_name, suspended_at, locale FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
@@ -417,6 +428,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.FirstName,
 		&i.LastName,
 		&i.SuspendedAt,
+		&i.Locale,
 	)
 	return i, err
 }
@@ -514,6 +526,30 @@ WHERE id = $1 AND email_verified_at IS NULL
 // than a moved timestamp. The token is already spent by then anyway.
 func (q *Queries) MarkEmailVerified(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, markEmailVerified, id)
+	return err
+}
+
+const setUserLocale = `-- name: SetUserLocale :exec
+UPDATE users SET locale = $2 WHERE id = $1
+`
+
+type SetUserLocaleParams struct {
+	ID     uuid.UUID `json:"id"`
+	Locale *string   `json:"locale"`
+}
+
+// The account's language (00014, ticket 11 I2).
+//
+// NULL is a value the caller means: it is "follow the browser", the middle
+// step of D-094's resolution order rather than the absence of an answer. A
+// COALESCE here would make the setting one-way — somebody who tried English
+// could never get back to following their browser.
+//
+// Scoped by id in the WHERE like everything else (hard rule 4). It is the
+// caller's own row, and saying so in the SQL is what keeps that true when the
+// next person copies this query for something addressed by a parameter.
+func (q *Queries) SetUserLocale(ctx context.Context, arg SetUserLocaleParams) error {
+	_, err := q.db.Exec(ctx, setUserLocale, arg.ID, arg.Locale)
 	return err
 }
 
@@ -631,6 +667,11 @@ type UpsertUserSettingsParams struct {
 // handler too. Two mechanisms: the handler's version produces an Indonesian
 // message a person can act on, and the constraint is what makes the claim true
 // regardless of which caller wrote the row (hard rule 9).
+//
+// The language is NOT here. It is users.locale (00014), because every
+// authenticated request needs it and only the auth substrate is reachable from
+// the query that establishes identity. The settings endpoint writes both in
+// one transaction (hard rule 3).
 func (q *Queries) UpsertUserSettings(ctx context.Context, arg UpsertUserSettingsParams) (UserSetting, error) {
 	row := q.db.QueryRow(ctx, upsertUserSettings,
 		arg.UserID,

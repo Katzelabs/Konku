@@ -27,6 +27,26 @@ export interface User {
    * instead of letting the first request fail and look like a bug.
    */
   emailVerified: boolean
+  /**
+   * The language this account chose, or `null` when it has chosen none
+   * (migration 00014, D-094).
+   *
+   * **Null is a value, not a missing field.** It is what leaves the browser's
+   * own answer standing — `i18n/AppLocale.tsx` resolves account setting →
+   * browser → `id`, and null is the whole of the middle step. A server that
+   * defaulted this to `'id'` would repaint an English reader's screen the
+   * moment this query settled, which is `theme.js`'s bug with words instead of
+   * colours (D-086).
+   *
+   * It rides on `/auth/me` rather than only on `/settings` because `/settings`
+   * sits behind `requireVerified`, and the "check your mail" screen — the one
+   * a new account is most likely to be stuck reading — is on the wrong side of
+   * that line.
+   *
+   * Never read for display. `AppLocale` is the only consumer; a screen that
+   * wants the active locale calls `useLocale()`.
+   */
+  locale: 'id' | 'en' | null
 }
 
 export const meQueryKey = ['auth', 'me'] as const

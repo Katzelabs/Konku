@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/Katzelabs/Konku/internal/i18n"
 	"github.com/Katzelabs/Konku/internal/store"
 	"github.com/Katzelabs/Konku/internal/store/gen"
 )
@@ -48,6 +49,15 @@ type settingsBody struct {
 	// anything, and defaulting it off would make a new account look like the
 	// rota does not exist.
 	RotaEnabled bool `json:"rotaEnabled"`
+	// Locale is the language this account reads in, or null when it has never
+	// chosen one (00014, ticket 11 I2).
+	//
+	// A pointer, and null is a value somebody means: it is "follow the
+	// browser", the middle step of D-094's resolution order. Collapsing it to
+	// "id" would make the setting one-way — a person who picked English could
+	// never get back to following their browser — and would pin every existing
+	// account to Indonesian the first time they saved any other preference.
+	Locale *string `json:"locale"`
 }
 
 // defaultSettings mirrors the column defaults in migration 00007.
@@ -60,14 +70,26 @@ func defaultSettings() settingsBody {
 		DefaultDurationMinutes: 20,
 		FocusStepN:             5,
 		RotaEnabled:            true,
+		// nil, matching the column default: an account with no settings row
+		// has certainly not chosen a language.
+		Locale: nil,
 	}
 }
 
-func toSettingsBody(s gen.UserSetting) settingsBody {
+// toSettingsBody assembles the screen's object out of the two rows that back
+// it: user_settings for the preferences, and users for the language.
+//
+// The split is 00014's and its reasoning is there — the locale has to be
+// readable from the query that establishes identity, and only the auth
+// substrate is. It is a preference to the person using it, so it is one object
+// here and one PATCH, and the endpoint keeps the two writes in one transaction
+// (hard rule 3).
+func toSettingsBody(s gen.UserSetting, locale *string) settingsBody {
 	return settingsBody{
 		DefaultDurationMinutes: int(s.DefaultDurationMinutes),
 		FocusStepN:             int(s.FocusStepN),
 		RotaEnabled:            s.RotaEnabled,
+		Locale:                 locale,
 	}
 }
 
@@ -91,14 +113,23 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeJSON(w, http.StatusOK, defaultSettings())
+			// The preferences row is missing; the language is not, because it
+			// is a column on the users row that requireUser already read. An
+			// account with no user_settings row still gets its own language
+			// back rather than a null that would look like a cleared choice.
+			body := defaultSettings()
+			body.Locale = user.Locale
+			writeJSON(w, http.StatusOK, body)
 			return
 		}
 		writeInternal(w, r, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, toSettingsBody(row))
+	// user.Locale rather than a second read: requireUser put the whole row in
+	// the context, and re-reading it here could only produce a different
+	// answer if something else wrote it mid-request.
+	writeJSON(w, http.StatusOK, toSettingsBody(row, user.Locale))
 }
 
 // handleUpdateSettings replaces the account's preferences.
@@ -132,13 +163,36 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 			"Progressive focus harus antara %d dan %d.", minFocusStepN, maxFocusStepN))
 		return
 	}
+	// null is allowed and means "follow the browser". Anything else has to be
+	// a locale this build has copy for. 00014's CHECK constraint says the same
+	// thing and is what makes the claim true regardless of which caller wrote
+	// the row (hard rule 9); this is the half that produces a sentence a
+	// person can act on rather than a constraint violation arriving as a 500.
+	if req.Locale != nil && !i18n.Valid(i18n.Locale(*req.Locale)) {
+		writeError(w, http.StatusBadRequest, CodeBadRequest,
+			"Bahasa itu belum tersedia. Pilih Bahasa Indonesia atau English.")
+		return
+	}
 
-	row, err := store.UserQuery(r.Context(), s.store, user.ID, func(q *gen.Queries) (gen.UserSetting, error) {
-		return q.UpsertUserSettings(r.Context(), gen.UpsertUserSettingsParams{
+	// Two tables, one transaction (hard rule 3). The screen shows one object
+	// and saves it with one tap; a save that wrote the language and then
+	// failed on the timer default would leave the person looking at a form
+	// that is half what they asked for and half what they did not.
+	var row gen.UserSetting
+	err := s.store.WithUserTx(r.Context(), user.ID, func(q *gen.Queries) error {
+		var err error
+		row, err = q.UpsertUserSettings(r.Context(), gen.UpsertUserSettingsParams{
 			UserID:                 user.ID,
 			DefaultDurationMinutes: int32(req.DefaultDurationMinutes),
 			FocusStepN:             int32(req.FocusStepN),
 			RotaEnabled:            req.RotaEnabled,
+		})
+		if err != nil {
+			return err
+		}
+		return q.SetUserLocale(r.Context(), gen.SetUserLocaleParams{
+			ID:     user.ID,
+			Locale: req.Locale,
 		})
 	})
 	if err != nil {
@@ -148,5 +202,10 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	// The stored row, not the request. They should be identical, and echoing
 	// the request would hide it if they were not.
-	writeJSON(w, http.StatusOK, toSettingsBody(row))
+	//
+	// The locale is the exception and it is the request's, because SetUserLocale
+	// is an :exec — it returns nothing to echo. It is the value the CHECK
+	// constraint just accepted, so a mismatch is not a state the transaction
+	// could have committed in.
+	writeJSON(w, http.StatusOK, toSettingsBody(row, req.Locale))
 }

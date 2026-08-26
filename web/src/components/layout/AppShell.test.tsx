@@ -20,6 +20,8 @@ const user = {
   firstName: 'Sena',
   lastName: 'Prawira',
   emailVerified: true,
+  // Never chosen a language, which is what a real account starts as (00014).
+  locale: null,
 }
 
 beforeEach(() => {

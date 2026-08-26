@@ -124,30 +124,34 @@ export function copyFor(locale: Locale): Copy {
 }
 
 /*
- * ── The seam for I2 ────────────────────────────────────────────────────────
+ * ── The seam, and what fills it ────────────────────────────────────────────
  *
- * Resolution is not this module's job. I2 owns it, and the order is decided:
- * account setting → `Accept-Language` → `id` (D-094), with the account setting
- * living in the `user_settings` column added by migration 00007.
+ * Resolution is not this module's job. `./AppLocale.tsx` owns it (I2), and the
+ * order is account setting → browser → `id` (D-094) — the same order
+ * `internal/api/locale.go` runs server-side, so a page and an API error cannot
+ * arrive in different languages.
  *
- * **The seam is still exactly one prop.** All of that arrives as `locale` on
- * `LocaleProvider` below, the loading is handled here, and no screen changes.
+ * **The seam is exactly one prop, and it stayed that way.** All of it arrives
+ * as `locale` on `LocaleProvider` below, the loading is handled here, and no
+ * screen changes.
  *
- * Two constraints the lazy split adds, which I2 must design around rather than
- * discover:
+ * Two constraints the lazy split adds, both of which I2 designed around:
  *
- *   1. **The first paint's locale has to be known synchronously, before React
- *      mounts.** The account setting cannot be — it needs `/auth/me`. So the
+ *   1. **The first paint's locale is known synchronously, before React
+ *      mounts.** The account setting cannot be — it needs `/auth/me` — so the
  *      resolved locale is cached in `localStorage` and read back at boot by
- *      `bootLocale()` in `./boot`. I2 must call `rememberLocale()` whenever
- *      resolution produces an answer, or every reload paints the previous
- *      language until the account loads. This is the same shape, and the same
- *      reason, as `web/public/theme.js` (D-086).
- *   2. **A stranger's very first visit has no cache**, so `bootLocale()` also
- *      has to answer for them. It currently returns `DEFAULT_LOCALE`. Folding
- *      `navigator.language` in belongs to I2's resolution order, and it must
- *      happen inside `bootLocale()` — synchronously — not in an effect after
- *      mount, which would be the flash again.
+ *      `bootLocale()` in `./boot`. `AppLocale` calls `rememberLocale()`
+ *      whenever resolution produces an answer, which is what keeps that cache
+ *      from being a language behind. Same shape and same reason as
+ *      `web/public/theme.js` (D-086).
+ *   2. **A stranger's very first visit has no cache**, so `bootLocale()`
+ *      answers for them from `navigator.languages` — synchronously, inside
+ *      that function, never in an effect after mount.
+ *
+ * The account setting is `users.locale` rather than a `user_settings` column,
+ * which is a server-side detail with a real reason (migration 00014) and one
+ * nothing on this side has to know: it arrives on `/auth/me` and on
+ * `GET/PATCH /api/settings` either way.
  *
  * Changing `locale` at runtime is fine and is not a flash: the provider keeps
  * showing the language it has until the new catalog arrives, then swaps once.

@@ -67,9 +67,43 @@ export interface Copy {
   common: {
     /** On a button whose action is in flight. Not a spinner label. */
     working: string
+    /**
+     * Relative day labels, for a timestamp inside the last two days.
+     *
+     * They live here rather than in a feature because `lib/date.ts` produces
+     * them and six screens render the result. Everything else about a date —
+     * the month name, the digit grouping, the clock separator — comes from
+     * `Intl` keyed on the active locale rather than from this catalog (D-094):
+     * a month table written by hand is a translation nobody asked for and one
+     * more thing to keep in step.
+     */
+    today: string
+    yesterday: string
   }
 
   settings: {
+    /**
+     * Choosing a language (00014, ticket 11 I2).
+     *
+     * On Preferensi rather than Tampilan, because it is stored on the account
+     * and travels — which is the line `nav.ts` draws between those two
+     * screens, and which the Tampilan screen states in its own description.
+     *
+     * The language *names* are deliberately not keys. A picker lists every
+     * language in its own language, so "Bahasa Indonesia" and "English" read
+     * the same in both catalogs and belong in the component that renders them
+     * — the same rule that keeps browser and platform names out of here.
+     */
+    language: {
+      title: string
+      description: string
+      /**
+       * The option that stores nothing and follows the browser. Named for what
+       * it does, because "Indonesian" would be a lie on an English browser.
+       */
+      auto: string
+    }
+
     /**
      * Where the account is signed in (07 L5).
      *

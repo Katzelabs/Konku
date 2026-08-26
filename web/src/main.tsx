@@ -5,7 +5,8 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import App from './App'
 import { AppErrorBoundary } from './components/error-boundary'
 import { installGlobalErrorReporting } from './lib/report-error'
-import { bootLocale, loadCatalog, LocaleProvider } from './i18n'
+import { bootLocale, loadCatalog } from './i18n'
+import { AppLocale } from './i18n/AppLocale'
 import { ThemeProvider } from './features/settings/useTheme'
 import './index.css'
 
@@ -63,16 +64,17 @@ loadCatalog(locale)
         boundary inside the shell (App.tsx), which is the one that keeps the
         nav alive when a single screen breaks. */}
     <AppErrorBoundary>
-    {/* Outside everything, because the signed-out screens need copy too and a
-        401 must not change the language mid-session.
-
-        The prop is the whole seam. It carries `bootLocale()` today, which
-        reads a localStorage hint and otherwise answers `id` — the source
-        language and the fallback (D-094). Resolution is ticket 11 I2: account
-        setting → Accept-Language → id. I2 changes what feeds this prop and
-        what `bootLocale()` knows; nothing below this line changes at all. */}
-    <LocaleProvider locale={locale}>
     <QueryClientProvider client={queryClient}>
+    {/* Resolution (ticket 11 I2): account setting → browser → id (D-094).
+        `AppLocale` reads `/auth/me` and hands the answer to `LocaleProvider`,
+        whose seam is still exactly one `locale` prop.
+
+        Inside the query provider because the account setting arrives through
+        it, and still outside the router and the theme — which were the two
+        reasons this sat outermost: every signed-out screen needs copy, and a
+        401 must not change the language mid-session. The *first paint* is
+        already decided above, synchronously, by `bootLocale()`. */}
+    <AppLocale>
       {/* Outside the router so the theme applies to the login screen too. */}
       <ThemeProvider>
       {/* Real paths, not hashes: the Go server serves the SPA shell for every
@@ -94,8 +96,8 @@ loadCatalog(locale)
         </Routes>
       </BrowserRouter>
       </ThemeProvider>
+    </AppLocale>
     </QueryClientProvider>
-    </LocaleProvider>
     </AppErrorBoundary>
   </StrictMode>,
     )
