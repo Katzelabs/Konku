@@ -1,22 +1,4 @@
 {
   "_note": "Feature files still holding untranslated literals, and how many. Written by `node scripts/check-i18n.mjs --update`. This is a ratchet: the numbers may fall and a file may leave, never the other way round. A file that reaches zero must be deleted from this list — see ticket 11 I1.",
-  "files": {
-    "auth/AuthLayout.tsx": 2,
-    "auth/CheckYourMail.tsx": 8,
-    "auth/ForgotPasswordPage.tsx": 13,
-    "auth/LoginPage.tsx": 9,
-    "auth/ResetPasswordPage.tsx": 14,
-    "auth/schemas.ts": 17,
-    "auth/SignupPage.tsx": 19,
-    "auth/VerifyPage.tsx": 9,
-    "auth/VerifyPendingPage.tsx": 3,
-    "home/HomePage.tsx": 23,
-    "review/ReviewHomePage.tsx": 34,
-    "review/ReviewPage.tsx": 11,
-    "review/ReviewSetPage.tsx": 18,
-    "review/RunPage.tsx": 19,
-    "timer/CaptureDialog.tsx": 9,
-    "timer/SessionLog.tsx": 6,
-    "timer/TimerPage.tsx": 21
-  }
+  "files": {}
 }
