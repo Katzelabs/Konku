@@ -3,6 +3,7 @@ import { Button } from '../../components/ui/button'
 import { Card } from '../../components/ui/card'
 import { Loading } from '../../components/ui/spinner'
 import { Notice } from '../../components/ui/notice'
+import { useCopy, type Copy } from '../../i18n'
 import {
   useAuthSessions,
   useRevokeAuthSession,
@@ -22,11 +23,30 @@ import { SettingsRow } from './SettingsSection'
  * devices is not a security warning, so there is no red, no "unrecognised
  * device" language, and no count badge — the sort of copy that makes someone
  * anxious about an ordinary second browser.
+ *
+ * ── This is ticket 11's worked example (I1). ────────────────────────────────
+ *
+ * Every string a person reads comes from `useCopy()`, which returns the whole
+ * typed catalog for the active locale; nothing here decides *which* locale, and
+ * nothing here needs to. Three shapes worth copying onto the next screen:
+ *
+ *   1. A plain string is a property:      c.sessions.title
+ *   2. A string with a value in it is a   c.sessions.clientOn(browser, os)
+ *      function, so the argument count is typechecked.
+ *   3. A counted string is the same       c.sessions.ago.hours(3)
+ *      thing, with `Intl.PluralRules` inside `en.ts`.
+ *
+ * The two helpers below take the catalog as an argument rather than calling
+ * `useCopy()` themselves, because they are not components. That is the pattern
+ * for anything outside a component too — a zod schema, a table of labels — and
+ * it is why `copyFor(locale)` exists beside the hook.
  */
 export function ActiveSessions() {
+  const c = useCopy().settings.sessions
   const { data: sessions, isPending, isError, error } = useAuthSessions()
   const revoke = useRevokeAuthSession()
   const revokeOthers = useRevokeOtherAuthSessions()
+  const working = useCopy().common.working
 
   if (isPending) {
     return (
@@ -39,6 +59,7 @@ export function ActiveSessions() {
   if (isError) {
     return (
       <Card className="p-5">
+        {/* The server's message, already in the caller's language (11 I3). */}
         <Notice role="alert">{error.message}</Notice>
       </Card>
     )
@@ -66,8 +87,8 @@ export function ActiveSessions() {
       {others.length > 0 && (
         <SettingsRow
           className="mt-3 border-t border-border pt-4"
-          title="Keluar dari perangkat lain"
-          description="Sesi di perangkat ini tetap aktif."
+          title={c.signOutOthers.title}
+          description={c.signOutOthers.description}
           action={
             <Button
               variant="secondary"
@@ -76,7 +97,7 @@ export function ActiveSessions() {
               onClick={() => revokeOthers.mutate()}
             >
               <LogOut />
-              {revokeOthers.isPending ? 'Sebentar…' : 'Keluarkan'}
+              {revokeOthers.isPending ? working : c.signOutOthers.action}
             </Button>
           }
         />
@@ -94,21 +115,22 @@ function SessionRow({
   disabled: boolean
   onRevoke: () => void
 }) {
+  const copy = useCopy()
+  const c = copy.settings.sessions
+
   return (
     <div className="flex items-center gap-3 border-b border-border py-3 last:border-b-0">
       <Monitor className="size-4 shrink-0 text-subtle-fg" />
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-card-fg">
-          {describeClient(session.userAgent)}
+          {describeClient(session.userAgent, copy)}
           {session.current && (
-            <span className="ml-2 text-xs font-normal text-muted-fg">
-              (perangkat ini)
-            </span>
+            <span className="ml-2 text-xs font-normal text-muted-fg">{c.currentDevice}</span>
           )}
         </p>
         <p className="truncate text-xs text-muted-fg">
-          {session.ip ?? 'alamat tidak diketahui'} · aktif {relativeTime(session.lastSeen)}
+          {session.ip ?? c.unknownAddress} · {c.lastActive(relativeTime(session.lastSeen, copy))}
         </p>
       </div>
 
@@ -118,7 +140,7 @@ function SessionRow({
         wonder why one row cannot be ended.
       */}
       <Button variant="ghost" size="sm" disabled={disabled} onClick={onRevoke}>
-        {session.current ? 'Keluar' : 'Akhiri'}
+        {session.current ? c.signOutCurrent : c.endSession}
       </Button>
     </div>
   )
@@ -131,10 +153,15 @@ function SessionRow({
  * answers is "is one of these not me", and a browser and platform name is
  * enough for that. A parser would be a dependency plus a table that goes stale
  * (D-065), for a more precise answer to a question nobody is asking.
+ *
+ * The names themselves are the same word in every language, so they are not in
+ * the catalog. Only the sentence that joins them is.
  */
-function describeClient(userAgent?: string): string {
-  if (!userAgent) return 'Perangkat tidak dikenal'
+function describeClient(userAgent: string | undefined, copy: Copy): string {
+  const c = copy.settings.sessions
+  if (!userAgent) return c.unknownDevice
 
+  // i18n-exempt: browser names are proper nouns, identical in both locales.
   const browser =
     /Edg\//.test(userAgent) ? 'Edge'
     : /OPR\/|Opera/.test(userAgent) ? 'Opera'
@@ -143,6 +170,7 @@ function describeClient(userAgent?: string): string {
     : /Safari\//.test(userAgent) ? 'Safari'
     : null
 
+  // i18n-exempt: platform names are proper nouns, identical in both locales.
   const platform =
     /iPhone|iPad|iPod/.test(userAgent) ? 'iOS'
     : /Android/.test(userAgent) ? 'Android'
@@ -151,7 +179,7 @@ function describeClient(userAgent?: string): string {
     : /Linux/.test(userAgent) ? 'Linux'
     : null
 
-  if (browser && platform) return `${browser} di ${platform}`
+  if (browser && platform) return c.clientOn(browser, platform)
   if (browser) return browser
   if (platform) return platform
   // Something unrecognised — show it rather than calling it unknown, because
@@ -163,20 +191,26 @@ function describeClient(userAgent?: string): string {
  * Coarse, and coarse on purpose: last_seen_at is only written every few
  * minutes, so anything more precise than this would be claiming accuracy the
  * value does not have.
+ *
+ * The thresholds are the same in both languages; only the sentences differ,
+ * and the plural forms live in the catalog rather than here. English needs
+ * "1 hour" against "3 hours" and Indonesian does not, which is exactly the
+ * distinction `Intl.PluralRules` exists to keep out of this function.
  */
-function relativeTime(iso: string): string {
+function relativeTime(iso: string, copy: Copy): string {
+  const c = copy.settings.sessions.ago
   const then = new Date(iso).getTime()
-  if (Number.isNaN(then)) return 'baru saja'
+  if (Number.isNaN(then)) return c.justNow
 
   const minutes = Math.floor((Date.now() - then) / 60_000)
-  if (minutes < 10) return 'baru saja'
-  if (minutes < 60) return `${minutes} menit lalu`
+  if (minutes < 10) return c.justNow
+  if (minutes < 60) return c.minutes(minutes)
 
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours} jam lalu`
+  if (hours < 24) return c.hours(hours)
 
   const days = Math.floor(hours / 24)
-  if (days === 1) return 'kemarin'
-  if (days < 30) return `${days} hari lalu`
-  return 'lebih dari sebulan lalu'
+  if (days === 1) return c.yesterday
+  if (days < 30) return c.days(days)
+  return c.overAMonth
 }

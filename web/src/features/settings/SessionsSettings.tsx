@@ -1,3 +1,4 @@
+import { useCopy } from '../../i18n'
 import { ActiveSessions } from './ActiveSessions'
 import { SettingsSection } from './SettingsSection'
 
@@ -9,11 +10,10 @@ import { SettingsSection } from './SettingsSection'
  * the account is open, and here is how to close one.
  */
 export default function SessionsSettings() {
+  const c = useCopy().settings.sessions
+
   return (
-    <SettingsSection
-      title="Perangkat yang masuk"
-      description="Tempat akun ini sedang dipakai. Akhiri yang tidak kamu kenali."
-    >
+    <SettingsSection title={c.title} description={c.description}>
       <ActiveSessions />
     </SettingsSection>
   )
