@@ -15,6 +15,7 @@ import {
 import { Separator } from '../../components/ui/separator'
 import { Loading } from '../../components/ui/spinner'
 import { Textarea } from '../../components/ui/textarea'
+import { useCopy } from '../../i18n'
 import { useFlushOnHide } from '../../lib/useFlushOnHide'
 import type { Card as CardRow } from '../../api/types'
 import { useCategories, useCreateCategory } from '../categories/queries'
@@ -41,6 +42,8 @@ import { useCard, useCreateCard, useDeleteCard, useUpdateCard } from './queries'
  * composed, cannot be saved by the server anyway, and is left alone.
  */
 export default function CardEditorPage() {
+  const copy = useCopy()
+  const c = copy.cards
   const { id } = useParams()
   const creating = id === undefined
   const navigate = useNavigate()
@@ -189,7 +192,8 @@ export default function CardEditorPage() {
         <Button asChild variant="link" size="inline">
           <Link to="/cards">
             <ArrowLeft />
-            Kartu
+            {/* The screen this goes back to, named by its own title. */}
+            {c.index.title}
           </Link>
         </Button>
 
@@ -207,7 +211,7 @@ export default function CardEditorPage() {
             onClick={submit}
             disabled={!valid || !dirty || pending}
           >
-            {pending ? 'Menyimpan…' : 'Simpan'}
+            {pending ? c.editor.saving : c.editor.save}
           </Button>
         </div>
       </div>
@@ -217,10 +221,15 @@ export default function CardEditorPage() {
       <Card className="flex flex-col gap-6 px-4 py-6 md:px-8">
         {/* Same shape as the note editor: properties first, then the content. */}
         <PropertyBar>
-          <PropertyRow icon={<Folder className="size-3.5" />} label="Domain">
+          {/*
+            The two property labels are the *other* features' nouns, read from
+            their own catalogs rather than restated here. A screen showing both
+            does not make either string a cards string (ticket 11 I5).
+          */}
+          <PropertyRow icon={<Folder className="size-3.5" />} label={copy.domains.noun}>
             <DomainProperty domains={domains} value={domainId} onChange={setDomainId} />
           </PropertyRow>
-          <PropertyRow icon={<Tag className="size-3.5" />} label="Kategori">
+          <PropertyRow icon={<Tag className="size-3.5" />} label={copy.categories.noun}>
             <CategoryProperty
               categories={categories}
               selected={categoryIds}
@@ -232,10 +241,10 @@ export default function CardEditorPage() {
         </PropertyBar>
 
         <Side
-          label="Pertanyaan"
+          label={c.editor.front.label}
           value={front}
           onChange={setFront}
-          placeholder="Apa itu prior?"
+          placeholder={c.editor.front.placeholder}
         />
 
         {/* The two sides are one object but two answers to two different
@@ -244,15 +253,13 @@ export default function CardEditorPage() {
         <Separator />
 
         <Side
-          label="Jawaban"
+          label={c.editor.back.label}
           value={back}
           onChange={setBack}
-          placeholder="Keyakinan awal sebelum melihat data."
+          placeholder={c.editor.back.placeholder}
         />
 
-        <p className="text-xs text-subtle-fg">
-          Kedua sisi mendukung markdown, termasuk beberapa baris dan blok kode.
-        </p>
+        <p className="text-xs text-subtle-fg">{c.editor.markdownHint}</p>
       </Card>
 
       {!creating && (
@@ -275,7 +282,7 @@ export default function CardEditorPage() {
             onClick={() => setConfirming(true)}
           >
             <Trash2 />
-            Hapus kartu
+            {c.editor.delete}
           </Button>
 
           {remove.isError && <Notice>{remove.error.message}</Notice>}
@@ -285,9 +292,9 @@ export default function CardEditorPage() {
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
-        title="Hapus kartu ini?"
-        description="Kartu pindah ke Terhapus. Jadwal dan riwayat ulangannya tetap utuh. Kartu yang pernah kamu ulang bisa dikembalikan kapan saja; yang belum pernah, selama 30 hari."
-        confirmLabel="Hapus"
+        title={c.confirmDelete.one}
+        description={c.confirmDelete.description}
+        confirmLabel={c.confirmDelete.confirm}
         pending={remove.isPending}
         onConfirm={() =>
           remove.mutate(id as string, {
@@ -309,7 +316,7 @@ function sameIds(a: string[], b: string[]) {
 }
 
 /**
- * Three states, none of them an alarm. "Belum tersimpan" is only shown once
+ * Three states, none of them an alarm. The unsaved line is only shown once
  * there is something savable — a card with one side still empty is being
  * written, not failing.
  */
@@ -322,8 +329,10 @@ function SaveStatus({
   valid: boolean
   pending: boolean
 }) {
-  if (pending) return <span className="text-sm text-subtle-fg">Menyimpan…</span>
-  if (dirty && valid) return <span className="text-sm text-subtle-fg">Belum tersimpan</span>
+  const c = useCopy().cards.editor
+
+  if (pending) return <span className="text-sm text-subtle-fg">{c.saving}</span>
+  if (dirty && valid) return <span className="text-sm text-subtle-fg">{c.unsaved}</span>
   return null
 }
 

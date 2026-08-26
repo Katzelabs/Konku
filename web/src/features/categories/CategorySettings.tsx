@@ -10,6 +10,7 @@ import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
 import { Notice } from '../../components/ui/notice'
 import { Loading } from '../../components/ui/spinner'
+import { useCopy } from '../../i18n'
 import { cn } from '../../lib/utils'
 import {
   useAllCategories,
@@ -34,6 +35,7 @@ import {
  * convenience for tidying, not the front door.
  */
 export default function CategorySettings() {
+  const c = useCopy().categories
   const { data, isPending, error } = useAllCategories()
   const [adding, setAdding] = useState(false)
 
@@ -51,7 +53,7 @@ export default function CategorySettings() {
         <div className="flex justify-end">
           <Button variant="secondary" size="sm" onClick={() => setAdding(true)}>
             <Plus />
-            Tambah
+            {c.add}
           </Button>
         </div>
       )}
@@ -60,8 +62,8 @@ export default function CategorySettings() {
 
       {live.length === 0 && !adding && (
         <EmptyState
-          title="Belum ada kategori."
-          description="Kategori muncul di sini begitu kamu menambahkannya di catatan atau kartu."
+          title={c.empty.title}
+          description={c.empty.description}
         />
       )}
 
@@ -75,7 +77,7 @@ export default function CategorySettings() {
 
       {archived.length > 0 && (
         <div className="flex flex-col gap-2">
-          <h3 className="text-sm font-medium text-muted-fg">Diarsipkan</h3>
+          <h3 className="text-sm font-medium text-muted-fg">{c.archivedHeading}</h3>
           <ul className="flex flex-col gap-2">
             {archived.map((c) => (
               <CategoryRow key={c.id} category={c} />
@@ -88,6 +90,7 @@ export default function CategorySettings() {
 }
 
 function NewCategoryForm({ onDone }: { onDone: () => void }) {
+  const c = useCopy().categories
   const [label, setLabel] = useState('')
   const [color, setColor] = useState(COLOR_PALETTE[0])
   const create = useCreateCategory()
@@ -114,13 +117,13 @@ function NewCategoryForm({ onDone }: { onDone: () => void }) {
     <Card className="border-primary-ink">
       <form onSubmit={submit} className="flex flex-col gap-4 p-4">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="new-category">Nama kategori</Label>
+          <Label htmlFor="new-category">{c.form.label}</Label>
           <Input
             id="new-category"
             autoFocus
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            placeholder="Aljabar linear"
+            placeholder={c.form.placeholder}
           />
         </div>
 
@@ -130,10 +133,10 @@ function NewCategoryForm({ onDone }: { onDone: () => void }) {
 
         <div className="flex gap-2">
           <Button type="submit" variant="primary" size="sm" disabled={pending || !label.trim()}>
-            Simpan
+            {c.form.save}
           </Button>
           <Button type="button" variant="secondary" size="sm" onClick={onDone}>
-            Batal
+            {c.form.cancel}
           </Button>
         </div>
       </form>
@@ -142,6 +145,7 @@ function NewCategoryForm({ onDone }: { onDone: () => void }) {
 }
 
 function CategoryRow({ category }: { category: Category }) {
+  const c = useCopy().categories
   const [editing, setEditing] = useState(false)
   const archive = useArchiveCategory()
   const del = useDeleteCategory()
@@ -174,15 +178,15 @@ function CategoryRow({ category }: { category: Category }) {
           */}
           <span className="text-xs text-subtle-fg">
             {used === 0
-              ? 'belum dipakai'
-              : `${category.noteCount} catatan · ${category.cardCount} kartu`}
+              ? c.row.unused
+              : c.row.used(category.noteCount, category.cardCount)}
           </span>
         </div>
 
         <div className="flex gap-3">
           {!isArchived && (
             <Button variant="link" size="inline" onClick={() => setEditing(true)}>
-              Ubah
+              {c.row.edit}
             </Button>
           )}
           <Button
@@ -190,10 +194,10 @@ function CategoryRow({ category }: { category: Category }) {
             size="inline"
             onClick={() => archive.mutate({ id: category.id, archived: !isArchived })}
           >
-            {isArchived ? 'Aktifkan lagi' : 'Arsipkan'}
+            {isArchived ? c.row.unarchive : c.row.archive}
           </Button>
           <Button variant="link" size="inline" onClick={() => del.mutate(category.id)}>
-            Hapus
+            {c.row.delete}
           </Button>
         </div>
 
@@ -216,6 +220,7 @@ function EditCategoryForm({
   category: Category
   onDone: () => void
 }) {
+  const c = useCopy().categories
   const [label, setLabel] = useState(category.label)
   const [color, setColor] = useState(category.color)
   const update = useUpdateCategory()
@@ -234,7 +239,7 @@ function EditCategoryForm({
             autoFocus
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            aria-label="Nama kategori"
+            aria-label={c.form.label}
           />
           <ColorPicker value={color} onChange={setColor} />
 
@@ -243,18 +248,16 @@ function EditCategoryForm({
             one row behind all of them — which is the whole reason categories
             are rows rather than strings on a note.
           */}
-          <p className="text-xs text-subtle-fg">
-            Ganti nama berlaku di semua catatan dan kartu yang memakainya.
-          </p>
+          <p className="text-xs text-subtle-fg">{c.form.renameNote}</p>
 
           {update.isError && <Notice>{update.error.message}</Notice>}
 
           <div className="flex gap-2">
             <Button type="submit" variant="primary" size="sm" disabled={update.isPending}>
-              Simpan
+              {c.form.save}
             </Button>
             <Button type="button" variant="secondary" size="sm" onClick={onDone}>
-              Batal
+              {c.form.cancel}
             </Button>
           </div>
         </form>

@@ -10,6 +10,7 @@ import { MarkdownInline } from '../../components/ui/markdown'
 import { Notice } from '../../components/ui/notice'
 import { PeekPanel, type PeekMode } from '../../components/ui/peek-panel'
 import { Loading } from '../../components/ui/spinner'
+import { useCopy } from '../../i18n'
 import { useDateFormat } from '../../lib/useDateFormat'
 import { useAllCategories } from '../categories/queries'
 import { useAllDomains } from '../domains/queries'
@@ -42,6 +43,7 @@ export function CardPeek({
   mode: PeekMode
   onClose: () => void
 }) {
+  const c = useCopy().cards
   const { data: card, isPending, error } = useCard(cardId)
   const d = useDateFormat()
   const { data: domains } = useAllDomains()
@@ -57,7 +59,7 @@ export function CardPeek({
       open
       onOpenChange={(v) => !v && onClose()}
       mode={mode}
-      title="Kartu"
+      title={c.peek.title}
     >
       {isPending && <Loading />}
       {error && <Notice>{error.message}</Notice>}
@@ -118,7 +120,7 @@ export function CardPeek({
             <Button asChild variant="secondary" size="sm">
               <Link to={`/cards/${cardId}`}>
                 <Pencil />
-                Ubah kartu
+                {c.peek.edit}
               </Link>
             </Button>
 
@@ -129,7 +131,7 @@ export function CardPeek({
               onClick={() => setConfirming(true)}
             >
               <Trash2 />
-              Hapus
+              {c.peek.delete}
             </Button>
           </div>
 
@@ -140,9 +142,9 @@ export function CardPeek({
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
-        title="Hapus kartu ini?"
-        description="Kartu pindah ke Terhapus. Jadwal dan riwayat ulangannya tetap utuh. Kartu yang pernah kamu ulang bisa dikembalikan kapan saja; yang belum pernah, selama 30 hari."
-        confirmLabel="Hapus"
+        title={c.confirmDelete.one}
+        description={c.confirmDelete.description}
+        confirmLabel={c.confirmDelete.confirm}
         pending={remove.isPending}
         onConfirm={() =>
           remove.mutate(cardId, {
