@@ -12,6 +12,7 @@ import { LoadMore } from '../../components/ui/load-more'
 import { Notice } from '../../components/ui/notice'
 import { PageHeader } from '../../components/ui/page-header'
 import { Loading } from '../../components/ui/spinner'
+import { useCopy } from '../../i18n'
 import { useCategories } from '../categories/queries'
 import { useDomains } from '../domains/queries'
 import { useDueCards } from './queries'
@@ -27,31 +28,25 @@ import { useCreateReviewSet, useReviewSets } from './setQueries'
  * extra practice.
  */
 export default function ReviewHomePage() {
+  const c = useCopy().review
   const [adding, setAdding] = useState(false)
 
   return (
     <div className="flex flex-col gap-8">
-      <PageHeader
-        title="Ulangan"
-        description="Kartu yang jadwalnya jatuh hari ini, plus latihan yang kamu susun sendiri."
-      />
+      <PageHeader title={c.title} description={c.description} />
 
       <DueToday />
 
       <section className="flex flex-col gap-4">
         <div className="flex items-baseline justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-surface-fg">Latihan</h2>
-            <p className="mt-0.5 text-sm text-subtle-fg">
-              Susun sendiri: berapa soal, domain dan kategori mana, mau bentuk
-              pilihan ganda atau ingat sendiri. Hasilnya tidak mengubah jadwal
-              di atas.
-            </p>
+            <h2 className="text-lg font-semibold text-surface-fg">{c.sets.title}</h2>
+            <p className="mt-0.5 text-sm text-subtle-fg">{c.sets.description}</p>
           </div>
           {!adding && (
             <Button variant="secondary" onClick={() => setAdding(true)} className="shrink-0">
               <Plus />
-              Buat latihan
+              {c.sets.create}
             </Button>
           )}
         </div>
@@ -71,6 +66,7 @@ export default function ReviewHomePage() {
  * There is nothing here to fall short of (D-009, D-054).
  */
 function DueToday() {
+  const c = useCopy().review.due
   const { data, isPending, error } = useDueCards()
 
   if (isPending) return <Loading />
@@ -82,19 +78,17 @@ function DueToday() {
   return (
     <Card className="flex flex-col gap-4 px-6 py-6 sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <h2 className="text-lg font-semibold text-card-fg">Ulangan hari ini</h2>
+        <h2 className="text-lg font-semibold text-card-fg">{c.title}</h2>
         <p className="mt-1 text-sm text-subtle-fg">
-          {total === 0
-            ? 'Tidak ada yang perlu diulang hari ini.'
-            : `${ready} kartu siap diulang.`}
-          {total > ready && ' Sisanya besok.'}
+          {total === 0 ? c.none : c.ready(ready)}
+          {total > ready && ` ${c.restTomorrow}`}
         </p>
       </div>
       {ready > 0 && (
         <Button asChild variant="primary" size="lg" className="shrink-0">
           <Link to="/review/due">
             <Repeat />
-            Mulai
+            {c.start}
           </Link>
         </Button>
       )}
@@ -103,6 +97,7 @@ function DueToday() {
 }
 
 function SetList({ adding }: { adding: boolean }) {
+  const c = useCopy().review.sets
   const {
     sets,
     total,
@@ -119,12 +114,7 @@ function SetList({ adding }: { adding: boolean }) {
   if (error && sets.length === 0) return <Notice>{error.message}</Notice>
 
   if (sets.length === 0 && !adding) {
-    return (
-      <EmptyState
-        title="Belum ada latihan tersimpan."
-        description="Buat satu kalau mau menguji diri di luar jadwal, atau fokus ke satu topik saja."
-      />
-    )
+    return <EmptyState title={c.empty.title} description={c.empty.description} />
   }
 
   return (
@@ -142,13 +132,14 @@ function SetList({ adding }: { adding: boolean }) {
         loading={isFetchingNextPage}
         error={error}
         onLoadMore={() => fetchNextPage()}
-        noun="latihan"
+        noun={c.noun}
       />
     </div>
   )
 }
 
 function SetRow({ set }: { set: ReviewSet }) {
+  const c = useCopy().review.summary
   const { data: domains } = useDomains()
   const picked = domains?.filter((d) => set.domainIds.includes(d.id)) ?? []
 
@@ -160,10 +151,10 @@ function SetRow({ set }: { set: ReviewSet }) {
             <p className="truncate text-sm font-medium text-card-fg">{set.title}</p>
             <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-subtle-fg">
               {set.selection === 'random'
-                ? `${set.questionCount} soal acak`
-                : 'soal tetap'}
+                ? c.randomQuestions(set.questionCount ?? 0)
+                : c.fixedQuestions}
               <span aria-hidden>·</span>
-              {set.format === 'choice' ? 'pilihan ganda' : 'ingat sendiri'}
+              {set.format === 'choice' ? c.choice : c.recall}
               {picked.map((d) => (
                 <span key={d.id} className="flex items-center gap-1">
                   <span aria-hidden>·</span>
@@ -171,7 +162,7 @@ function SetRow({ set }: { set: ReviewSet }) {
                   {d.label}
                 </span>
               ))}
-              {set.runCount > 0 && ` · ${set.runCount}× dikerjakan`}
+              {set.runCount > 0 && ` · ${c.runCount(set.runCount)}`}
             </p>
           </div>
           <ChevronRight className="size-4 shrink-0 text-subtle-fg" />
@@ -182,6 +173,7 @@ function SetRow({ set }: { set: ReviewSet }) {
 }
 
 function NewSetForm({ onDone }: { onDone: () => void }) {
+  const c = useCopy().review.newSet
   const { data: domains } = useDomains()
   const { data: categories } = useCategories()
   const create = useCreateReviewSet()
@@ -214,19 +206,19 @@ function NewSetForm({ onDone }: { onDone: () => void }) {
     <Card>
       <form onSubmit={submit} className="flex flex-col gap-5 p-5">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="set-title">Judul latihan</Label>
+          <Label htmlFor="set-title">{c.titleLabel}</Label>
           <Input
             id="set-title"
             autoFocus
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Latihan aljabar linear"
+            placeholder={c.titlePlaceholder}
           />
         </div>
 
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-1 text-sm font-medium text-surface-fg">
-            Bentuk soal
+            {c.formatLegend}
           </legend>
           <label className="flex items-start gap-2 text-sm text-secondary-fg">
             <input
@@ -235,7 +227,7 @@ function NewSetForm({ onDone }: { onDone: () => void }) {
               onChange={() => setFormat('recall')}
               className="mt-0.5 accent-primary"
             />
-            Ingat sendiri — lihat soal, ingat-ingat, baru buka jawabannya
+            {c.recallOption}
           </label>
           <label className="flex items-start gap-2 text-sm text-secondary-fg">
             <input
@@ -244,38 +236,36 @@ function NewSetForm({ onDone }: { onDone: () => void }) {
               onChange={() => setFormat('choice')}
               className="mt-0.5 accent-primary"
             />
-            Pilihan ganda — empat pilihan, dinilai otomatis
+            {c.choiceOption}
           </label>
           {format === 'choice' && (
             // Said plainly rather than buried: recognising an answer among
             // four is easier than recalling it, and the user should know that
             // is what they picked (D-077).
-            <p className="mt-1 text-xs text-muted-fg">
-              Pilihan salahnya diambil dari jawaban kartu kamu yang lain. Mengenali
-              jawaban lebih gampang daripada mengingatnya, jadi angkanya wajar
-              lebih tinggi.
-            </p>
+            <p className="mt-1 text-xs text-muted-fg">{c.choiceNote}</p>
           )}
         </fieldset>
 
         <FilterPicker
-          legend="Domain"
-          hint="Kosongkan kalau mau dari semua."
+          legend={c.domainLegend}
+          hint={c.domainHint}
           options={domains?.map((d) => ({ id: d.id, label: d.label })) ?? []}
           selected={domainIds}
           onChange={setDomainIds}
         />
 
         <FilterPicker
-          legend="Kategori"
-          hint="Digabung dengan domain: kartu harus cocok keduanya."
-          options={categories?.map((c) => ({ id: c.id, label: c.label })) ?? []}
+          legend={c.categoryLegend}
+          hint={c.categoryHint}
+          options={categories?.map((cat) => ({ id: cat.id, label: cat.label })) ?? []}
           selected={categoryIds}
           onChange={setCategoryIds}
         />
 
         <fieldset className="flex flex-col gap-2">
-          <legend className="mb-1 text-sm font-medium text-surface-fg">Soal</legend>
+          <legend className="mb-1 text-sm font-medium text-surface-fg">
+            {c.selectionLegend}
+          </legend>
           <label className="flex items-start gap-2 text-sm text-secondary-fg">
             <input
               type="radio"
@@ -283,7 +273,7 @@ function NewSetForm({ onDone }: { onDone: () => void }) {
               onChange={() => setSelection('random')}
               className="mt-0.5 accent-primary"
             />
-            Acak tiap kali dikerjakan
+            {c.randomOption}
           </label>
           <label className="flex items-start gap-2 text-sm text-secondary-fg">
             <input
@@ -292,13 +282,13 @@ function NewSetForm({ onDone }: { onDone: () => void }) {
               onChange={() => setSelection('fixed')}
               className="mt-0.5 accent-primary"
             />
-            Tetap — soalnya sama tiap kali, jadi skornya bisa dibandingkan
+            {c.fixedOption}
           </label>
         </fieldset>
 
         {selection === 'random' && (
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="set-count">Jumlah soal</Label>
+            <Label htmlFor="set-count">{c.countLabel}</Label>
             <Input
               id="set-count"
               type="number"
@@ -312,9 +302,7 @@ function NewSetForm({ onDone }: { onDone: () => void }) {
         )}
 
         {selection === 'fixed' && (
-          <p className="text-xs text-muted-fg">
-            Setelah disimpan, pilih kartunya di halaman latihan ini.
-          </p>
+          <p className="text-xs text-muted-fg">{c.fixedHint}</p>
         )}
 
         {create.isError && <Notice>{create.error.message}</Notice>}
@@ -325,10 +313,10 @@ function NewSetForm({ onDone }: { onDone: () => void }) {
             variant="primary"
             disabled={create.isPending || !title.trim()}
           >
-            Simpan
+            {c.save}
           </Button>
           <Button type="button" variant="secondary" onClick={onDone}>
-            Batal
+            {c.cancel}
           </Button>
         </div>
       </form>

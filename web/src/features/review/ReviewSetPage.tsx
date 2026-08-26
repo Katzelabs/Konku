@@ -9,6 +9,7 @@ import { Notice } from '../../components/ui/notice'
 import { Separator } from '../../components/ui/separator'
 import { LoadMore } from '../../components/ui/load-more'
 import { Loading } from '../../components/ui/spinner'
+import { useCopy } from '../../i18n'
 import { today } from '../../lib/date'
 import { useDateFormat } from '../../lib/useDateFormat'
 import { useCategories } from '../categories/queries'
@@ -24,6 +25,8 @@ import {
 } from './setQueries'
 
 export default function ReviewSetPage() {
+  const copy = useCopy().review
+  const c = copy.set
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const { data: set, isPending, error } = useReviewSet(id)
@@ -59,7 +62,7 @@ export default function ReviewSetPage() {
         <Button asChild variant="link" size="inline" className="self-start">
           <Link to="/review">
             <ArrowLeft />
-            Semua ulangan
+            {c.back}
           </Link>
         </Button>
         <div>
@@ -68,10 +71,10 @@ export default function ReviewSetPage() {
           </h1>
           <p className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted-fg">
             {set.selection === 'random'
-              ? `${set.questionCount} soal acak`
-              : 'soal tetap'}
+              ? copy.summary.randomQuestions(set.questionCount ?? 0)
+              : copy.summary.fixedQuestions}
             <span aria-hidden>·</span>
-            {set.format === 'choice' ? 'pilihan ganda' : 'ingat sendiri'}
+            {set.format === 'choice' ? copy.summary.choice : copy.summary.recall}
             {pickedDomains.map((d) => (
               <span key={d.id} className="flex items-center gap-1">
                 <span aria-hidden>·</span>
@@ -102,7 +105,7 @@ export default function ReviewSetPage() {
           className="self-start"
         >
           <Play />
-          {open ? 'Lanjutkan' : 'Mulai'}
+          {open ? c.resume : c.start}
         </Button>
         {/*
           An unfinished run is picked up, not replaced. The server returns the
@@ -110,7 +113,7 @@ export default function ReviewSetPage() {
           this is a plain statement of where things stand, not a warning.
         */}
         {open && (
-          <p className="text-sm text-muted-fg">Ada percobaan yang belum selesai.</p>
+          <p className="text-sm text-muted-fg">{c.openRun}</p>
         )}
         {start.isError && <Notice>{start.error.message}</Notice>}
       </div>
@@ -135,14 +138,14 @@ export default function ReviewSetPage() {
               )
             }
           >
-            Arsipkan
+            {c.archive}
           </Button>
           <Button
             variant="link"
             size="inline"
             onClick={() => del.mutate(id, { onSuccess: () => navigate('/review') })}
           >
-            Hapus
+            {c.delete}
           </Button>
         </div>
 
@@ -172,6 +175,7 @@ function CardPicker({
   domainIds: string[]
   pinned: CardRef[]
 }) {
+  const c = useCopy().review.set.picker
   const {
     cards,
     total,
@@ -199,25 +203,23 @@ function CardPicker({
     })
   }
 
-  if (isPending) return <Loading label="Memuat kartu…" />
+  if (isPending) return <Loading label={c.loading} />
 
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between">
-        <h2 className="text-sm font-medium text-muted-fg">Soal</h2>
+        <h2 className="text-sm font-medium text-muted-fg">{c.title}</h2>
         {/*
           What is chosen, out of what exists — not out of what is loaded. The
           picker read the first 500 cards as if they were all of them (D-084).
         */}
         <span className="text-xs text-subtle-fg tabular-nums">
-          {chosen.length} dipilih dari {total}
+          {c.chosen(chosen.length, total)}
         </span>
       </div>
 
       {cards.length === 0 ? (
-        <p className="text-sm text-subtle-fg">
-          Belum ada kartu yang bisa dipilih. Buat beberapa kartu dulu.
-        </p>
+        <p className="text-sm text-subtle-fg">{c.empty}</p>
       ) : (
         <>
           <Card className="max-h-80 overflow-y-auto p-2">
@@ -244,7 +246,7 @@ function CardPicker({
               loading={isFetchingNextPage}
               error={error}
               onLoadMore={() => fetchNextPage()}
-              noun="kartu"
+              noun={c.noun}
               className="px-0 pb-1"
             />
           </Card>
@@ -255,7 +257,7 @@ function CardPicker({
             disabled={save.isPending}
             className="self-start"
           >
-            Simpan daftar soal
+            {c.save}
           </Button>
           {save.isError && <Notice>{save.error.message}</Notice>}
         </>
@@ -275,6 +277,8 @@ function CardPicker({
  * truncation.
  */
 function RunHistory({ setId }: { setId: string }) {
+  const copy = useCopy().review
+  const c = copy.set.history
   const {
     runs,
     total,
@@ -288,10 +292,10 @@ function RunHistory({ setId }: { setId: string }) {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-sm font-medium text-muted-fg">Riwayat</h2>
+        <h2 className="text-sm font-medium text-muted-fg">{c.title}</h2>
         {total > 0 && (
           <span className="text-xs text-subtle-fg tabular-nums">
-            {total}× dikerjakan
+            {copy.summary.runCount(total)}
           </span>
         )}
       </div>
@@ -305,7 +309,7 @@ function RunHistory({ setId }: { setId: string }) {
       {error && runs.length === 0 && <Notice>{error.message}</Notice>}
 
       {!isPending && !error && runs.length === 0 && (
-        <p className="text-sm text-subtle-fg">Belum pernah dikerjakan.</p>
+        <p className="text-sm text-subtle-fg">{c.empty}</p>
       )}
 
       {runs.length > 0 && (
@@ -325,7 +329,7 @@ function RunHistory({ setId }: { setId: string }) {
             loading={isFetchingNextPage}
             error={error}
             onLoadMore={() => fetchNextPage()}
-            noun="percobaan"
+            noun={c.noun}
           />
         </>
       )}
