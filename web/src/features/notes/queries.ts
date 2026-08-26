@@ -9,6 +9,22 @@ import { api } from '../../api/client'
 import { PAGE_SIZE, nextOffset, pageItems, pageTotal } from '../../api/paging'
 import type { BulkResult, DomainId, Note, NoteSummary, Page } from '../../api/types'
 
+/**
+ * How long a deleted note can still be brought back (D-069).
+ *
+ * A daily job in the server process removes notes deleted more than this many
+ * days ago, and the window is stated in every delete dialog, in the Deleted
+ * view and in `/privacy`. It is a constant here rather than a literal in four
+ * sentences because it is a *promise*: two languages times two screens is four
+ * chances for one of them to say a different number, and a trash that empties
+ * itself earlier than it said is the silent disappearance this product exists
+ * to prevent. The copy takes it as an argument (`i18n/areas/notes`).
+ *
+ * It is not served by the API. If the server's window ever moves, this moves
+ * with it — and `/privacy` says thirty days too, with a coverage test over it.
+ */
+export const RECOVERY_DAYS = 30
+
 export const noteKeys = {
   all: ['notes'] as const,
   list: (f: NoteFilters = {}) =>

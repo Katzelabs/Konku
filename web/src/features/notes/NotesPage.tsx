@@ -21,10 +21,17 @@ import { useDateFormat } from '../../lib/useDateFormat'
 import { useAutoSelect, usePeekedId, usePeekNavigation } from '../../lib/peek-route'
 import { useSelection } from '../../lib/use-selection'
 import { cn } from '../../lib/utils'
+import { useCopy } from '../../i18n'
 import { useAllCategories } from '../categories/queries'
 import { useDomains } from '../domains/queries'
 import { NotePeek } from './NotePeek'
-import { useCreateNote, useDeleteNotes, useNotes, useRestoreNotes } from './queries'
+import {
+  RECOVERY_DAYS,
+  useCreateNote,
+  useDeleteNotes,
+  useNotes,
+  useRestoreNotes,
+} from './queries'
 
 /**
  * The note index.
@@ -39,6 +46,10 @@ import { useCreateNote, useDeleteNotes, useNotes, useRestoreNotes } from './quer
  * the other way, and comes back whole from there.
  */
 export default function NotesPage() {
+  // `copy` for the one shared string this screen reads (`common.working`); `c`
+  // for its own area, which is everything else.
+  const copy = useCopy()
+  const c = copy.notes
   const navigate = useNavigate()
   const [view, setView] = useViewMode('konku:notes-view')
 
@@ -249,33 +260,33 @@ export default function NotesPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={deleted ? 'Terhapus' : 'Catatan'}
+        title={deleted ? c.deleted.title : c.index.title}
         description={
-          deleted
-            ? 'Catatan yang kamu hapus. Bisa dikembalikan selama 30 hari, setelah itu hilang permanen.'
-            : 'Tulis dulu, rapikan nanti.'
+          // The window is a constant rather than a literal in the sentence, so
+          // the two languages cannot promise different numbers of days (D-069).
+          deleted ? c.deleted.description(RECOVERY_DAYS) : c.index.description
         }
         meta={
           /*
             The collection, not the page. Rendering the loaded count here is
             what told an account holding 300 notes that it had 50 (D-084).
           */
-          !isPending && <span>{total} catatan</span>
+          !isPending && <span>{c.index.count(total)}</span>
         }
         actions={
           deleted ? (
             <Button variant="secondary" onClick={() => setParam('deleted', null)}>
-              Kembali ke catatan
+              {c.deleted.back}
             </Button>
           ) : (
             <>
               <Button variant="secondary" onClick={() => setParam('deleted', 'true')}>
                 <Trash2 />
-                Terhapus
+                {c.index.openDeleted}
               </Button>
               <Button variant="primary" onClick={newNote} disabled={create.isPending}>
                 <Plus />
-                {create.isPending ? 'Sebentar…' : 'Catatan baru'}
+                {create.isPending ? copy.common.working : c.index.newNote}
               </Button>
             </>
           )
@@ -294,9 +305,7 @@ export default function NotesPage() {
       */}
       {undo && (
         <Notice className="flex flex-wrap items-center gap-3">
-          <span>
-            {undo.count} catatan dipindahkan ke Terhapus.
-          </span>
+          <span>{c.undo.moved(undo.count)}</span>
           <Button
             variant="link"
             size="inline"
@@ -304,7 +313,7 @@ export default function NotesPage() {
             disabled={restoreMany.isPending}
           >
             <Undo2 />
-            Urungkan
+            {c.undo.action}
           </Button>
         </Notice>
       )}
@@ -325,12 +334,12 @@ export default function NotesPage() {
               disabled={restoreMany.isPending}
             >
               <Undo2 />
-              {restoreMany.isPending ? 'Mengembalikan…' : 'Kembalikan'}
+              {restoreMany.isPending ? c.deleted.restoring : c.deleted.restore}
             </Button>
           ) : (
             <Button variant="destructive" size="sm" onClick={() => setConfirming(true)}>
               <Trash2 />
-              Hapus
+              {c.delete.action}
             </Button>
           )}
         </SelectionBar>
@@ -340,7 +349,7 @@ export default function NotesPage() {
         split={split}
         peeked={peekId !== null}
         detail={preview}
-        placeholder={<DetailPlaceholder>Pilih catatan untuk membacanya di sini.</DetailPlaceholder>}
+        placeholder={<DetailPlaceholder>{c.index.pickOne}</DetailPlaceholder>}
       >
         <div className="flex flex-col gap-4">
           {/*
@@ -359,8 +368,8 @@ export default function NotesPage() {
                 className="flex-1 @2xl:max-w-sm"
                 value={query}
                 onChange={(next) => setParam('q', next)}
-                placeholder="Cari judul…"
-                label="Cari catatan"
+                placeholder={c.index.search.placeholder}
+                label={c.index.search.label}
               />
               <ViewToggle mode={view} onChange={setView} />
             </div>
@@ -402,18 +411,16 @@ export default function NotesPage() {
              * says what to do next and makes it small (GOALS.md).
              */
             <EmptyState
-              title={deleted ? 'Tidak ada catatan terhapus.' : 'Belum ada catatan.'}
+              title={deleted ? c.deleted.empty.title : c.index.empty.title}
               description={
-                deleted
-                  ? 'Catatan yang kamu hapus akan muncul di sini.'
-                  : 'Mulai dari satu baris saja.'
+                deleted ? c.deleted.empty.description : c.index.empty.description
               }
             />
           )}
 
           {!isPending && notes.length === 0 && filtering && (
             <p className="px-1 py-4 text-sm text-muted-fg">
-              Tidak ada judul yang cocok.
+              {c.index.noMatch}
             </p>
           )}
 
@@ -471,7 +478,14 @@ export default function NotesPage() {
             loading={isFetchingNextPage}
             error={error}
             onLoadMore={() => fetchNextPage()}
-            noun="catatan"
+            /*
+              Ours; the sentence around it is not. `LoadMore` builds "Muat lebih
+              banyak (12 catatan lagi)" itself, in `components/ui/`, which is
+              shared with cards and outside `check-i18n`'s scope — so an English
+              reader sees an English noun inside an Indonesian sentence until
+              that component is converted with the rest of the shared layer.
+            */
+            noun={c.index.noun}
           />
         </div>
       </ListDetail>
@@ -479,9 +493,11 @@ export default function NotesPage() {
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
-        title={selection.count === 1 ? 'Hapus catatan ini?' : `Hapus ${selection.count} catatan?`}
-        description="Catatan pindah ke Terhapus beserta kategorinya, dan bisa dikembalikan selama 30 hari."
-        confirmLabel="Hapus"
+        title={
+          selection.count === 1 ? c.delete.titleOne : c.delete.titleMany(selection.count)
+        }
+        description={c.delete.description(RECOVERY_DAYS)}
+        confirmLabel={c.delete.action}
         pending={removeMany.isPending}
         onConfirm={confirmDelete}
       />
@@ -533,9 +549,10 @@ function NoteItem({
   onToggle,
   onOpen,
 }: ItemProps) {
+  const c = useCopy().notes
   const domain = useNoteMeta(note, domains)
   const d = useDateFormat()
-  const title = note.title || 'Tanpa judul'
+  const title = note.title || c.untitled
   const row = layout === 'list'
 
   const checkbox = (
@@ -543,7 +560,7 @@ function NoteItem({
       checked={selected}
       onToggle={onToggle}
       visible={anySelected}
-      label={`Pilih ${title}`}
+      label={c.index.select(title)}
       className="pointer-events-auto"
     />
   )
