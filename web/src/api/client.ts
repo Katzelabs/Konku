@@ -1,3 +1,5 @@
+import { currentCopy } from '../i18n'
+
 // Every endpoint returns the same error shape (D-040), so the client needs
 // exactly one error path rather than per-endpoint special cases.
 export interface ApiErrorBody {
@@ -42,9 +44,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
 
   if (!res.ok) {
+    // A response that reached a Go handler always carries a message already in
+    // the reader's language (11 I3), and the branch below uses it verbatim.
+    // This fallback is for the ones that never got that far -- a proxy or
+    // gateway error whose body is not JSON -- so the frontend owns the
+    // sentence. `currentCopy()` rather than `useCopy()`: this is not a
+    // component, and threading Copy through eight query modules to reach one
+    // string is the worse trade.
     let body: ApiErrorBody = {
       code: 'internal',
-      message: 'Terjadi kesalahan. Coba lagi sebentar lagi.',
+      message: currentCopy().common.error.unexpected,
     }
     try {
       const parsed = await res.json()

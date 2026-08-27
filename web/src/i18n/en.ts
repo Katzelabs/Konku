@@ -179,6 +179,7 @@ export const en: Copy = {
         'This part failed to render. The report has already been sent, so there is nothing for you to file.',
       reload: 'Reload the page',
       unreachable: 'Cannot reach the server. Try reloading the page.',
+      unexpected: 'Something went wrong. Try again in a moment.',
     },
   },
 

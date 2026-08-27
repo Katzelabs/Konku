@@ -123,6 +123,37 @@ export function copyFor(locale: Locale): Copy {
   return loaded[locale] ?? id
 }
 
+/**
+ * The locale `LocaleProvider` is currently rendering, for code that is not a
+ * component and so cannot call `useCopy()`.
+ *
+ * `api/client.ts` is the reason this exists: a failed response that carries no
+ * error body needs a sentence, the fetch layer is imported by eight query
+ * modules, and threading `Copy` through all of them to reach one string is a
+ * worse trade than publishing the locale here.
+ *
+ * It is deliberately not `bootLocale()`. That reads the first-paint hint, which
+ * is right before the account setting has resolved and stale afterwards — an
+ * account whose language differs from the last one used on this device would
+ * get its errors in the wrong language for the rest of the session.
+ */
+let rendering: Locale = DEFAULT_LOCALE
+
+/** Set by `LocaleProvider` only. Never renders a locale not in memory. */
+export function setRenderingLocale(locale: Locale): void {
+  rendering = locale
+}
+
+/**
+ * The active catalog, for non-component callers.
+ *
+ * Before `LocaleProvider` mounts this is Indonesian, which is the documented
+ * fallback (hard rule 8) rather than a papered-over failure.
+ */
+export function currentCopy(): Copy {
+  return copyFor(rendering)
+}
+
 /*
  * ── The seam, and what fills it ────────────────────────────────────────────
  *
@@ -212,6 +243,7 @@ export function LocaleProvider({
 
   useEffect(() => {
     document.documentElement.lang = active
+    setRenderingLocale(active)
   }, [active])
 
   return <LocaleContext.Provider value={active}>{children}</LocaleContext.Provider>

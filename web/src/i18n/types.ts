@@ -317,6 +317,16 @@ export interface Copy {
       reload: string
       /** `/auth/me` did not answer at all. Not a 401 — that is "signed out". */
       unreachable: string
+    /**
+     * The fallback when a failed response carries no error body of its own.
+     *
+     * Every handler returns the one error shape (D-040) with a `message`
+     * already in the reader's language (11 I3), and the client renders that
+     * verbatim. This is for the responses that never reached a handler — a
+     * proxy or gateway error whose body is not JSON — so it is the one
+     * user-facing message the *frontend* has to own.
+     */
+    unexpected: string
     }
   }
 

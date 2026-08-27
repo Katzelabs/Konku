@@ -1,8 +1,17 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { en } from './en'
 import { id } from './id'
 import { bootLocale, rememberLocale } from './boot'
-import { catalogLoaded, copyFor, DEFAULT_LOCALE, isLocale, loadCatalog, LOCALES } from './index'
+import {
+  catalogLoaded,
+  copyFor,
+  currentCopy,
+  DEFAULT_LOCALE,
+  isLocale,
+  loadCatalog,
+  LOCALES,
+  setRenderingLocale,
+} from './index'
 import { pluralFor } from './plural'
 
 /**
@@ -345,5 +354,33 @@ describe('the boot hint', () => {
     // the account's own setting — which outranks the browser (D-094).
     rememberLocale('id')
     expect(withBrowserLanguages(['en-US'], bootLocale)).toBe('id')
+  })
+})
+
+describe('currentCopy, for callers that are not components', () => {
+  afterEach(() => {
+    setRenderingLocale(DEFAULT_LOCALE)
+  })
+
+  it('is Indonesian before a provider has rendered', () => {
+    // Hard rule 8: the fallback is the source language, not nothing and not
+    // the language that might be missing.
+    expect(currentCopy()).toBe(id)
+  })
+
+  it('follows the locale the provider is rendering', async () => {
+    await loadCatalog('en')
+    setRenderingLocale('en')
+    expect(currentCopy().common.error.unexpected).toBe(en.common.error.unexpected)
+    expect(currentCopy().common.error.unexpected).not.toBe(id.common.error.unexpected)
+  })
+
+  it('falls back rather than returning a catalog it does not have', () => {
+    // setRenderingLocale is only ever called by LocaleProvider, which does not
+    // switch until the chunk is in memory -- but the fallback is what makes
+    // that a guarantee rather than a convention.
+    setRenderingLocale('en')
+    expect(currentCopy()).toBeDefined()
+    expect(typeof currentCopy().common.error.unexpected).toBe('string')
   })
 })

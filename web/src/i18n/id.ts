@@ -113,6 +113,7 @@ export const id: Copy = {
         'Bagian ini gagal ditampilkan. Laporannya sudah dikirim otomatis, jadi kamu tidak perlu melaporkannya.',
       reload: 'Muat ulang halaman',
       unreachable: 'Tidak bisa menghubungi server. Coba muat ulang halaman.',
+      unexpected: 'Terjadi kesalahan. Coba lagi sebentar lagi.',
     },
   },
 
