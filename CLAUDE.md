@@ -30,7 +30,7 @@ What that does **not** change: every constraint from `GOALS.md` — never puniti
 
 **`07` L8 is done** — per-account caps on notes (5.000), cards (20.000) and write rate (300/min), all configurable, with `konku_quota_rejections_total` in the metrics. Body size was already bounded.
 
-**`07` L9 is done** — `/privacy` and `/terms` written against what the code actually stores, with a coverage test that fails when a new feature stores something the policy does not mention. The status page is decided (email primary, a static page off the VPS secondary) but hosting it is `04` S5.
+**`07` L9 is done** — `/privacy` and `/terms` written against what the code actually stores. Its coverage test was a **needle list** and could not do what it looked like it did: it failed when a listed thing went missing and passed silently when a new column was stored and never documented, which is exactly what happened when `00013` added `users.suspended_at`. Ticket 11 I4 replaced it with a schema-driven test — every column in `internal/store/gen/models.go` is either a claim checked in a named section *in both languages* or an explicit exemption whose reason must be a sentence, with no default (D-105). The status page is decided (email primary, a static page off the VPS secondary) but hosting it is `04` S5.
 
 **`07` L1–L9 are complete, and so are `08-review.md` and `09-pagination.md` — plus the follow-up sweep in D-087 that paged the two lists `09` did not reach.** `04-ship.md` S1–S3 shipped.
 

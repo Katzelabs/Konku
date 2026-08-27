@@ -2542,3 +2542,180 @@ bans, whatever the copy says); web push at launch (it needs a service worker and
 VAPID keys — it belongs with the PWA work, and email reaches a phone today); a
 weekly summary of your statistics (that is an engagement surface pretending to be
 a report); anything at all about consecutive days.
+
+### D-101 — The copy catalog is typed data, not a lookup function
+
+**Decision:** `web/src/i18n/` and `internal/i18n/` hold plain typed objects, one
+file per locale, read as `useCopy().notes.index.title` — never `t('notes.index.title')`.
+The path *is* the id. A leaf is named for what it is on the screen, never for
+what it says. A string carrying a value is a **function**, not a template with a
+placeholder. No i18n framework: `Intl.PluralRules` plus a typed record discharges
+the obligation, and D-065 asks for the obligation before the dependency.
+
+**Why the shape matters more than it looks.** A wrong path is a compile error,
+not a missing string at runtime. Wrong argument count is a compile error too,
+which a template string cannot give you. And plural machinery lives in the
+language that *has* plurals, so `id.ts` is never forced to carry a distinction
+Indonesian does not make.
+
+**Three mechanisms, because the type cannot see everything** (hard rule 9).
+`make check-i18n` fails on a user-facing literal, using the TypeScript AST rather
+than a regex — 4 false positives in 553 hits — and it is a **ratchet in both
+directions**: a file that gains a literal fails, and a file that reaches zero
+fails until it leaves the baseline, so a converted file cannot keep its
+exemption. A parity test covers what the type cannot: optional fields,
+function-versus-string drift, arity, tuple length. And a **tone test** fails on
+the vocabulary of gentle blame — `don't forget`, `you missed`, `streak`, an
+exclamation mark — which is hard rule 6 getting a mechanism instead of a
+paragraph. English has a far larger vocabulary of gentle blame than Indonesian,
+so the rule survives translation only if something is watching.
+
+**The catalog is split one directory per feature** (`i18n/areas/<feature>/`).
+Two files were right while one screen was converted and wrong the moment six
+people convert 456 literals at once: every one of them would append to the same
+object literal, and the failure mode of hand-resolving that is silently dropping
+a key. `common` stays closed to casual addition — a string used by one feature
+belongs to that feature even when it looks generic, and a shared namespace
+anyone may append to becomes a bag of words with no context for a translator.
+
+**Rejected:** i18next and react-intl (a framework whose obligation nothing here
+needs); ICU message strings parsed at runtime (moves arity errors from the
+compiler to the user); a `common` namespace open to every writer.
+
+### D-102 — Indonesian ships in the entry chunk, English is fetched
+
+**Decision:** `id` is statically imported and `en` is behind `import()`. The
+split is asymmetric on purpose, and `useCopy()` stays **synchronous**.
+
+**Why not both lazy.** Indonesian is the source language and the fallback (hard
+rule 8), so it has to be the thing that renders when something goes wrong. With
+both behind a dynamic import, a chunk that fails to arrive — a stale cache
+against a fresh deploy, a dropped connection — renders *nothing*. With this
+split it renders Indonesian. The fallback can never be a network request.
+
+**Why not both static.** The entry chunk is what a signed-out stranger waits
+for, and `npm run check:bundle` gates it at 140 kB. Carrying both languages of
+every screen would have made I5's 551 literals a two-language cost against 17.8
+kB of headroom. It is one language's cost instead, and the app landed at 128.4 kB.
+
+**The constraint this puts on resolution.** The first paint's locale must be
+known **synchronously**. An effect runs after the paint by definition, and unlike
+a theme a wrong language is *legible* — somebody reads half a sentence before it
+changes underneath them. This is `web/public/theme.js`'s problem (D-086) with
+words instead of colours, and `bootLocale()` is the answer: a `localStorage`
+hint read before `createRoot`, with `navigator.languages` folded in for a
+stranger's first visit.
+
+**Rejected:** an async `useCopy()` (it leaks a loading state into every one of
+several hundred call sites); resolving the locale in an effect (the flash);
+`bootLocale()` as the locale for non-component code — it is the first-paint
+hint, right before the account setting resolves and stale afterwards.
+
+### D-103 — Ulangan is Review, Latihan is Practice, Terhapus is Deleted
+
+**Decision:** the three screen names in English. Decided once, by the operator,
+before any translation began.
+
+**Why the ordering mattered.** These are load-bearing product vocabulary with
+history — D-075 to D-077 record Ujian being folded into Ulangan and a table
+renamed to end an ambiguity. During the parallel conversion two subagents were
+about to settle them between themselves, which would have made a marketing page
+the de facto source of truth for the app's core nouns. Deciding first meant six
+converters had no judgement call to make: two of them independently produced
+"Today's review" for the same string without ever seeing each other.
+
+**Deleted, not Trash.** *Terhapus* literally means deleted; the Indonesian uses
+no trash metaphor. `/privacy` already bolds **Terhapus** as the recoverable state
+and reserves *benar-benar dihapus* for permanent removal. Choosing "Trash" would
+**add** a discarded-and-gone metaphor the source never had, which is a rewrite —
+and rewriting is the one thing `en.ts` is not allowed to do. It also preserves an
+echo: *Yang kamu hapus* → *Terhapus* has the same root repetition as *What you
+delete* → *Deleted*, which "Trash" destroys.
+
+**Review's cost is known and taken.** One English word now covers the feature,
+the `/review` route, and the `review_logs` / `review_runs` / `review_sets`
+tables. Weighed, accepted, and **not grounds to revisit**.
+
+**Domain stays "domain"** in both languages: already an English word used as this
+product's technical term, and glossing it would invent a second vocabulary for
+one concept. It is a real key with the same string twice, not an exemption — an
+exemption would leave it unnamed and un-reviewable.
+
+### D-104 — The locale is a column on `users`, not `user_settings`
+
+**Decision:** migration `00014` puts `locale` on `users`. NULL means never
+chosen, and it is not backfilled.
+
+**Why, and it is not preference.** The locale must be known on *every*
+authenticated request, because any handler can `writeError` and that is copy. The
+only query already running on all of them is `GetActiveSession`, and it runs
+*before* there is an identity — so with no `app.user_id`. Migration `00006` gives
+exactly two tables a policy that permits that read: `users` and `auth_sessions`.
+A `LEFT JOIN` onto `user_settings` returns NULL for every account, and the
+integration suite caught it.
+
+The alternatives were worse: weakening the policy on a table holding real
+preferences is the guarantee D-059 forced RLS on to make, and paying a
+transaction per authenticated request against a pool capped at 10 (D-028) is the
+thing this codebase already throttles a `last_seen_at` write to avoid. `00013`
+moved `suspended_at` for the same reason. The API hides the split — one object,
+one `PATCH`, both writes in one transaction (hard rule 3).
+
+**NULL is load-bearing.** Defaulting to `'id'` deletes the middle step of D-094's
+resolution order and repaints an English reader's screen the moment `/auth/me`
+answers.
+
+### D-105 — The privacy policy is checked against the schema, not a needle list
+
+**Decision:** `legal.test.tsx` enumerates the real columns out of
+`internal/store/gen/models.go`. Every column is either a claim id — checked to
+appear in a **named section, in both languages** — or an explicit
+`{ exempt: "<reason>" }` whose reason must be a sentence. **There is no default:**
+a new column fails the build until somebody decides which it is.
+
+**Why the old test could not work.** `07` L9 shipped a needle list: it asserted
+that specific known items were mentioned. It failed when a listed thing went
+missing and passed **silently when a new thing was stored and never documented**.
+It could not detect a new column, and it did not — `00013` added
+`users.suspended_at`, a new category of data about an account including whether
+the operator has acted against it, and the policy said nothing. The test was
+green throughout.
+
+**It proved itself immediately.** `users.locale` (D-104) landed in a parallel
+branch and was the first column the new test met that nobody had told it about.
+It refused to pass, naming the file and both options.
+
+**Reading `models.go` rather than replaying the migrations** is deliberate:
+replaying `CREATE TABLE` / `ADD COLUMN` / `DROP` / `RENAME` across up-and-down
+sections in fourteen files is a parser whose failure mode is silently seeing
+*fewer* columns than exist — which is exactly what the test exists to catch. sqlc
+already did that replay and `make sqlc-diff` gates the file in CI, so the chain
+is migrations → `models.go` (CI-enforced) → coverage map → documents.
+
+**Rejected:** a hand-maintained column list (the needle list by another name); a
+lint rule over migrations (the parser above); documenting the gap in `CLAUDE.md`
+and trusting review.
+
+### D-106 — The contact address is configuration, not copy
+
+**Decision:** `CONTACT_EMAIL` is an environment variable read by
+`internal/config`, threaded into the message that names it, defaulting to
+`konku@katzeapps.com`.
+
+**Why.** `internal/mail` already treats the deployment-specific `baseURL` as data
+passed to a template rather than as copy, and the address is the same kind of
+thing. D-096 makes self-hosting a real outcome, and a hardcoded address has every
+self-hosted instance telling its users to email somebody else's inbox. It also
+makes an address change one env value rather than the same sentence edited in two
+languages.
+
+**The frontend half is not done, and the gap is silent.**
+`web/src/i18n/legal/types.ts` hardcodes the same address, so a self-hoster who
+sets `CONTACT_EMAIL` gets their own address in API errors and someone else's on
+`/privacy` and `/terms` — in the legal documents, which is the worst place for
+it. The frontend is `go:embed`ed, so a Vite build-time variable cannot carry a
+runtime value; closing it needs either a small public config endpoint or
+serve-time injection into `index.html`. Tracked as ClickUp 86eyrf9bm.
+
+**Rejected:** hardcoding the Go side to match the TypeScript (undoes a decision
+made for a real reason to patch a symptom).
