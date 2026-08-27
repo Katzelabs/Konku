@@ -1,6 +1,7 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import type { ComponentProps } from 'react'
+import { useCopy } from '../../i18n'
 import { cn } from '../../lib/utils'
 
 /**
@@ -40,6 +41,10 @@ export function DialogContent({
   showClose = true,
   ...props
 }: ComponentProps<typeof DialogPrimitive.Content> & { showClose?: boolean }) {
+  // The × has no text, so this label is its only accessible name. No prop for
+  // it: every dialog in the app closes the same way and means the same thing.
+  const c = useCopy()
+
   return (
     <DialogPortal>
       <DialogOverlay />
@@ -56,7 +61,7 @@ export function DialogContent({
         {showClose && (
           <DialogPrimitive.Close
             className="absolute top-4 right-4 rounded-sm text-subtle-fg transition-colors hover:text-surface-fg"
-            aria-label="Tutup"
+            aria-label={c.common.close}
           >
             <X className="size-4" />
           </DialogPrimitive.Close>

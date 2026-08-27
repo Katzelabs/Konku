@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom'
+import { useCopy } from '../../i18n'
 import { cn } from '../../lib/utils'
 import { PRIMARY_NAV } from './Nav'
 
@@ -13,6 +14,8 @@ import { PRIMARY_NAV } from './Nav'
  * settings link is looked for anyway.
  */
 export function MobileBottomNav({ due }: { due: number }) {
+  const copy = useCopy()
+
   return (
     <nav className="sticky bottom-0 z-30 flex border-t border-border bg-card md:hidden">
       {PRIMARY_NAV.map((item) => {
@@ -39,7 +42,7 @@ export function MobileBottomNav({ due }: { due: number }) {
                 </span>
               )}
             </span>
-            {item.label}
+            {item.label(copy)}
           </NavLink>
         )
       })}

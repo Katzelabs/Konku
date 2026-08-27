@@ -44,13 +44,15 @@ export function TopBar({
   sidebarCollapsed: boolean
   onToggleSidebar: () => void
 }) {
+  const c = useCopy().common.nav
+
   return (
     <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-card px-4 py-2.5">
       <BrandMark />
       <button
         onClick={onToggleSidebar}
-        aria-label={sidebarCollapsed ? 'Buka sidebar' : 'Tutup sidebar'}
-        title={sidebarCollapsed ? 'Buka sidebar' : 'Tutup sidebar'}
+        aria-label={sidebarCollapsed ? c.openSidebar : c.closeSidebar}
+        title={sidebarCollapsed ? c.openSidebar : c.closeSidebar}
         aria-expanded={!sidebarCollapsed}
         className="hidden shrink-0 rounded-md p-1.5 text-subtle-fg transition-colors hover:bg-muted hover:text-surface-fg md:block"
       >
@@ -88,12 +90,15 @@ function Breadcrumbs() {
   const crumbs = crumbsFor(pathname, copy)
 
   return (
-    <nav aria-label="Breadcrumb" className="hidden min-w-0 items-center gap-1.5 text-sm md:flex">
+    <nav
+      aria-label={copy.common.nav.breadcrumb}
+      className="hidden min-w-0 items-center gap-1.5 text-sm md:flex"
+    >
       <Link
         to="/home"
         className="shrink-0 text-muted-fg transition-colors hover:text-surface-fg"
       >
-        Konku
+        {'Konku' /* i18n-exempt: the product's name, not copy */}
       </Link>
       {crumbs.map((crumb, i) => (
         <span key={crumb.label} className="flex min-w-0 items-center gap-1.5">
@@ -125,6 +130,7 @@ function Breadcrumbs() {
  * hands the query to the notes list, which does the filtering.
  */
 function NoteSearch() {
+  const c = useCopy().common.nav.searchNotes
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const { pathname } = useLocation()
@@ -160,8 +166,8 @@ function NoteSearch() {
         ref={input}
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        placeholder="Cari judul catatan…"
-        aria-label="Cari judul catatan"
+        placeholder={c.placeholder}
+        aria-label={c.label}
         className="h-9 w-48 bg-surface pl-9 lg:w-64"
       />
     </form>
@@ -178,13 +184,15 @@ function isTyping(target: EventTarget | null) {
 }
 
 function AccountMenu({ user, onLogout }: { user: User; onLogout: () => void }) {
+  const copy = useCopy()
+  const c = copy.common.nav
   const navigate = useNavigate()
   const name = displayName(user)
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label="Akun"
+        aria-label={c.account}
         className="rounded-full transition-opacity hover:opacity-80"
       >
         <Avatar initials={initialsFor(user)} />
@@ -206,12 +214,12 @@ function AccountMenu({ user, onLogout }: { user: User; onLogout: () => void }) {
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => navigate('/settings')}>
           <Settings />
-          Pengaturan
+          {copy.settings.shell.title}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onSelect={onLogout}>
           <LogOut />
-          Keluar
+          {c.signOut}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

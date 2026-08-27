@@ -479,13 +479,12 @@ export default function NotesPage() {
             error={error}
             onLoadMore={() => fetchNextPage()}
             /*
-              Ours; the sentence around it is not. `LoadMore` builds "Muat lebih
-              banyak (12 catatan lagi)" itself, in `components/ui/`, which is
-              shared with cards and outside `check-i18n`'s scope — so an English
-              reader sees an English noun inside an Indonesian sentence until
-              that component is converted with the rest of the shared layer.
+              The whole label. `LoadMore` used to build "Muat lebih banyak (12
+              catatan lagi)" around a bare noun, which put an English word
+              inside an Indonesian sentence for every English reader; it renders
+              what this returns and composes nothing.
             */
-            noun={c.index.noun}
+            remainingLabel={c.index.loadMore}
           />
         </div>
       </ListDetail>

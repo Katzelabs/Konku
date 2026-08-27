@@ -45,7 +45,8 @@ export const review: ReviewCopy = {
       description:
         'Buat satu kalau mau menguji diri di luar jadwal, atau fokus ke satu topik saja.',
     },
-    noun: 'latihan',
+    loadMore: (remaining) =>
+      n(remaining, { other: 'Muat lebih banyak (# latihan lagi)' }),
   },
 
   summary: {
@@ -91,12 +92,14 @@ export const review: ReviewCopy = {
         `${num.format(chosen)} dipilih dari ${num.format(total)}`,
       empty: 'Belum ada kartu yang bisa dipilih. Buat beberapa kartu dulu.',
       save: 'Simpan daftar soal',
-      noun: 'kartu',
+      loadMore: (remaining) =>
+        n(remaining, { other: 'Muat lebih banyak (# kartu lagi)' }),
     },
     history: {
       title: 'Riwayat',
       empty: 'Belum pernah dikerjakan.',
-      noun: 'percobaan',
+      loadMore: (remaining) =>
+        n(remaining, { other: 'Muat lebih banyak (# percobaan lagi)' }),
     },
   },
 

@@ -1,6 +1,7 @@
 import { Check, Plus, X } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import type { Category } from '../../api/types'
+import { useCopy } from '../../i18n'
 import { cn } from '../../lib/utils'
 import { Badge, DomainDot } from './badge'
 import { Input } from './input'
@@ -29,6 +30,8 @@ export function CategoryChip({
   onRemove?: () => void
   className?: string
 }) {
+  const c = useCopy().common.picker.category
+
   return (
     <Badge variant="outline" className={cn('gap-1', className)}>
       {color && <DomainDot color={color} className="size-2" />}
@@ -37,7 +40,7 @@ export function CategoryChip({
         <button
           type="button"
           onClick={onRemove}
-          aria-label={`Hapus kategori ${label}`}
+          aria-label={c.remove(label)}
           className="-mr-0.5 rounded-sm text-subtle-fg transition-colors hover:text-surface-fg"
         >
           <X className="size-3" />
@@ -54,6 +57,11 @@ export function CategoryChip({
  * a label before you can apply it is exactly the friction that stops things
  * being captured at all (hard rule 7), so an unrecognised name becomes a new
  * category on Enter and the API is idempotent about it.
+ *
+ * Its words are `common.picker.category`, not `categories.*`, and that is the
+ * categories catalog's own instruction: this path is reached from the note and
+ * card editors rather than from `/categories`, so its copy lives with the
+ * picker while that area stays the tidying-up screen.
  */
 export function CategoryPicker({
   categories,
@@ -68,6 +76,9 @@ export function CategoryPicker({
   onCreate: (label: string) => Promise<Category | null>
   creating?: boolean
 }) {
+  // Named `copy`, not `c`: two `.map`s below already bind `c` to a category,
+  // and a shadowed catalog handle is the kind of thing that compiles.
+  const copy = useCopy().common.picker.category
   const [query, setQuery] = useState('')
   const input = useRef<HTMLInputElement>(null)
 
@@ -147,7 +158,7 @@ export function CategoryPicker({
             void commit()
           }
         }}
-        placeholder="Cari atau tambah kategori…"
+        placeholder={copy.search}
         disabled={creating}
         className="text-sm"
       />
@@ -187,14 +198,14 @@ export function CategoryPicker({
               className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm text-primary-ink transition-colors hover:bg-muted disabled:opacity-60"
             >
               <Plus className="size-3.5 shrink-0" />
-              <span className="truncate">Tambah “{query.trim()}”</span>
+              <span className="truncate">{copy.create(query.trim())}</span>
             </button>
           </li>
         )}
 
         {matches.length === 0 && !query.trim() && (
           <li className="px-2 py-1.5 text-sm text-subtle-fg">
-            Belum ada kategori. Ketik untuk membuat satu.
+            {copy.empty}
           </li>
         )}
       </ul>

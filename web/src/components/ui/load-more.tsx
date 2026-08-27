@@ -1,3 +1,4 @@
+import { useCopy } from '../../i18n'
 import { Button } from './button'
 import { Notice } from './notice'
 import { cn } from '../../lib/utils'
@@ -13,6 +14,13 @@ import { cn } from '../../lib/utils'
  *
  * It says how many are left, because the point of the whole change is that the
  * screen stops implying the collection ends where the page does.
+ *
+ * **It does not write that sentence.** It took a `noun` once — "catatan",
+ * "kartu" — and built `${remaining} ${noun} lagi` around it, which meant an
+ * English reader got an English noun inside an Indonesian sentence however
+ * carefully the catalogs were translated. English also needs the noun to agree
+ * with the count, which a bare noun cannot do. So the caller hands over a
+ * counted function and this renders exactly what it returns (ticket 11 I5).
  */
 export function LoadMore({
   loaded,
@@ -21,7 +29,7 @@ export function LoadMore({
   loading,
   error,
   onLoadMore,
-  noun,
+  remainingLabel,
   className,
 }: {
   /** Rows on screen. */
@@ -32,10 +40,18 @@ export function LoadMore({
   loading: boolean
   error?: Error | null
   onLoadMore: () => void
-  /** What is being counted, in Indonesian: "catatan", "kartu". */
-  noun: string
+  /**
+   * The button's whole label, given how many rows are still unloaded.
+   *
+   * From the caller's own catalog — `c.index.loadMore` and its siblings — so
+   * the count, the noun it agrees with and the word order are all decided in
+   * the language being rendered.
+   */
+  remainingLabel: (remaining: number) => string
   className?: string
 }) {
+  const c = useCopy()
+
   // Nothing to say about a list that fits on one page.
   if (!hasMore && !error) return null
 
@@ -51,9 +67,7 @@ export function LoadMore({
       {error && <Notice>{error.message}</Notice>}
       {hasMore && (
         <Button variant="secondary" onClick={onLoadMore} disabled={loading}>
-          {loading
-            ? 'Memuat…'
-            : `Muat lebih banyak (${remaining} ${noun} lagi)`}
+          {loading ? c.common.loading : remainingLabel(remaining)}
         </Button>
       )}
     </div>

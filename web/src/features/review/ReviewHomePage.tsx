@@ -132,7 +132,7 @@ function SetList({ adding }: { adding: boolean }) {
         loading={isFetchingNextPage}
         error={error}
         onLoadMore={() => fetchNextPage()}
-        noun={c.noun}
+        remainingLabel={c.loadMore}
       />
     </div>
   )

@@ -1,3 +1,4 @@
+import { useCopy } from '../../i18n'
 import { cn } from '../../lib/utils'
 import { Input } from './input'
 import { Label } from './label'
@@ -30,31 +31,39 @@ export const DEFAULT_COLOR = '#5C6B73'
  * Two copies of a swatch row is the point at which the second one starts
  * drifting, and the whole reason both screens exist is that domains and
  * categories should be managed the same way.
+ *
+ * Its words are `common.color`, and both area catalogs say so in as many
+ * words: neither `domains` nor `categories` describes a colour, because a
+ * colour is user data — the one documented exception to the design system's
+ * no-raw-colour rule. There are no colour *names* here either; a swatch is
+ * named by its hex value, which is the same string in every language.
  */
 export function ColorPicker({
   value,
   onChange,
-  label = 'Warna',
+  label,
 }: {
   value: string
   onChange: (v: string) => void
   label?: string
 }) {
+  const c = useCopy().common.color
+
   return (
     <div className="flex flex-col gap-1.5">
-      <Label>{label}</Label>
+      <Label>{label ?? c.label}</Label>
       <div className="flex flex-wrap items-center gap-2">
-        {COLOR_PALETTE.map((c) => (
+        {COLOR_PALETTE.map((hex) => (
           <button
-            key={c}
+            key={hex}
             type="button"
-            aria-label={`Warna ${c}`}
-            aria-pressed={value.toLowerCase() === c.toLowerCase()}
-            onClick={() => onChange(c)}
-            style={{ backgroundColor: c }}
+            aria-label={c.swatch(hex)}
+            aria-pressed={value.toLowerCase() === hex.toLowerCase()}
+            onClick={() => onChange(hex)}
+            style={{ backgroundColor: hex }}
             className={cn(
               'size-7 rounded-full transition-shadow',
-              value.toLowerCase() === c.toLowerCase() &&
+              value.toLowerCase() === hex.toLowerCase() &&
                 'ring-2 ring-primary ring-offset-2 ring-offset-card',
             )}
           />
@@ -62,7 +71,7 @@ export function ColorPicker({
         <Input
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          aria-label="Kode warna"
+          aria-label={c.hex}
           className="h-8 w-24 font-mono text-xs"
         />
       </div>

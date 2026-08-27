@@ -340,15 +340,23 @@ sqlc-diff: ## Fail if generated code is stale
 # wolf gets switched off, and this one has to survive the whole of ticket 11.
 # What it catches and what it does not is written out at the top of the script.
 #
-# It runs against 41 files that still hold Indonesian literals, so it is a
-# ratchet rather than a pass/fail: web/i18n-baseline.json records what is left,
-# a file that gains a literal fails, and a file that reaches zero fails until
-# it leaves the baseline. `npm run check:i18n -- --list` prints what remains.
+# It covers web/src/features/, web/src/components/ and web/src/App.tsx. The
+# second and third joined it once the shared component layer was converted
+# (11 I5), and that widening is the point of the target rather than a detail:
+# with only features/ in scope the baseline reached zero while every screen
+# still rendered Indonesian, because the components every screen is built from
+# were never counted.
+#
+# It stays a ratchet rather than a pass/fail: web/i18n-baseline.json records
+# what is left, a file that gains a literal fails, and a file that reaches zero
+# fails until it leaves the baseline. The baseline is empty today, which is the
+# state it has to be kept in. `npm run check:i18n -- --list` prints what
+# remains.
 # The server has the same rule and its own mechanism, which is why there is no
 # Go half of this target: internal/api/copy_test.go parses the package and
 # fails on a string literal in a writeError message, and it runs under `make
 # test` like every other test (11 I3).
-check-i18n: ## Fail on user-facing copy typed into a feature folder
+check-i18n: ## Fail on user-facing copy typed into a screen or a component
 	@[ -d web/node_modules/typescript ] || { \
 	  echo "check-i18n: web/node_modules is missing. Run \`make setup\`."; \
 	  exit 1; \

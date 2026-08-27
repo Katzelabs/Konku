@@ -403,8 +403,10 @@ Hard rule 8, **as amended by D-094**: user-facing copy ships in **Bahasa
 Indonesia *and* English**. Indonesian is authored first and is the fallback; a
 string is not shippable until English exists. Code and comments are English.
 That includes `aria-label`s and placeholder text — they are read by users, and
-`make check-i18n` fails on a literal in a feature folder. The style guide's own
-section headings are English; it is a dev tool.
+`make check-i18n` fails on a literal in `src/features/`, `src/components/` or
+`src/App.tsx`. The style guide's own section headings are English; it is a dev
+tool, built only under `import.meta.env.DEV` and dropped from the production
+bundle, and it is out of the scan for that reason.
 
 The non-punitive rules survive translation and that is not automatic: English
 has a far larger vocabulary of gentle blame. No *don't forget*, no *you missed*,
@@ -435,3 +437,33 @@ English writes 5,000.
 `features/settings/ActiveSessions.tsx` is the worked example; copy its shape.
 A proper noun that is the same word in both languages (`Chrome`, `macOS`) is
 not copy — mark it `// i18n-exempt: <reason>` and leave it in the code.
+
+### A string in `src/components/`
+
+Three places it can go, in this order:
+
+1. **Read it across from the feature that owns the word.** A filter trigger
+   saying "Kategori" is `categories.noun`; a nav item pointing at `/notes` is
+   `notes.index.title`. A second copy in `common` is one more place for two
+   words to stop agreeing.
+2. **`common`**, when the string is about the *mechanism* rather than about
+   what is being acted on — `common.selection.count` is the same sentence over
+   notes and over cards — or when a feature's catalog has explicitly routed it
+   here. Two of them have: `categories` sends the create-on-type wording to the
+   property picker, and both label areas send colour names to `ColorPicker`.
+3. **A prop from the caller**, when only the caller knows the word: a row's
+   tick-box label, a card face's name, the button under a paged list.
+
+Two failures this layer produces that nothing catches on its own, both of them
+real:
+
+- **A default parameter is copy that does not look like copy.** `label =
+  'Memuat…'` is not JSX, does not read as a sentence in a diff, and left ten
+  screens Indonesian in both locales. Give the fallback as `label ?? c.…` in
+  the body instead.
+- **A component must never assemble a sentence.** `LoadMore` took a `noun` and
+  built `` `${remaining} ${noun} lagi` ``, so an English reader got an English
+  noun inside an Indonesian sentence however well the catalogs were translated —
+  and English had no way to make the noun agree with the count. A string with a
+  value in it is a **function in the catalog**; the component renders what it
+  returns and concatenates nothing.

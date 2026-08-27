@@ -1,5 +1,6 @@
 import { GraduationCap } from 'lucide-react'
 import { NavLink, useLocation } from 'react-router-dom'
+import { useCopy } from '../../i18n'
 import { cn } from '../../lib/utils'
 import { Separator } from '../ui/separator'
 import { PRIMARY_NAV, SECONDARY_NAV, type NavItem } from './Nav'
@@ -30,7 +31,9 @@ export function Sidebar({
             <GraduationCap className="size-4" />
           </span>
           {!collapsed && (
-            <span className="truncate text-lg font-bold text-card-fg">Konku</span>
+            <span className="truncate text-lg font-bold text-card-fg">
+              {'Konku' /* i18n-exempt: the product's name, not copy */}
+            </span>
           )}
         </div>
 
@@ -65,6 +68,10 @@ function SidebarLink({
   const Icon = item.icon
   const showDue = item.showsDue && due > 0
   const { pathname } = useLocation()
+  const copy = useCopy()
+  // The destination's name comes from the area that owns the screen, resolved
+  // here against the locale being rendered (Nav.tsx).
+  const label = item.label(copy)
   // A settings screen that lives at its own URL still lights Pengaturan up.
   const alsoActive = item.alsoActiveOn?.test(pathname) ?? false
 
@@ -74,8 +81,8 @@ function SidebarLink({
       end={item.end}
       // The label is gone when collapsed, so the accessible name has to come
       // from somewhere; title also gives a hover tooltip for free.
-      title={collapsed ? item.label : undefined}
-      aria-label={collapsed ? item.label : undefined}
+      title={collapsed ? label : undefined}
+      aria-label={collapsed ? label : undefined}
       className={({ isActive }) =>
         cn(
           'flex items-center gap-3 rounded-md py-2 text-sm transition-colors duration-(--animate-duration-quick) ease-(--ease-quiet)',
@@ -101,7 +108,7 @@ function SidebarLink({
 
       {!collapsed && (
         <>
-          <span className="flex-1 truncate">{item.label}</span>
+          <span className="flex-1 truncate">{label}</span>
           {showDue && (
             <span className="text-xs text-subtle-fg tabular-nums">{due}</span>
           )}

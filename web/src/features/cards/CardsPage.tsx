@@ -388,13 +388,11 @@ export default function CardsPage() {
             error={error}
             onLoadMore={() => fetchNextPage()}
             /*
-              The word is ours and comes from the catalog; the sentence around
-              it is `LoadMore`'s own and is still Indonesian. `components/ui/`
-              is shared with the notes index and is converted separately —
-              when it is, this prop wants to become `(n: number) => string`,
-              since English needs the count to pick "card" or "cards".
+              The whole label, not a noun for `LoadMore` to build a sentence
+              around: English needs the count to pick "card" or "cards", and a
+              bare noun cannot agree with a number the component holds.
             */
-            noun={c.index.listNoun}
+            remainingLabel={c.index.loadMore}
           />
         </div>
       </ListDetail>

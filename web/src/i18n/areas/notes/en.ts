@@ -11,12 +11,15 @@ export const notes: NotesCopy = {
     title: 'Notes',
     description: 'Write first, tidy up later.',
     count: (count) => n(count, { one: '# note', other: '# notes' }),
-    // A bare noun dropped into a sentence `load-more.tsx` still builds in
-    // Indonesian, so this reads mixed until that component is converted. It is
-    // the plural form because the count that precedes it is almost always
-    // plural; the singular case is the reason that component wants a counted
-    // function rather than a noun.
-    noun: 'notes',
+    // The whole button label now, not a noun for `load-more.tsx` to build a
+    // sentence around — which is what made an English reader see an English
+    // noun inside an Indonesian one. "left" is the remainder, stated: a count
+    // of what the list still holds, not a tally of what is owed (hard rule 6).
+    loadMore: (remaining) =>
+      n(remaining, {
+        one: 'Load more (# note left)',
+        other: 'Load more (# notes left)',
+      }),
     newNote: 'New note',
     // Terhapus → Deleted. Decided, and not a per-screen call — see the table in
     // `i18n/en.ts`. "Trash" would import a discarded-and-gone metaphor, and

@@ -9,7 +9,8 @@ export const cards: CardsCopy = {
     title: 'Kartu',
     description: 'Satu pertanyaan, satu jawaban. Ditulis di sini, diulang di layar ulangan.',
     count: (count) => n(count, { other: '# kartu' }),
-    listNoun: 'kartu',
+    loadMore: (remaining) =>
+      n(remaining, { other: 'Muat lebih banyak (# kartu lagi)' }),
     startReview: 'Mulai ulangan',
     newCard: 'Kartu baru',
     search: {

@@ -202,7 +202,7 @@ jobs:
       # the failure mode the type system is blind to. Here as well as in
       # `make check` for the reason at the top of this file — a rule that
       # depends on somebody remembering to run it locally decays.
-      - name: copy lives in the catalog, not in a feature folder
+      - name: copy lives in the catalog, not in a screen or a component
         run: npm run check:i18n
 
       - name: unit tests

@@ -58,7 +58,11 @@ export const review: ReviewCopy = {
       description:
         'Make one if you want to test yourself outside the schedule, or focus on a single topic.',
     },
-    noun: 'practice sets',
+    loadMore: (remaining) =>
+      n(remaining, {
+        one: 'Load more (# practice set left)',
+        other: 'Load more (# practice sets left)',
+      }),
   },
 
   summary: {
@@ -113,7 +117,11 @@ export const review: ReviewCopy = {
         `${num.format(chosen)} selected of ${num.format(total)}`,
       empty: 'No cards to choose from yet. Make a few cards first.',
       save: 'Save question list',
-      noun: 'cards',
+      loadMore: (remaining) =>
+        n(remaining, {
+          one: 'Load more (# card left)',
+          other: 'Load more (# cards left)',
+        }),
     },
     history: {
       title: 'History',
@@ -121,7 +129,11 @@ export const review: ReviewCopy = {
       // this screen's own noun, because a bare "Not done yet" would read as
       // the *open* attempt two paragraphs above rather than as an empty list.
       empty: 'No attempts yet.',
-      noun: 'attempts',
+      loadMore: (remaining) =>
+        n(remaining, {
+          one: 'Load more (# attempt left)',
+          other: 'Load more (# attempts left)',
+        }),
     },
   },
 

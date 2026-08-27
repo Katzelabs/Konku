@@ -2,6 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Button } from './ui/button'
 import { Notice } from './ui/notice'
+import { bootLocale, copyFor } from '../i18n'
 import { reportClientError } from '../lib/report-error'
 
 /**
@@ -78,6 +79,20 @@ export class ErrorBoundary extends Component<Props, State> {
  * the note editor autosaves and the card editor does not.
  */
 function CrashScreen({ full = false }: { full?: boolean }) {
+  /*
+   * `copyFor(bootLocale())`, not `useCopy()`.
+   *
+   * The outer boundary sits above `LocaleProvider` in `main.tsx` — deliberately,
+   * so a throw inside a provider is still caught — and a hook reading the
+   * context from outside it would answer with the default locale, which is to
+   * say Indonesian, for every English reader who ever sees this screen. The
+   * boot locale is the same answer `main.tsx` resolved synchronously before
+   * anything mounted, and `copyFor` falls back to Indonesian on its own if the
+   * English chunk never arrived — which is the documented fallback, and exactly
+   * the situation a crash screen has to survive (hard rule 8, D-085).
+   */
+  const c = copyFor(bootLocale()).common.error
+
   return (
     <div
       role="alert"
@@ -87,12 +102,9 @@ function CrashScreen({ full = false }: { full?: boolean }) {
           : 'flex flex-col items-start gap-4 py-12'
       }
     >
-      <Notice>
-        Bagian ini gagal ditampilkan. Laporannya sudah dikirim otomatis, jadi
-        kamu tidak perlu melaporkannya.
-      </Notice>
+      <Notice>{c.crash}</Notice>
       <Button variant="primary" onClick={() => window.location.reload()}>
-        Muat ulang halaman
+        {c.reload}
       </Button>
     </div>
   )

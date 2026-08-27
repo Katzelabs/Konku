@@ -1,5 +1,6 @@
 import { LayoutGrid, List } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
+import { useCopy } from '../../i18n'
 
 export type ViewMode = 'list' | 'grid'
 
@@ -55,22 +56,27 @@ export function ViewToggle({
   mode: ViewMode
   onChange: (v: ViewMode) => void
 }) {
+  // Icons only, so all three of these are accessible names rather than text on
+  // screen. This is the only control over the two index screens (D-078) and
+  // the copy says exactly that much and no more.
+  const c = useCopy().common.view
+
   return (
     <div
       role="group"
-      aria-label="Tampilan"
+      aria-label={c.label}
       className="flex items-center gap-1 rounded-md border border-border bg-card p-0.5"
     >
       <ViewButton
         active={mode === 'list'}
-        label="Tampilan daftar"
+        label={c.list}
         onClick={() => onChange('list')}
       >
         <List className="size-4" />
       </ViewButton>
       <ViewButton
         active={mode === 'grid'}
-        label="Tampilan kisi"
+        label={c.grid}
         onClick={() => onChange('grid')}
       >
         <LayoutGrid className="size-4" />

@@ -7,7 +7,11 @@ import { notes } from './areas/notes/en'
 import { review } from './areas/review/en'
 import { settings } from './areas/settings/en'
 import { timer } from './areas/timer/en'
+import { pluralFor } from './plural'
 import type { Copy } from './types'
+
+/** English distinguishes one from other, and formats 5,000 with commas. */
+const n = pluralFor('en')
 
 /**
  * English — translated from `id.ts`, which is the original.
@@ -82,8 +86,100 @@ import type { Copy } from './types'
 export const en: Copy = {
   common: {
     working: 'One moment…',
+    loading: 'Loading…',
+    cancel: 'Cancel',
+    close: 'Close',
     today: 'Today',
     yesterday: 'Yesterday',
+
+    password: {
+      show: 'Show password',
+      hide: 'Hide password',
+    },
+
+    selection: {
+      count: (count) => n(count, { other: '# selected' }),
+      selectAll: 'Select all',
+      // "Loaded", not "on this page": the list is one scroll with a button
+      // under it, and it has no pages a reader could point at.
+      selectAllLoaded: 'Select all loaded',
+      clear: 'Clear selection',
+    },
+
+    filter: {
+      searchDomains: 'Search domains…',
+      searchCategories: 'Search categories…',
+      noMatch: 'Nothing matches.',
+      clearSelection: 'Clear selection',
+    },
+
+    view: {
+      label: 'View',
+      list: 'List view',
+      grid: 'Grid view',
+    },
+
+    color: {
+      label: 'Colour',
+      swatch: (hex) => `Colour ${hex}`,
+      hex: 'Colour code',
+    },
+
+    picker: {
+      domain: {
+        placeholder: 'Choose a domain',
+        none: 'No domain',
+      },
+      category: {
+        add: 'Add a category',
+        search: 'Search or add a category…',
+        // Curly double quotes, where Indonesian uses the same pair. Both
+        // languages quote a name the reader just typed the same way, and the
+        // marks are in the catalog so a language that quotes differently can
+        // say so without touching the component.
+        create: (query) => `Add “${query}”`,
+        empty: 'No categories yet. Type to make one.',
+        done: 'Done',
+        remove: (label) => `Remove category ${label}`,
+      },
+    },
+
+    flashcard: {
+      // The side you are going *to*, not the gesture. "Flip the card" would be
+      // honest about the mechanism and useless about the outcome. Nothing here
+      // calls it revealing an answer — that is D-003, on another screen.
+      showSide: (side) => `Show ${side.toLowerCase()}`,
+      side: (side) => `Card side: ${side}`,
+    },
+
+    peek: {
+      close: 'Close preview',
+    },
+
+    nav: {
+      skipToContent: 'Skip to content',
+      breadcrumb: 'Breadcrumb',
+      openSidebar: 'Open sidebar',
+      closeSidebar: 'Close sidebar',
+      reviewToday: 'Today',
+      searchNotes: {
+        placeholder: 'Search note titles…',
+        label: 'Search note titles',
+      },
+      account: 'Account',
+      signOut: 'Sign out',
+      openTimer: 'Open the timer',
+      focus: 'Focus',
+    },
+
+    error: {
+      // States what happened and that it has already been reported. No
+      // apology, no "oops", and no suggestion that the reader did this.
+      crash:
+        'This part failed to render. The report has already been sent, so there is nothing for you to file.',
+      reload: 'Reload the page',
+      unreachable: 'Cannot reach the server. Try reloading the page.',
+    },
   },
 
   auth,

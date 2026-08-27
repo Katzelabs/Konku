@@ -1,6 +1,7 @@
 import { Pause, Play } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useFocusTimer } from '../../features/timer/TimerProvider'
+import { useCopy } from '../../i18n'
 import { clock } from '../../lib/date'
 
 /**
@@ -15,6 +16,12 @@ import { clock } from '../../lib/date'
  * nudge — that is the guilt mechanic GOALS.md rules out.
  */
 export function FocusPill() {
+  // The pill names the *session*; the timer catalog names the clock, so
+  // `timer.status.running` ("Berjalan") is not this word. Pause and resume are
+  // that feature's own controls and are read across from it, so the pill and
+  // the /timer screen cannot come to call one button two things.
+  const copy = useCopy()
+  const c = copy.common.nav
   const timer = useFocusTimer()
   const navigate = useNavigate()
   const { pathname } = useLocation()
@@ -27,19 +34,23 @@ export function FocusPill() {
       <button
         onClick={() => navigate('/timer')}
         className="flex items-baseline gap-2"
-        aria-label="Buka timer"
+        aria-label={c.openTimer}
       >
         <span className="font-mono text-sm font-semibold tabular-nums">
           {clock(timer.remainingMs)}
         </span>
         <span className="hidden text-[10px] tracking-wide text-focus-muted-fg uppercase lg:inline">
-          {timer.status === 'paused' ? 'Dijeda' : 'Fokus'}
+          {timer.status === 'paused' ? copy.timer.status.paused : c.focus}
         </span>
       </button>
 
       <button
         onClick={timer.status === 'running' ? timer.pause : timer.resume}
-        aria-label={timer.status === 'running' ? 'Jeda' : 'Lanjut'}
+        aria-label={
+          timer.status === 'running'
+            ? copy.timer.controls.pause
+            : copy.timer.controls.resume
+        }
         className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-fg transition-colors hover:bg-primary/90"
       >
         {timer.status === 'running' ? (

@@ -11,10 +11,13 @@ export const cards: CardsCopy = {
     // accepted in `en.ts`'s header rather than worked around here.
     description: 'One question, one answer. Written here, reviewed on the review screen.',
     count: (count) => n(count, { one: '# card', other: '# cards' }),
-    // Plural and lower case: `LoadMore` interpolates the remainder in front of
-    // it and the sentence around it is still Indonesian. See the note in
-    // `types.ts` — the component's own copy is not this slice's to convert.
-    listNoun: 'cards',
+    // The whole button label. `LoadMore` no longer builds a sentence around a
+    // noun, so the count and the word it agrees with are both ours.
+    loadMore: (remaining) =>
+      n(remaining, {
+        one: 'Load more (# card left)',
+        other: 'Load more (# cards left)',
+      }),
     startReview: 'Start review',
     newCard: 'New card',
     search: {

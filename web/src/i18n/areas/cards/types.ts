@@ -53,11 +53,14 @@ export interface CardsCopy {
     /** The collection, not the page — the header states the real total. */
     count: (n: number) => string
     /**
-     * What `LoadMore` counts, mid-sentence in a shared component that is still
-     * Indonesian. Lower case, plural, no number: the component interpolates
-     * the remainder itself.
+     * The whole label on the button under the list, remainder and all.
+     *
+     * A bare noun before, which `components/ui/load-more.tsx` interpolated
+     * into a sentence of its own — so the sentence stayed Indonesian however
+     * the noun was translated. The component composes nothing now. Ticket 11
+     * I5.
      */
-    listNoun: string
+    loadMore: (remaining: number) => string
     /** Takes you to the review queue, not into a set. */
     startReview: string
     newCard: string
