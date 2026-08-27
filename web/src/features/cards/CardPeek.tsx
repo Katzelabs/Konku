@@ -83,10 +83,18 @@ export function CardPeek({
             Taller in a modal than in the column: the grid view has the whole
             page to give it, and a card floating in the middle of a 42rem dialog
             at the height of a list row reads as a fragment of something.
+
+            The side labels are the same two the editor puts on its textareas,
+            from the same keys: a peek and an editor that disagreed about which
+            side is which would be worse than either wording on its own. They
+            were default parameters inside `Flashcard` until ticket 11 I5, which
+            is where copy hides from review.
           */}
           <Flashcard
             key={card.id}
             className={mode === 'center' ? 'min-h-64' : undefined}
+            frontLabel={c.editor.front.label}
+            backLabel={c.editor.back.label}
             front={
               // The question carries the page's full ink; the answer sits at
               // reading weight, the way prose does everywhere else. Markdown

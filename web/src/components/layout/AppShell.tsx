@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { useLogout, type User } from '../../features/auth/useAuth'
+import { useCopy } from '../../i18n'
 import { useDueCards } from '../../features/review/queries'
 import { CaptureGate } from '../../features/timer/CaptureGate'
 import { MobileBottomNav } from './MobileNav'
@@ -26,6 +27,7 @@ export function AppShell({
   user: User
   children: ReactNode
 }) {
+  const c = useCopy()
   const logout = useLogout()
   const due = useDueCards()
   const dueCount = due.data?.total ?? 0
@@ -45,7 +47,7 @@ export function AppShell({
         href="#konten"
         className="sr-only focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-50 focus:rounded-md focus:border focus:border-border focus:bg-card focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-card-fg"
       >
-        Lewati ke konten
+        {c.common.nav.skipToContent}
       </a>
 
       <Sidebar due={dueCount} collapsed={sidebar.collapsed} />

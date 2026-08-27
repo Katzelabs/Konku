@@ -1,6 +1,7 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { useCopy } from '../../i18n'
 import { cn } from '../../lib/utils'
 import { DialogOverlay, DialogPortal } from './dialog'
 
@@ -56,6 +57,8 @@ export function PeekPanel({
   title: string
   children: ReactNode
 }) {
+  const c = useCopy()
+
   if (!open) return null
 
   if (mode === 'side') {
@@ -97,7 +100,7 @@ export function PeekPanel({
             beside the list rather than on top of it.
           */}
           <DialogPrimitive.Close
-            aria-label="Tutup pratinjau"
+            aria-label={c.common.peek.close}
             className="absolute top-3 right-3 rounded-md p-1.5 text-subtle-fg transition-colors duration-(--animate-duration-quick) ease-(--ease-quiet) hover:bg-muted hover:text-surface-fg"
           >
             <X className="size-4" />

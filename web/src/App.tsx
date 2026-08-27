@@ -5,6 +5,7 @@ import { Loading } from './components/ui/spinner'
 import { Notice } from './components/ui/notice'
 import LoginPage from './features/auth/LoginPage'
 import { useMe } from './features/auth/useAuth'
+import { useCopy } from './i18n'
 import { PeekProvider, usePeekBackground } from './lib/peek-route'
 
 /*
@@ -82,6 +83,7 @@ function PageChunk({ children }: { children: ReactNode }) {
 }
 
 export default function App() {
+  const c = useCopy()
   const { data: user, isPending, error } = useMe()
   const location = useLocation()
 
@@ -102,7 +104,7 @@ export default function App() {
   if (error) {
     return (
       <main className="mx-auto max-w-sm p-6 pt-24">
-        <Notice>Tidak bisa menghubungi server. Coba muat ulang halaman.</Notice>
+        <Notice>{c.common.error.unreachable}</Notice>
       </main>
     )
   }

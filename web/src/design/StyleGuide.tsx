@@ -335,6 +335,8 @@ export default function StyleGuide() {
               dialog are both `bg-card`, which is why neither face is. */}
           <Card className="max-w-lg p-5">
             <Flashcard
+              frontLabel="Pertanyaan"
+              backLabel="Jawaban"
               front={
                 <p className="text-reading text-card-fg">
                   Apa beda nilai eigen dan vektor eigen?

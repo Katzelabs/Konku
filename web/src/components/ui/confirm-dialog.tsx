@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useCopy } from '../../i18n'
 import { Button } from './button'
 import {
   Dialog,
@@ -22,6 +23,12 @@ import {
  * Terhapus", not a warning about permanence — an alarming prompt for a
  * reversible action is the punitive tone hard rule 6 rules out, and it also
  * trains people to click through prompts that do matter.
+ *
+ * The in-flight word used to be `'Menghapus…'`, baked in beside a `confirmLabel`
+ * the caller chooses freely — so the dialog asserted the action was a delete
+ * whatever the button next to it said. It is `pendingLabel` now, and it falls
+ * back to `common.working` rather than to a verb: a generic dialog says a
+ * generic thing, and a caller that knows the verb passes it (ticket 11 I5).
  */
 export function ConfirmDialog({
   open,
@@ -29,6 +36,7 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel,
+  pendingLabel,
   pending = false,
   onConfirm,
 }: {
@@ -37,10 +45,18 @@ export function ConfirmDialog({
   title: string
   description: ReactNode
   confirmLabel: string
+  /**
+   * What the confirm button says while the request is in flight. Defaults to
+   * `common.working`, which is true of any action and claims nothing about
+   * which one this is.
+   */
+  pendingLabel?: string
   /** Keeps the dialog up and the button disabled while the request is in flight. */
   pending?: boolean
   onConfirm: () => void
 }) {
+  const c = useCopy().common
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
@@ -59,7 +75,7 @@ export function ConfirmDialog({
             onClick={() => onOpenChange(false)}
             disabled={pending}
           >
-            Batal
+            {c.cancel}
           </Button>
           {/*
             The only destructive control in this dialog, and the reason the
@@ -67,7 +83,7 @@ export function ConfirmDialog({
             does not read as a threat (D-054).
           */}
           <Button variant="destructive" size="sm" onClick={onConfirm} disabled={pending}>
-            {pending ? 'Menghapus…' : confirmLabel}
+            {pending ? (pendingLabel ?? c.working) : confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,6 +1,7 @@
 import * as Popover from '@radix-ui/react-popover'
 import { Check, ChevronDown, Search, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { useCopy } from '../../i18n'
 import { cn } from '../../lib/utils'
 import { DomainDot } from './badge'
 import { Input } from './input'
@@ -64,6 +65,12 @@ export function MultiSelect({
   emptyText: string
   className?: string
 }) {
+  // `label`, `searchPlaceholder` and `emptyText` name the *thing* being
+  // filtered and only the caller knows it. The two strings below name the
+  // dropdown's own states and are the same in every use, so they come from
+  // the catalog directly rather than through two more props.
+  const c = useCopy().common.filter
+
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
 
@@ -173,7 +180,7 @@ export function MultiSelect({
 
                 {matches.length === 0 && (
                   <li className="px-2 py-1.5 text-sm text-subtle-fg">
-                    Tidak ada yang cocok.
+                    {c.noMatch}
                   </li>
                 )}
               </ul>
@@ -190,7 +197,7 @@ export function MultiSelect({
                   className="flex items-center gap-1 rounded-sm px-2 py-1 text-xs text-muted-fg transition-colors hover:text-surface-fg"
                 >
                   <X className="size-3" />
-                  Hapus pilihan
+                  {c.clearSelection}
                 </button>
               )}
             </div>

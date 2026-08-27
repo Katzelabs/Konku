@@ -1,4 +1,4 @@
 {
-  "_note": "Feature files still holding untranslated literals, and how many. Written by `node scripts/check-i18n.mjs --update`. This is a ratchet: the numbers may fall and a file may leave, never the other way round. A file that reaches zero must be deleted from this list — see ticket 11 I1.",
+  "_note": "Files under src/ still holding untranslated literals, and how many. Written by `node scripts/check-i18n.mjs --update`. This is a ratchet: the numbers may fall and a file may leave, never the other way round. A file that reaches zero must be deleted from this list — see ticket 11 I1. Empty since 11 I5, and that is now a real answer rather than a scoping artifact: the scan covers src/components/ and src/App.tsx as well as src/features/.",
   "files": {}
 }

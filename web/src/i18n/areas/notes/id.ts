@@ -11,7 +11,8 @@ export const notes: NotesCopy = {
     title: 'Catatan',
     description: 'Tulis dulu, rapikan nanti.',
     count: (count) => n(count, { other: '# catatan' }),
-    noun: 'catatan',
+    loadMore: (remaining) =>
+      n(remaining, { other: 'Muat lebih banyak (# catatan lagi)' }),
     newNote: 'Catatan baru',
     openDeleted: 'Terhapus',
     search: {

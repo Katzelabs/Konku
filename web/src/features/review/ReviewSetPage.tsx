@@ -246,7 +246,7 @@ function CardPicker({
               loading={isFetchingNextPage}
               error={error}
               onLoadMore={() => fetchNextPage()}
-              noun={c.noun}
+              remainingLabel={c.loadMore}
               className="px-0 pb-1"
             />
           </Card>
@@ -329,7 +329,7 @@ function RunHistory({ setId }: { setId: string }) {
             loading={isFetchingNextPage}
             error={error}
             onLoadMore={() => fetchNextPage()}
-            noun={c.noun}
+            remainingLabel={c.loadMore}
           />
         </>
       )}

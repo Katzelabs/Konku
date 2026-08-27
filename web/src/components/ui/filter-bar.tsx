@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import type { Category, Domain } from '../../api/types'
+import { useCopy } from '../../i18n'
 import { MultiSelect, type SelectOption } from './multi-select'
 
 /**
@@ -15,6 +16,13 @@ import { MultiSelect, type SelectOption } from './multi-select'
  * available reading and it is the wrong one for a filter bar: the second click
  * would almost always empty the screen, which reads as broken rather than as
  * precise.
+ *
+ * The two group names are read across from `domains` and `categories` rather
+ * than restated here: both areas already export a singular `noun` for exactly
+ * this — naming the thing somewhere that is not its own screen — and a second
+ * copy in `common` would be one more place for "Kategori" and "Category" to
+ * stop agreeing. The dropdown's own furniture is `common.filter`, which
+ * belongs to no feature.
  */
 export function FilterBar({
   domains,
@@ -40,6 +48,8 @@ export function FilterBar({
   onToggle: (key: 'domainId' | 'categoryId', id: string) => void
   onClear: (key: 'domainId' | 'categoryId') => void
 }) {
+  const c = useCopy()
+
   const domainOptions = useMemo(
     () => options(domains, domainIds),
     [domains, domainIds],
@@ -57,24 +67,27 @@ export function FilterBar({
     <div className="flex flex-wrap items-center gap-2">
       {domainOptions.length > 0 && (
         <MultiSelect
-          label="Domain"
+          label={c.domains.noun}
           options={domainOptions}
           selected={domainIds}
           onToggle={(id) => onToggle('domainId', id)}
           onClear={() => onClear('domainId')}
-          searchPlaceholder="Cari domain…"
-          emptyText="Belum ada domain."
+          searchPlaceholder={c.common.filter.searchDomains}
+          // Unreachable from here — this MultiSelect only renders when it has
+          // options — but the prop is required and the honest answer is the
+          // one the /domains screen gives for the same fact.
+          emptyText={c.domains.empty.title}
         />
       )}
       {categoryOptions.length > 0 && (
         <MultiSelect
-          label="Kategori"
+          label={c.categories.noun}
           options={categoryOptions}
           selected={categoryIds}
           onToggle={(id) => onToggle('categoryId', id)}
           onClear={() => onClear('categoryId')}
-          searchPlaceholder="Cari kategori…"
-          emptyText="Belum ada kategori."
+          searchPlaceholder={c.common.filter.searchCategories}
+          emptyText={c.categories.empty.title}
         />
       )}
     </div>

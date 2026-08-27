@@ -65,16 +65,16 @@ export interface NotesCopy {
      */
     count: (n: number) => string
     /**
-     * What `LoadMore` counts, as a bare noun it drops into its own sentence.
+     * The whole label on the button under the list, remainder and all.
      *
-     * The sentence around it — "Muat lebih banyak (12 catatan lagi)" — is
-     * built inside `components/ui/load-more.tsx`, which is shared with cards
-     * and is outside `check-i18n`'s scope, so it is still Indonesian in both
-     * locales. This key is the half that is ours. When that component is
-     * converted it will want a counted function rather than a noun, and this
-     * is the key that becomes it.
+     * It used to be a bare noun that `components/ui/load-more.tsx` dropped
+     * into a sentence it built itself — `${remaining} ${noun} lagi` — which
+     * put an English noun inside an Indonesian sentence for every English
+     * reader. The component now renders whatever this returns and composes
+     * nothing, because English needs the noun to agree with the count *and*
+     * the parenthetical to be worded its own way. Ticket 11 I5.
      */
-    noun: string
+    loadMore: (remaining: number) => string
     /** Creates an empty note and opens the editor on it. */
     newNote: string
     /** Opens the Deleted view, which is this same screen asked the other way. */

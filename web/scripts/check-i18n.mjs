@@ -19,7 +19,8 @@
  *   - object literals:     const THEMES = [{ label: 'Terang' }]
  *   - template literals:   `${browser} di ${platform}`
  *
- * in every `.ts` and `.tsx` file under `web/src/features/`.
+ * in every `.ts` and `.tsx` file under `web/src/features/` and
+ * `web/src/components/`, plus `web/src/App.tsx`.
  *
  * WHAT IT DELIBERATELY DOES NOT CATCH
  *
@@ -46,10 +47,28 @@
  *     from an identifier and is NOT flagged. A capitalised one (`'Batal'`) is.
  *   - An ALL-CAPS word is read as a constant and is NOT flagged.
  *   - A single hyphenated token (`'e-mail'`) is read as a CSS/HTTP value.
- *   - `web/src/components/` and `web/src/App.tsx` are out of scope. They hold
- *     copy too, and widening `SCAN` below is a one-line change once the shared
- *     components are converted — but scoping the gate to the folders I5 is
- *     converting keeps the baseline honest instead of enormous.
+ *
+ * Several strings in the shared component layer were found by people reading
+ * code rather than by this script, and two whole classes of them were invisible
+ * to it for a reason worth stating: a **default parameter**
+ * (`label = 'Memuat…'`) does not read as copy in a diff, and a string a
+ * component *assembles* (`` `${remaining} ${noun} lagi` ``) can be half
+ * translated and half not while every literal in sight is in the catalog. This
+ * finds the first now that `components/` is in scope. Nothing finds the second.
+ *
+ * WHAT IS STILL OUT OF SCOPE, and why each one
+ *
+ *   - `web/src/i18n/` — the catalogs. Copy is what they are for.
+ *   - `web/src/design/StyleGuide.tsx` — the living style guide at `/design`,
+ *     which `main.tsx` builds only under `import.meta.env.DEV` and Rollup drops
+ *     from the production bundle entirely. It is developer documentation about
+ *     tokens and components; nobody but us reads it, and translating it would
+ *     be work with no reader.
+ *   - `web/src/lib/` and `web/src/api/` — one genuine string between them,
+ *     `client.ts`'s fallback error message, which is user-facing and is a real
+ *     gap. It is not a component and cannot call `useCopy()`; closing it means
+ *     threading `Copy` into the fetch layer, which is its own change. Left
+ *     named here rather than quietly widened past.
  *
  * THE ESCAPE HATCH
  *
@@ -81,7 +100,20 @@ import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 
 const WEB = join(dirname(fileURLToPath(import.meta.url)), '..')
-const SCAN = join(WEB, 'src', 'features')
+/**
+ * Where copy is not allowed to live.
+ *
+ * `features/` was the whole of it while `11` I5's six agents were converting
+ * six feature folders in parallel; `components/` and `App.tsx` joined it once
+ * the shared layer was converted, which is what I1 said this line was waiting
+ * for. Widening it matters more than it looks: with only `features/` in scope
+ * the baseline could reach zero — and did — while every screen still rendered
+ * Indonesian, because the components every screen is built from were never
+ * counted. Paths are relative to `src/`, so a report says which of them a file
+ * came from.
+ */
+const ROOT = join(WEB, 'src')
+const SCAN = ['features', 'components', 'App.tsx'].map((p) => join(ROOT, p))
 const BASELINE = join(WEB, 'i18n-baseline.json')
 
 const UPDATE = process.argv.includes('--update')
@@ -110,6 +142,13 @@ const NEVER_COPY_PROPS = new Set([
   'icon', 'value', 'name', 'type', 'locale', 'tag', 'slug', 'event', 'code',
   'field', 'kind', 'format', 'mode', 'credentials',
 ])
+
+/**
+ * Properties whose value is a DOM enum rather than a sentence. A string
+ * compared against one of these is `'Enter'`, `'INPUT'`, `'ArrowDown'` — never
+ * something a person reads.
+ */
+const DOM_ENUM_PROPS = new Set(['key', 'code', 'tagName', 'nodeName', 'type'])
 
 /** Constructors whose arguments are never copy. */
 const NEVER_COPY_NEW = new Set(['URL', 'URLSearchParams', 'Error', 'TypeError', 'RangeError'])
@@ -219,6 +258,18 @@ function inNonCopyPosition(node) {
 
     if (ts.isCaseClause(parent) && child === parent.expression) return true
 
+    // `e.key === 'Enter'`, `e.code === 'Escape'`, `target.tagName === 'INPUT'`.
+    // A DOM enum value, and one that recurs — every keyboard handler in the app
+    // has one. Capitalised and therefore prose by every other test here, which
+    // would leave the escape hatch as the only answer and put an exemption
+    // comment on each of them for a reason that is the same reason every time.
+    if (ts.isBinaryExpression(parent) && child !== parent.operatorToken) {
+      const other = child === parent.left ? parent.right : parent.left
+      if (ts.isPropertyAccessExpression(other) && DOM_ENUM_PROPS.has(other.name.text)) {
+        return true
+      }
+    }
+
     if (ts.isElementAccessExpression(parent) && child === parent.argumentExpression) {
       return true
     }
@@ -306,7 +357,11 @@ function exemptRanges(sourceFile, text) {
 
 function scanFile(path) {
   const text = readFileSync(path, 'utf8')
-  const sourceFile = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  // TSX only for `.tsx`. A generic arrow in a `.ts` file — `<T>(path: string)
+  // => request<T>(path)` — parses as a JSX element under `ScriptKind.TSX`, and
+  // the code between the brackets is then reported as JSX text.
+  const kind = path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+  const sourceFile = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, kind)
   const exempt = exemptRanges(sourceFile, text)
   const isExempt = (pos) => exempt.some(([from, to]) => pos >= from && pos < to)
 
@@ -349,12 +404,26 @@ function scanFile(path) {
 
 /* ── Walking the tree ────────────────────────────────────────────────────── */
 
-function sourceFiles(dir, out = []) {
-  for (const entry of readdirSync(dir).sort()) {
-    const path = join(dir, entry)
+/** A scanned file: source, not a test, not a declaration. */
+function isSource(entry) {
+  return (
+    /\.tsx?$/.test(entry) &&
+    !/\.(test|spec)\.tsx?$/.test(entry) &&
+    !entry.endsWith('.d.ts')
+  )
+}
+
+/** Every source file under a root, which may itself be a single file. */
+function sourceFiles(root, out = []) {
+  if (!statSync(root).isDirectory()) {
+    if (isSource(root)) out.push(root)
+    return out
+  }
+  for (const entry of readdirSync(root).sort()) {
+    const path = join(root, entry)
     if (statSync(path).isDirectory()) {
       sourceFiles(path, out)
-    } else if (/\.tsx?$/.test(entry) && !/\.(test|spec)\.tsx?$/.test(entry) && !entry.endsWith('.d.ts')) {
+    } else if (isSource(entry)) {
       out.push(path)
     }
   }
@@ -364,16 +433,18 @@ function sourceFiles(dir, out = []) {
 /* ── Baseline ────────────────────────────────────────────────────────────── */
 
 const results = new Map()
-for (const path of sourceFiles(SCAN)) {
-  const hits = scanFile(path)
-  if (hits.length > 0) results.set(relative(SCAN, path).split(sep).join('/'), hits)
+for (const root of SCAN) {
+  for (const path of sourceFiles(root)) {
+    const hits = scanFile(path)
+    if (hits.length > 0) results.set(relative(ROOT, path).split(sep).join('/'), hits)
+  }
 }
 
 if (LIST) {
   let total = 0
   for (const [file, hits] of results) {
     if (FILTER && !file.includes(FILTER)) continue
-    console.log(`src/features/${file}`)
+    console.log(`src/${file}`)
     for (const hit of hits) console.log(`  ${hit.line}:${hit.column}  ${JSON.stringify(hit.text)}`)
     total += hits.length
   }
@@ -390,7 +461,7 @@ if (UPDATE) {
     `${JSON.stringify(
       {
         _note:
-          'Feature files still holding untranslated literals, and how many. ' +
+          'Files under src/ still holding untranslated literals, and how many. ' +
           'Written by `node scripts/check-i18n.mjs --update`. This is a ratchet: ' +
           'the numbers may fall and a file may leave, never the other way round. ' +
           'A file that reaches zero must be deleted from this list — see ticket 11 I1.',
@@ -433,9 +504,9 @@ const finished = Object.keys(baseline)
   .sort()
 
 if (failures.length > 0) {
-  console.error('check-i18n: user-facing copy typed straight into a feature folder.\n')
+  console.error('check-i18n: user-facing copy typed straight into a screen or a component.\n')
   for (const { file, allowed, hits } of failures) {
-    console.error(`  src/features/${file}  (${hits.length} literals, baseline allows ${allowed})`)
+    console.error(`  src/${file}  (${hits.length} literals, baseline allows ${allowed})`)
     for (const hit of hits.slice(0, 12)) {
       console.error(`    ${hit.line}:${hit.column}  ${JSON.stringify(hit.text)}`)
     }
@@ -450,7 +521,7 @@ if (failures.length > 0) {
 
 if (finished.length > 0) {
   console.error('check-i18n: these files are translated and still listed in i18n-baseline.json:\n')
-  for (const file of finished) console.error(`  src/features/${file}`)
+  for (const file of finished) console.error(`  src/${file}`)
   console.error('\nRemove them, or run `npm run check:i18n -- --update`. A converted file')
   console.error('that keeps its baseline entry would accept a new literal for free.')
   process.exit(1)

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useCopy } from '../../i18n'
 import { Button } from './button'
 import { Checkbox } from './checkbox'
 import { cn } from '../../lib/utils'
@@ -14,6 +15,11 @@ import { cn } from '../../lib/utils'
  * It states a count and offers actions. No "you are about to permanently
  * destroy 12 items" — deleting is soft on both resources, and the confirm
  * dialog says where things go (hard rule 6).
+ *
+ * Its words come from `common.selection` rather than from a prop, because they
+ * are about the *mechanism*: "12 dipilih" is the same sentence over notes and
+ * over cards. The one string that does differ per row is the tick box's own
+ * name, and that is `SelectCheckbox`'s `label` prop below.
  */
 export function SelectionBar({
   count,
@@ -41,7 +47,10 @@ export function SelectionBar({
   children: ReactNode
   className?: string
 }) {
-  const selectAllLabel = partial ? 'Pilih semua yang tampil' : 'Pilih semua'
+  const c = useCopy().common
+  const selectAllLabel = partial
+    ? c.selection.selectAllLoaded
+    : c.selection.selectAll
   return (
     <div
       className={cn(
@@ -56,15 +65,17 @@ export function SelectionBar({
           // be either state.
           indeterminate={count > 0 && !allSelected}
           onChange={onToggleAll}
-          aria-label={allSelected ? 'Batalkan pilih semua' : selectAllLabel}
+          aria-label={allSelected ? c.selection.clear : selectAllLabel}
         />
-        <span className="text-sm text-card-fg">{count} dipilih</span>
+        {/* Counted through the catalog, never `${count}`: the quota is 5.000
+            notes and Indonesian groups that differently from English. */}
+        <span className="text-sm text-card-fg">{c.selection.count(count)}</span>
       </label>
 
       <div className="ml-auto flex items-center gap-2">
         {children}
         <Button variant="link" size="inline" onClick={onClear}>
-          Batal
+          {c.cancel}
         </Button>
       </div>
     </div>

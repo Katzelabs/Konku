@@ -14,6 +14,12 @@ import { Flashcard } from './flashcard'
 function setup() {
   return render(
     <Flashcard
+      // Required props since ticket 11 I5 — they were defaults inside the
+      // component, which is where copy hides from review. The card editor is
+      // what supplies them in the app; these are the same two words, so the
+      // assertions below are unchanged.
+      frontLabel="Pertanyaan"
+      backLabel="Jawaban"
       front={<p>Apa itu prior?</p>}
       back={
         <p>

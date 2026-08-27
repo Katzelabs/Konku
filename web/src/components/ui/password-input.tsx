@@ -1,5 +1,6 @@
 import { useState, type ComponentProps } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
+import { useCopy } from '../../i18n'
 import { cn } from '../../lib/utils'
 import { Input } from './input'
 
@@ -27,6 +28,10 @@ export function PasswordInput({
   ...props
 }: Omit<ComponentProps<'input'>, 'type'>) {
   const [visible, setVisible] = useState(false)
+  // No prop for the label pair: this is a leaf with one fixed thing to say,
+  // and threading it through four call sites would only give four chances to
+  // say it differently.
+  const c = useCopy().common.password
 
   return (
     <div className="relative">
@@ -46,8 +51,8 @@ export function PasswordInput({
         // Both, and they say the action rather than the state. A control
         // labelled "Kata sandi terlihat" reads as a status; the label has to
         // answer "what happens if I press this".
-        aria-label={visible ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
-        title={visible ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
+        aria-label={visible ? c.hide : c.show}
+        title={visible ? c.hide : c.show}
         // The state, for anything that wants it — announced as pressed or not
         // rather than by the label changing underneath the reader.
         aria-pressed={visible}

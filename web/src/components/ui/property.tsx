@@ -1,6 +1,7 @@
 import { Check, Plus, X } from 'lucide-react'
 import { useState, type ComponentProps, type ReactNode } from 'react'
 import type { Category, Domain } from '../../api/types'
+import { useCopy } from '../../i18n'
 import { cn } from '../../lib/utils'
 import { DomainDot } from './badge'
 import { CategoryChip, CategoryPicker } from './category'
@@ -89,6 +90,7 @@ export function DomainProperty({
   value: string | null
   onChange: (id: string | null) => void
 }) {
+  const c = useCopy().common.picker.domain
   const current = domains?.find((d) => d.id === value)
 
   return (
@@ -101,14 +103,14 @@ export function DomainProperty({
               <span className="truncate text-card-fg">{current.label}</span>
             </>
           ) : (
-            <span className="text-subtle-fg">Pilih domain</span>
+            <span className="text-subtle-fg">{c.placeholder}</span>
           )}
         </PropertyButton>
       </DropdownMenuTrigger>
 
       <DropdownMenuContent align="start" className="min-w-56">
         <DropdownMenuItem onSelect={() => onChange(null)}>
-          <span className="flex-1 text-muted-fg">Tanpa domain</span>
+          <span className="flex-1 text-muted-fg">{c.none}</span>
           {value === null && <Check className="size-3.5" />}
         </DropdownMenuItem>
         {(domains ?? []).map((d) => (
@@ -144,6 +146,8 @@ export function CategoryProperty({
   onCreate: (label: string) => Promise<Category | null>
   creating?: boolean
 }) {
+  // `copy`, not `c`: the filter below already binds `c` to a category.
+  const copy = useCopy().common.picker.category
   const [open, setOpen] = useState(false)
 
   const chosen = (categories ?? []).filter((c) => selected.includes(c.id))
@@ -165,7 +169,7 @@ export function CategoryProperty({
             className="mt-2 flex items-center gap-1 rounded-sm px-1 text-xs text-muted-fg transition-colors hover:text-surface-fg"
           >
             <X className="size-3" />
-            Selesai
+            {copy.done}
           </button>
         </div>
       ) : (
@@ -175,7 +179,7 @@ export function CategoryProperty({
               <CategoryChip key={c.id} label={c.label} color={c.color} />
             ))
           ) : (
-            <span className="text-subtle-fg">Tambah kategori</span>
+            <span className="text-subtle-fg">{copy.add}</span>
           )}
           {chosen.length > 0 && <Plus className="size-3.5 text-subtle-fg" />}
         </PropertyButton>

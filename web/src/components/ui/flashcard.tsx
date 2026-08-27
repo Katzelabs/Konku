@@ -1,5 +1,6 @@
 import { useState, type MouseEvent, type ReactNode } from 'react'
 import { FlipHorizontal2 } from 'lucide-react'
+import { useCopy } from '../../i18n'
 import { cn } from '../../lib/utils'
 import { Button } from './button'
 
@@ -34,21 +35,38 @@ export type CardFace = 'front' | 'back'
  * as its taller side, and the height is stable across the flip — a card that
  * resizes mid-turn reads as two panels swapping, which is the impression this
  * whole component exists to avoid.
+ *
+ * ## Where the words come from
+ *
+ * The two side names are **required props**, not defaults. They were
+ * `frontLabel = 'Pertanyaan'` and `backLabel = 'Jawaban'` — default parameters,
+ * which is the one place copy hides from review — and they name the same two
+ * sides the card editor labels, so the caller passes `cards.editor.front.label`
+ * and its sibling and the peek cannot come to disagree with the editor about
+ * what a side is called.
+ *
+ * The control under the card and the live region are `common.flashcard`, and
+ * both take the side's name as a *value* rather than building a sentence out
+ * of it: "Lihat jawaban" lower-cases in Indonesian and in English, and which
+ * is the right transformation is a fact about the language, so it happens in
+ * the catalog.
  */
 export function Flashcard({
   front,
   back,
-  frontLabel = 'Pertanyaan',
-  backLabel = 'Jawaban',
+  frontLabel,
+  backLabel,
   className,
 }: {
   front: ReactNode
   back: ReactNode
-  frontLabel?: string
-  backLabel?: string
+  /** What the front is called. From the caller's catalog — see above. */
+  frontLabel: string
+  backLabel: string
   /** Sizing for the faces — the caller knows how much room it has. */
   className?: string
 }) {
+  const c = useCopy().common.flashcard
   const [face, setFace] = useState<CardFace>('front')
   const flipped = face === 'back'
 
@@ -95,7 +113,7 @@ export function Flashcard({
         */}
         <Button variant="secondary" size="sm" onClick={flip}>
           <FlipHorizontal2 />
-          {flipped ? `Lihat ${frontLabel.toLowerCase()}` : `Lihat ${backLabel.toLowerCase()}`}
+          {c.showSide(flipped ? frontLabel : backLabel)}
         </Button>
 
         <FaceDots flipped={flipped} />
@@ -107,7 +125,7 @@ export function Flashcard({
           rather than interrupting whatever is being read.
         */}
         <p aria-live="polite" className="sr-only">
-          Sisi kartu: {flipped ? backLabel : frontLabel}
+          {c.side(flipped ? backLabel : frontLabel)}
         </p>
       </div>
     </div>

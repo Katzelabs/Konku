@@ -116,8 +116,14 @@ export interface ReviewCopy {
       title: string
       description: string
     }
-    /** Counts rows under the list. A noun, not a sentence. */
-    noun: string
+    /**
+     * The whole label on the button under the list, remainder and all.
+     *
+     * A bare noun before, which `components/ui/load-more.tsx` built a sentence
+     * around — so the sentence stayed Indonesian however the noun was
+     * translated. The component composes nothing now (ticket 11 I5).
+     */
+    loadMore: (remaining: number) => string
   }
 
   /**
@@ -185,13 +191,15 @@ export interface ReviewCopy {
       chosen: (chosen: number, total: number) => string
       empty: string
       save: string
-      noun: string
+      /** The button under the list. The whole label — see `sets.loadMore`. */
+      loadMore: (remaining: number) => string
     }
     history: {
       title: string
       /** No sittings yet. A fact about the set, not about the reader. */
       empty: string
-      noun: string
+      /** The button under the list. The whole label — see `sets.loadMore`. */
+      loadMore: (remaining: number) => string
     }
   }
 
