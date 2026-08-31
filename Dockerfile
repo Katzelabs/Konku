@@ -27,7 +27,7 @@
 # and takes all 207 tests with it. Node 24 has no such global, so jsdom's wins.
 # Raise this when vitest or jsdom handles it — not before, or the bundle ships
 # built by a runtime nothing can test on.
-FROM --platform=$BUILDPLATFORM node:24-alpine AS web
+FROM --platform=$BUILDPLATFORM node:26-alpine AS web
 WORKDIR /src
 COPY web/package*.json ./web/
 RUN cd web && npm ci
@@ -41,7 +41,7 @@ RUN mkdir -p internal/web && cd web && npm run build
 # in go.mod, so tests ran on 1.25.13 and the shipped binary was compiled by
 # 1.26.6. Well-defined under Go's compatibility promise, and still a binary
 # nothing tested. Bump this when go.mod moves, not before.
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
