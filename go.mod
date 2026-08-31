@@ -3,8 +3,8 @@ module github.com/Katzelabs/Konku
 go 1.25.13
 
 require (
-	github.com/getsentry/sentry-go v0.48.0
-	github.com/go-chi/chi/v5 v5.3.1
+	github.com/getsentry/sentry-go v0.49.0
+	github.com/go-chi/chi/v5 v5.3.2
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/pressly/goose/v3 v3.27.3
