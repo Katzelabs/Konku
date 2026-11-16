@@ -27,7 +27,7 @@
 # and takes all 207 tests with it. Node 24 has no such global, so jsdom's wins.
 # Raise this when vitest or jsdom handles it — not before, or the bundle ships
 # built by a runtime nothing can test on.
-FROM --platform=$BUILDPLATFORM node:24-alpine AS web
+FROM --platform=$BUILDPLATFORM node:26-alpine AS web
 WORKDIR /src
 COPY web/package*.json ./web/
 RUN cd web && npm ci
